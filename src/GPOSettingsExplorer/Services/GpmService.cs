@@ -108,6 +108,69 @@ public sealed class GpmService
         });
     }
 
+    public Guid CreateGpo(string domainName, string displayName)
+    {
+        if (string.IsNullOrWhiteSpace(displayName))
+        {
+            throw new ArgumentException("GPO name cannot be empty.", nameof(displayName));
+        }
+
+        dynamic gpm = CreateGpm();
+        dynamic constants = gpm.GetConstants();
+        dynamic domain = gpm.GetDomain(domainName, string.Empty, constants.UseAnyDC);
+        dynamic gpo = domain.CreateGPO();
+        gpo.DisplayName = displayName.Trim();
+
+        string idText = Convert.ToString((object?)gpo.ID) ?? string.Empty;
+        if (!Guid.TryParse(idText, out Guid id))
+        {
+            throw new InvalidOperationException("The GPO was created, but its GUID could not be read.");
+        }
+
+        return id;
+    }
+
+    public void RenameGpo(string domainName, Guid gpoId, string newDisplayName)
+    {
+        if (string.IsNullOrWhiteSpace(newDisplayName))
+        {
+            throw new ArgumentException("GPO name cannot be empty.", nameof(newDisplayName));
+        }
+
+        dynamic gpm = CreateGpm();
+        dynamic constants = gpm.GetConstants();
+        dynamic domain = gpm.GetDomain(domainName, string.Empty, constants.UseAnyDC);
+        dynamic gpo = domain.GetGPO(gpoId.ToString("B"));
+        gpo.DisplayName = newDisplayName.Trim();
+    }
+
+    public void DeleteGpo(string domainName, Guid gpoId)
+    {
+        dynamic gpm = CreateGpm();
+        dynamic constants = gpm.GetConstants();
+        dynamic domain = gpm.GetDomain(domainName, string.Empty, constants.UseAnyDC);
+        dynamic gpo = domain.GetGPO(gpoId.ToString("B"));
+        gpo.Delete();
+    }
+
+    public void SetComputerEnabled(string domainName, Guid gpoId, bool enabled)
+    {
+        dynamic gpm = CreateGpm();
+        dynamic constants = gpm.GetConstants();
+        dynamic domain = gpm.GetDomain(domainName, string.Empty, constants.UseAnyDC);
+        dynamic gpo = domain.GetGPO(gpoId.ToString("B"));
+        gpo.SetComputerEnabled(enabled);
+    }
+
+    public void SetUserEnabled(string domainName, Guid gpoId, bool enabled)
+    {
+        dynamic gpm = CreateGpm();
+        dynamic constants = gpm.GetConstants();
+        dynamic domain = gpm.GetDomain(domainName, string.Empty, constants.UseAnyDC);
+        dynamic gpo = domain.GetGPO(gpoId.ToString("B"));
+        gpo.SetUserEnabled(enabled);
+    }
+
     public string BackupGpo(string domainName, Guid gpoId, string comment)
     {
         dynamic gpm = CreateGpm();
