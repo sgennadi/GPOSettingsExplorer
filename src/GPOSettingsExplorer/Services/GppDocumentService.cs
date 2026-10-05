@@ -453,7 +453,7 @@ public sealed class GppDocumentService
         }
     }
 
-    private static GppDocumentTypeInfo Type(
+    private static GppDocumentTypeInfo CreateTypeInfo(
         string name,
         string relativePath,
         string cse,
