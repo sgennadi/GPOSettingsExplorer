@@ -723,11 +723,11 @@ public sealed class GppScheduledTaskEditorWindow : Window
         if (!item.IsV2)
         {
             SetStructuredEditorsEnabled(
+                false,
                 generalGrid,
                 actionGrid,
                 settingsPanel,
-                commonPanel,
-                enabled: false);
+                commonPanel);
 
             _taskXmlBox.IsReadOnly =
                 true;
@@ -1270,16 +1270,11 @@ public sealed class GppScheduledTaskEditorWindow : Window
         };
 
     private static void SetStructuredEditorsEnabled(
-        params object[] args)
+        bool enabled,
+        params UIElement[] elements)
     {
-        var enabled =
-            args.LastOrDefault() as bool? ?? true;
-
-        foreach (var value in args.Take(args.Length - 1))
-        {
-            if (value is UIElement element)
-                element.IsEnabled = enabled;
-        }
+        foreach (var element in elements)
+            element.IsEnabled = enabled;
     }
 
     private static string ActionDisplay(
