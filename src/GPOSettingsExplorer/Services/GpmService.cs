@@ -171,6 +171,158 @@ public sealed class GpmService
         gpo.SetUserEnabled(enabled);
     }
 
+    public IReadOnlyList<GpoPermissionInfo> LoadPermissions(string domainName, Guid gpoId)
+    {
+        dynamic gpm = CreateGpm();
+        dynamic constants = gpm.GetConstants();
+        dynamic domain = gpm.GetDomain(domainName, string.Empty, constants.UseAnyDC);
+        dynamic gpo = domain.GetGPO(gpoId.ToString("B"));
+        dynamic security = gpo.GetSecurityInfo();
+
+        var gpoName = Convert.ToString((object?)gpo.DisplayName) ?? gpoId.ToString("B");
+        var result = new List<GpoPermissionInfo>();
+        var count = Convert.ToInt32((object?)security.Count);
+
+        for (var i = 1; i <= count; i++)
+        {
+            dynamic permission = security.Item(i);
+            dynamic trustee = permission.Trustee;
+
+            var rawPermission = Convert.ToInt32((object?)permission.Permission);
+            result.Add(new GpoPermissionInfo
+            {
+                GpoId = gpoId,
+                GpoName = gpoName,
+                TrusteeName = Convert.ToString((object?)trustee.TrusteeName) ?? string.Empty,
+                TrusteeDomain = Convert.ToString((object?)trustee.TrusteeDomain) ?? string.Empty,
+                TrusteeSid = Convert.ToString((object?)trustee.TrusteeSid) ?? string.Empty,
+                TrusteeDsPath = Convert.ToString((object?)trustee.TrusteeDSPath) ?? string.Empty,
+                TrusteeType = SafeInt(() => trustee.TrusteeType),
+                Level = MapPermissionLevel(rawPermission),
+                RawPermission = rawPermission,
+                Denied = SafeBool(() => permission.Denied),
+                Inherited = SafeBool(() => permission.Inherited),
+                Inheritable = SafeBool(() => permission.Inheritable)
+            });
+        }
+
+        return result
+            .OrderBy(p => p.Category, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(p => p.TrusteeDisplay, StringComparer.CurrentCultureIgnoreCase)
+            .ThenBy(p => p.RawPermission)
+            .ToArray();
+    }
+
+    public void AddPermission(
+        string domainName,
+        Guid gpoId,
+        string trustee,
+        GpoPermissionLevel level)
+    {
+        if (string.IsNullOrWhiteSpace(trustee))
+        {
+            throw new ArgumentException("Trustee cannot be empty.", nameof(trustee));
+        }
+
+        if (level == GpoPermissionLevel.Custom)
+        {
+            throw new InvalidOperationException(
+                "Custom permissions can be displayed but are not created by the simplified permission editor.");
+        }
+
+        dynamic gpm = CreateGpm();
+        dynamic constants = gpm.GetConstants();
+        dynamic domain = gpm.GetDomain(domainName, string.Empty, constants.UseAnyDC);
+        dynamic gpo = domain.GetGPO(gpoId.ToString("B"));
+        dynamic security = gpo.GetSecurityInfo();
+
+        var permissionCode = GetPermissionConstant(constants, level);
+        dynamic newPermission = gpm.CreatePermission(trustee.Trim(), permissionCode, true);
+        security.Add(newPermission);
+        gpo.SetSecurityInfo(security);
+    }
+
+    public void ReplacePermission(
+        string domainName,
+        Guid gpoId,
+        GpoPermissionInfo existing,
+        GpoPermissionLevel newLevel)
+    {
+        if (existing.Inherited)
+        {
+            throw new InvalidOperationException(
+                "Inherited permissions cannot be changed on this GPO. Change them on the parent object.");
+        }
+
+        if (newLevel == GpoPermissionLevel.Custom)
+        {
+            throw new InvalidOperationException(
+                "Custom permissions can be displayed but are not created by the simplified permission editor.");
+        }
+
+        dynamic gpm = CreateGpm();
+        dynamic constants = gpm.GetConstants();
+        dynamic domain = gpm.GetDomain(domainName, string.Empty, constants.UseAnyDC);
+        dynamic gpo = domain.GetGPO(gpoId.ToString("B"));
+        dynamic security = gpo.GetSecurityInfo();
+
+        dynamic? current = FindPermissionObject(
+            security,
+            existing.TrusteeSid,
+            existing.RawPermission,
+            includeDenied: existing.Denied);
+
+        if (current is null)
+        {
+            throw new InvalidOperationException(
+                "The selected permission no longer exists. Refresh the permission list and try again.");
+        }
+
+        security.Remove(current);
+
+        var trustee = string.IsNullOrWhiteSpace(existing.TrusteeSid)
+            ? existing.TrusteeDisplay
+            : existing.TrusteeSid;
+
+        var permissionCode = GetPermissionConstant(constants, newLevel);
+        dynamic newPermission = gpm.CreatePermission(trustee, permissionCode, true);
+        security.Add(newPermission);
+        gpo.SetSecurityInfo(security);
+    }
+
+    public void RemovePermission(
+        string domainName,
+        Guid gpoId,
+        GpoPermissionInfo existing)
+    {
+        if (existing.Inherited)
+        {
+            throw new InvalidOperationException(
+                "Inherited permissions cannot be removed from this GPO. Change them on the parent object.");
+        }
+
+        dynamic gpm = CreateGpm();
+        dynamic constants = gpm.GetConstants();
+        dynamic domain = gpm.GetDomain(domainName, string.Empty, constants.UseAnyDC);
+        dynamic gpo = domain.GetGPO(gpoId.ToString("B"));
+        dynamic security = gpo.GetSecurityInfo();
+
+        dynamic? current = FindPermissionObject(
+            security,
+            existing.TrusteeSid,
+            existing.RawPermission,
+            includeDenied: existing.Denied);
+
+        if (current is null)
+        {
+            throw new InvalidOperationException(
+                "The selected permission no longer exists. Refresh the permission list and try again.");
+        }
+
+        security.Remove(current);
+        gpo.SetSecurityInfo(security);
+    }
+
     public string BackupGpo(string domainName, Guid gpoId, string comment)
     {
         dynamic gpm = CreateGpm();
@@ -223,6 +375,58 @@ public sealed class GpmService
 
         dynamic wmiFilter = domain.GetWMIFilter(filter.Path);
         gpo.SetWMIFilter(wmiFilter);
+    }
+
+    private static dynamic? FindPermissionObject(
+        dynamic security,
+        string trusteeSid,
+        int rawPermission,
+        bool includeDenied)
+    {
+        var count = Convert.ToInt32((object?)security.Count);
+
+        for (var i = 1; i <= count; i++)
+        {
+            dynamic item = security.Item(i);
+            dynamic trustee = item.Trustee;
+
+            var sid = Convert.ToString((object?)trustee.TrusteeSid) ?? string.Empty;
+            var permissionCode = Convert.ToInt32((object?)item.Permission);
+            var denied = SafeBool(() => item.Denied);
+
+            if (sid.Equals(trusteeSid, StringComparison.OrdinalIgnoreCase) &&
+                permissionCode == rawPermission &&
+                denied == includeDenied)
+            {
+                return item;
+            }
+        }
+
+        return null;
+    }
+
+    private static GpoPermissionLevel MapPermissionLevel(int rawPermission)
+    {
+        return rawPermission switch
+        {
+            0x10000 => GpoPermissionLevel.Apply,
+            0x10100 => GpoPermissionLevel.Read,
+            0x10101 => GpoPermissionLevel.Edit,
+            0x10102 => GpoPermissionLevel.FullControl,
+            _ => GpoPermissionLevel.Custom
+        };
+    }
+
+    private static object GetPermissionConstant(dynamic constants, GpoPermissionLevel level)
+    {
+        return level switch
+        {
+            GpoPermissionLevel.Apply => constants.PermGPOApply,
+            GpoPermissionLevel.Read => constants.PermGPORead,
+            GpoPermissionLevel.Edit => constants.PermGPOEdit,
+            GpoPermissionLevel.FullControl => constants.PermGPOEditSecurityAndDelete,
+            _ => throw new InvalidOperationException("Unsupported GPO permission level.")
+        };
     }
 
     private static string SanitizeFileName(string value)
@@ -331,6 +535,18 @@ public sealed class GpmService
         catch
         {
             return null;
+        }
+    }
+
+    private static int SafeInt(Func<object> getter)
+    {
+        try
+        {
+            return Convert.ToInt32(getter());
+        }
+        catch (COMException)
+        {
+            return 0;
         }
     }
 
