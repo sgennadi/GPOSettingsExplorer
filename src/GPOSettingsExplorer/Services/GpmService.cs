@@ -106,6 +106,43 @@ public sealed class GpmService
         });
     }
 
+    public string BackupGpo(string domainName, Guid gpoId, string comment)
+    {
+        dynamic gpm = CreateGpm();
+        dynamic constants = gpm.GetConstants();
+        dynamic domain = gpm.GetDomain(domainName, string.Empty, constants.UseAnyDC);
+        dynamic gpo = domain.GetGPO(gpoId.ToString("B"));
+
+        var timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
+        var backupDirectory = Path.Combine(
+            StoragePaths.GpoBackups,
+            $"{SanitizeFileName(Convert.ToString(gpo.DisplayName) ?? gpoId.ToString("B"))}_{timestamp}");
+
+        Directory.CreateDirectory(backupDirectory);
+
+        try
+        {
+            _ = gpo.Backup(backupDirectory, comment, null, null);
+            return backupDirectory;
+        }
+        catch
+        {
+            try
+            {
+                if (Directory.Exists(backupDirectory) &&
+                    !Directory.EnumerateFileSystemEntries(backupDirectory).Any())
+                {
+                    Directory.Delete(backupDirectory, recursive: true);
+                }
+            }
+            catch
+            {
+            }
+
+            throw;
+        }
+    }
+
     public void SetWmiFilter(string domainName, Guid gpoId, WmiFilterInfo? filter)
     {
         dynamic gpm = CreateGpm();
@@ -121,6 +158,16 @@ public sealed class GpmService
 
         dynamic wmiFilter = domain.GetWMIFilter(filter.Path);
         gpo.SetWMIFilter(wmiFilter);
+    }
+
+    private static string SanitizeFileName(string value)
+    {
+        foreach (var invalid in Path.GetInvalidFileNameChars())
+        {
+            value = value.Replace(invalid, '_');
+        }
+
+        return value;
     }
 
     private static dynamic CreateGpm()
