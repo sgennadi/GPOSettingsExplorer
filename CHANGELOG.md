@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Added structured GUI editors for Group Policy Preferences Registry, Drive Maps, Services, Shortcuts, Files, and Folders.
+- Added generic GPP XML browsing, validation, import/replace, export, repair, and raw editing.
+- Added GPO copy, backup import, restore, comparison, conflict detection, security/delegation management, WMI filter management, audit logging, and safe automatic backups before write operations.
+- Added structured Files and Folders editing for Computer and User Configuration, including create/edit/clone/delete, attributes, delete behavior, item-level targeting, raw XML handoff, and audit integration.
+
 ## 0.1.0 - Initial development
 
 - Portable WPF application foundation.
