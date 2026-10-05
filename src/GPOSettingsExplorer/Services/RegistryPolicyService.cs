@@ -38,6 +38,8 @@ public sealed class RegistryPolicyService
         try
         {
             using var root = OpenRegistryRoot(policyObject, definition.Scope);
+            session.State = InferState(root, definition, session.State);
+
             foreach (var element in definition.Elements)
             {
                 session.Values[element.Id] = ReadElement(root, element);
@@ -118,6 +120,71 @@ public sealed class RegistryPolicyService
 
         var safeHandle = new SafeRegistryHandle(rawHandle, ownsHandle: true);
         return RegistryKey.FromHandle(safeHandle, RegistryView.Default);
+    }
+
+    private static PolicyEditState InferState(
+        RegistryKey root,
+        AdmxPolicyDefinition definition,
+        PolicyEditState fallback)
+    {
+        if (!string.IsNullOrWhiteSpace(definition.Key) &&
+            !string.IsNullOrWhiteSpace(definition.ValueName))
+        {
+            using var key = root.OpenSubKey(definition.Key, writable: false);
+            var raw = key?.GetValue(
+                definition.ValueName,
+                null,
+                RegistryValueOptions.DoNotExpandEnvironmentNames);
+
+            if (raw is not null)
+            {
+                if (definition.EnabledValue is not null &&
+                    !definition.EnabledValue.Delete &&
+                    ValuesEqual(raw, definition.EnabledValue.Value))
+                {
+                    return PolicyEditState.Enabled;
+                }
+
+                if (definition.DisabledValue is not null &&
+                    !definition.DisabledValue.Delete &&
+                    ValuesEqual(raw, definition.DisabledValue.Value))
+                {
+                    return PolicyEditState.Disabled;
+                }
+            }
+        }
+
+        if (fallback != PolicyEditState.NotConfigured)
+        {
+            return fallback;
+        }
+
+        foreach (var element in definition.Elements)
+        {
+            if (element.Type == AdmxElementType.List)
+            {
+                using var listKey = root.OpenSubKey(element.Key, writable: false);
+                if (listKey is not null && listKey.GetValueNames().Length > 0)
+                {
+                    return PolicyEditState.Enabled;
+                }
+
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(element.ValueName))
+            {
+                continue;
+            }
+
+            using var key = root.OpenSubKey(element.Key, writable: false);
+            if (key?.GetValue(element.ValueName, null, RegistryValueOptions.DoNotExpandEnvironmentNames) is not null)
+            {
+                return PolicyEditState.Enabled;
+            }
+        }
+
+        return PolicyEditState.NotConfigured;
     }
 
     private static object? ReadElement(RegistryKey root, AdmxElementDefinition element)
