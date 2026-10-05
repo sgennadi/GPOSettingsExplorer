@@ -770,19 +770,28 @@ public sealed class GppScheduledTaskService
     {
         XNamespace ns = TaskSchedulerNamespace;
 
-        XElement trigger = item.Scope.Equals(
-            "Computer",
-            StringComparison.OrdinalIgnoreCase)
-            ? new XElement(
-                ns + "BootTrigger",
-                new XElement(
-                    ns + "Enabled",
-                    "true"))
-            : new XElement(
-                ns + "LogonTrigger",
-                new XElement(
-                    ns + "Enabled",
-                    "true"));
+        XElement? triggers = null;
+
+        if (!item.IsImmediate)
+        {
+            var trigger = item.Scope.Equals(
+                "Computer",
+                StringComparison.OrdinalIgnoreCase)
+                ? new XElement(
+                    ns + "BootTrigger",
+                    new XElement(
+                        ns + "Enabled",
+                        "true"))
+                : new XElement(
+                    ns + "LogonTrigger",
+                    new XElement(
+                        ns + "Enabled",
+                        "true"));
+
+            triggers = new XElement(
+                ns + "Triggers",
+                trigger);
+        }
 
         var task = new XElement(
             ns + "Task",
@@ -794,9 +803,7 @@ public sealed class GppScheduledTaskService
                 new XElement(
                     ns + "Author",
                     item.Author)),
-            new XElement(
-                ns + "Triggers",
-                trigger),
+            triggers,
             new XElement(
                 ns + "Principals",
                 new XElement(
