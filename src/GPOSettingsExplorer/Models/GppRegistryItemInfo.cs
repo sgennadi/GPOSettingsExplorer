@@ -42,4 +42,30 @@ public sealed class GppRegistryItemInfo
 
     public string SearchText =>
         $"{GpoName} {Scope} {ActionDisplay} {Hive} {Key} {ValueName} {ValueType} {ValueData} {Description}";
+
+    public GppRegistryItemInfo Clone() => new()
+    {
+        GpoId = GpoId,
+        GpoName = GpoName,
+        DomainName = DomainName,
+        Scope = Scope,
+        XmlPath = XmlPath,
+        Uid = Uid,
+        Ordinal = Ordinal,
+        DisplayName = DisplayName,
+        Description = Description,
+        Action = Action,
+        Hive = Hive,
+        Key = Key,
+        ValueName = ValueName,
+        ValueType = ValueType,
+        ValueData = ValueData,
+        DefaultValue = DefaultValue,
+        DisplayDecimal = DisplayDecimal,
+        Disabled = Disabled,
+        BypassErrors = BypassErrors,
+        RemoveWhenNoLongerApplied = RemoveWhenNoLongerApplied,
+        RunInUserContext = RunInUserContext,
+        FiltersXml = FiltersXml
+    };
 }
