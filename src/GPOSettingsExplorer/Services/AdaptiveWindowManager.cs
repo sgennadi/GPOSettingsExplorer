@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
@@ -7,6 +8,9 @@ namespace GPOSettingsExplorer.Services;
 internal static class AdaptiveWindowManager
 {
     private const uint MonitorDefaultToNearest = 2;
+
+    private static readonly ConditionalWeakTable<Window, OriginalLimits>
+        OriginalWindowLimits = new();
 
     public static void Register()
     {
@@ -23,14 +27,57 @@ internal static class AdaptiveWindowManager
         if (sender is not Window window)
             return;
 
-        ConstrainToCurrentMonitor(window);
+        if (!OriginalWindowLimits.TryGetValue(
+                window,
+                out _))
+        {
+            OriginalWindowLimits.Add(
+                window,
+                new OriginalLimits(
+                    window.MinWidth,
+                    window.MinHeight,
+                    window.MaxWidth,
+                    window.MaxHeight));
+
+            window.LocationChanged +=
+                Window_LocationChanged;
+
+            window.StateChanged +=
+                Window_StateChanged;
+        }
+
+        ConstrainToCurrentMonitor(
+            window);
+    }
+
+    private static void Window_LocationChanged(
+        object? sender,
+        EventArgs e)
+    {
+        if (sender is Window window)
+        {
+            ConstrainToCurrentMonitor(
+                window);
+        }
+    }
+
+    private static void Window_StateChanged(
+        object? sender,
+        EventArgs e)
+    {
+        if (sender is Window window)
+        {
+            ConstrainToCurrentMonitor(
+                window);
+        }
     }
 
     private static void ConstrainToCurrentMonitor(
         Window window)
     {
         var handle =
-            new WindowInteropHelper(window).Handle;
+            new WindowInteropHelper(
+                window).Handle;
 
         if (handle == nint.Zero)
             return;
@@ -56,13 +103,22 @@ internal static class AdaptiveWindowManager
             return;
 
         var dpi =
-            GetDpiForWindow(handle);
+            GetDpiForWindow(
+                handle);
 
         if (dpi == 0)
             dpi = 96;
 
         var scale =
             dpi / 96.0;
+
+        var workLeft =
+            info.Work.Left /
+            scale;
+
+        var workTop =
+            info.Work.Top /
+            scale;
 
         var workWidth =
             (info.Work.Right -
@@ -74,62 +130,121 @@ internal static class AdaptiveWindowManager
              info.Work.Top) /
             scale;
 
-        const double margin = 12.0;
+        const double outerMargin =
+            12.0;
 
-        var maxWidth =
+        var monitorMaxWidth =
             Math.Max(
                 320,
-                workWidth - margin);
+                workWidth -
+                outerMargin);
 
-        var maxHeight =
+        var monitorMaxHeight =
             Math.Max(
                 240,
-                workHeight - margin);
+                workHeight -
+                outerMargin);
+
+        var original =
+            OriginalWindowLimits.GetValue(
+                window,
+                current =>
+                    new OriginalLimits(
+                        current.MinWidth,
+                        current.MinHeight,
+                        current.MaxWidth,
+                        current.MaxHeight));
 
         window.MaxWidth =
-            Math.Min(
-                window.MaxWidth,
-                maxWidth);
+            double.IsPositiveInfinity(
+                original.MaxWidth)
+                ? monitorMaxWidth
+                : Math.Min(
+                    original.MaxWidth,
+                    monitorMaxWidth);
 
         window.MaxHeight =
+            double.IsPositiveInfinity(
+                original.MaxHeight)
+                ? monitorMaxHeight
+                : Math.Min(
+                    original.MaxHeight,
+                    monitorMaxHeight);
+
+        window.MinWidth =
             Math.Min(
-                window.MaxHeight,
-                maxHeight);
+                original.MinWidth,
+                window.MaxWidth);
+
+        window.MinHeight =
+            Math.Min(
+                original.MinHeight,
+                window.MaxHeight);
 
         if (window.WindowState !=
             WindowState.Normal)
             return;
 
-        if (!double.IsNaN(window.Width) &&
-            window.Width > maxWidth)
+        if (!double.IsNaN(
+                window.Width) &&
+            window.Width >
+            window.MaxWidth)
         {
             window.Width =
-                maxWidth;
+                window.MaxWidth;
         }
 
-        if (!double.IsNaN(window.Height) &&
-            window.Height > maxHeight)
+        if (!double.IsNaN(
+                window.Height) &&
+            window.Height >
+            window.MaxHeight)
         {
             window.Height =
-                maxHeight;
+                window.MaxHeight;
         }
 
-        if (window.MinWidth >
-            maxWidth)
+        var right =
+            workLeft +
+            workWidth;
+
+        var bottom =
+            workTop +
+            workHeight;
+
+        if (window.Left <
+            workLeft)
         {
-            window.MinWidth =
-                Math.Min(
-                    640,
-                    maxWidth);
+            window.Left =
+                workLeft;
         }
 
-        if (window.MinHeight >
-            maxHeight)
+        if (window.Top <
+            workTop)
         {
-            window.MinHeight =
-                Math.Min(
-                    420,
-                    maxHeight);
+            window.Top =
+                workTop;
+        }
+
+        if (window.Left +
+            window.ActualWidth >
+            right)
+        {
+            window.Left =
+                Math.Max(
+                    workLeft,
+                    right -
+                    window.ActualWidth);
+        }
+
+        if (window.Top +
+            window.ActualHeight >
+            bottom)
+        {
+            window.Top =
+                Math.Max(
+                    workTop,
+                    bottom -
+                    window.ActualHeight);
         }
     }
 
@@ -169,4 +284,10 @@ internal static class AdaptiveWindowManager
         public int Right;
         public int Bottom;
     }
+
+    private sealed record OriginalLimits(
+        double MinWidth,
+        double MinHeight,
+        double MaxWidth,
+        double MaxHeight);
 }
