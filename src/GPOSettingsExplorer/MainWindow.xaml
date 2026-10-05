@@ -435,8 +435,7 @@
                 <TabControl Margin="6">
                     <TabItem Header="Users">
                         <DockPanel Margin="6">
-                            <StackPanel DockPanel.Dock="Top"
-                                        Orientation="Horizontal">
+                            <WrapPanel DockPanel.Dock="Top">
                                 <TextBlock Text="Search:"
                                            VerticalAlignment="Center"/>
                                 <TextBox x:Name="GppLocalUsersSearchBox"
@@ -464,7 +463,7 @@
                                            Margin="14,0,0,0"
                                            VerticalAlignment="Center"
                                            Foreground="DimGray"/>
-                            </StackPanel>
+                            </WrapPanel>
 
                             <DataGrid x:Name="GppLocalUsersGrid"
                                       MouseDoubleClick="GppLocalUsersGrid_MouseDoubleClick">
@@ -512,8 +511,7 @@
 
                     <TabItem Header="Groups">
                         <DockPanel Margin="6">
-                            <StackPanel DockPanel.Dock="Top"
-                                        Orientation="Horizontal">
+                            <WrapPanel DockPanel.Dock="Top">
                                 <TextBlock Text="Search:"
                                            VerticalAlignment="Center"/>
                                 <TextBox x:Name="GppLocalGroupsSearchBox"
@@ -541,7 +539,7 @@
                                            Margin="14,0,0,0"
                                            VerticalAlignment="Center"
                                            Foreground="DimGray"/>
-                            </StackPanel>
+                            </WrapPanel>
 
                             <DataGrid x:Name="GppLocalGroupsGrid"
                                       MouseDoubleClick="GppLocalGroupsGrid_MouseDoubleClick">
@@ -589,8 +587,7 @@
             <TabItem Header="GPP Printers"
                      Loaded="GppPrintersTab_Loaded">
                 <DockPanel Margin="6">
-                    <StackPanel DockPanel.Dock="Top"
-                                Orientation="Horizontal">
+                    <WrapPanel DockPanel.Dock="Top">
                         <TextBlock Text="Search:"
                                    VerticalAlignment="Center"/>
                         <TextBox x:Name="GppPrintersSearchBox"
@@ -624,7 +621,7 @@
                                    Margin="14,0,0,0"
                                    VerticalAlignment="Center"
                                    Foreground="DimGray"/>
-                    </StackPanel>
+                    </WrapPanel>
 
                     <DataGrid x:Name="GppPrintersGrid"
                               MouseDoubleClick="GppPrintersGrid_MouseDoubleClick">
@@ -673,8 +670,7 @@
             <TabItem Header="GPP Scheduled Tasks"
                      Loaded="GppScheduledTasksTab_Loaded">
                 <DockPanel Margin="6">
-                    <StackPanel DockPanel.Dock="Top"
-                                Orientation="Horizontal">
+                    <WrapPanel DockPanel.Dock="Top">
                         <TextBlock Text="Search:"
                                    VerticalAlignment="Center"/>
                         <TextBox x:Name="GppScheduledTasksSearchBox"
@@ -708,7 +704,7 @@
                                    Margin="14,0,0,0"
                                    VerticalAlignment="Center"
                                    Foreground="DimGray"/>
-                    </StackPanel>
+                    </WrapPanel>
 
                     <DataGrid x:Name="GppScheduledTasksGrid"
                               MouseDoubleClick="GppScheduledTasksGrid_MouseDoubleClick">
@@ -760,8 +756,7 @@
             <TabItem Header="GPP Network Shares"
                      Loaded="GppNetworkSharesTab_Loaded">
                 <DockPanel Margin="6">
-                    <StackPanel DockPanel.Dock="Top"
-                                Orientation="Horizontal">
+                    <WrapPanel DockPanel.Dock="Top">
                         <TextBlock Text="Search:"
                                    VerticalAlignment="Center"/>
                         <TextBox x:Name="GppNetworkSharesSearchBox"
@@ -783,7 +778,7 @@
                                    Margin="14,0,0,0"
                                    VerticalAlignment="Center"
                                    Foreground="DimGray"/>
-                    </StackPanel>
+                    </WrapPanel>
 
                     <DataGrid x:Name="GppNetworkSharesGrid"
                               MouseDoubleClick="GppNetworkSharesGrid_MouseDoubleClick">
@@ -832,8 +827,7 @@
             <TabItem Header="GPP INI Files"
                      Loaded="GppIniFilesTab_Loaded">
                 <DockPanel Margin="6">
-                    <StackPanel DockPanel.Dock="Top"
-                                Orientation="Horizontal">
+                    <WrapPanel DockPanel.Dock="Top">
                         <TextBlock Text="Search:"
                                    VerticalAlignment="Center"/>
                         <TextBox x:Name="GppIniFilesSearchBox"
@@ -861,7 +855,7 @@
                                    Margin="14,0,0,0"
                                    VerticalAlignment="Center"
                                    Foreground="DimGray"/>
-                    </StackPanel>
+                    </WrapPanel>
 
                     <DataGrid x:Name="GppIniFilesGrid"
                               MouseDoubleClick="GppIniFilesGrid_MouseDoubleClick">
