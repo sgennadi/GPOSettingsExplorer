@@ -13,6 +13,7 @@ public partial class MainWindow : Window
     private readonly DomainContextService _domainContextService = new();
     private readonly GpmService _gpmService = new();
     private readonly WmiFilterService _wmiFilterService = new();
+    private readonly WmiBackupService _wmiBackupService = new();
 
     private readonly ObservableCollection<GpoInfo> _gpos = new();
     private readonly ObservableCollection<PolicySettingInfo> _settings = new();
@@ -280,9 +281,34 @@ public partial class MainWindow : Window
 
         try
         {
-            await Task.Run(() => _wmiFilterService.Save(_domainContext.DomainName, filter));
+            var existing = string.IsNullOrWhiteSpace(filter.Id)
+                ? null
+                : _wmiFilters.FirstOrDefault(item =>
+                    item.Id.Equals(filter.Id, StringComparison.OrdinalIgnoreCase));
+
+            string backupPath = string.Empty;
+            if (existing is not null)
+            {
+                backupPath = _wmiBackupService.Backup(
+                    existing,
+                    "Automatic backup before editing WMI filter");
+            }
+
+            var saved = await Task.Run(() =>
+                _wmiFilterService.Save(_domainContext.DomainName, filter));
+
+            _auditService.Write(
+                existing is null ? "Create" : "Edit",
+                "WMI Filter",
+                saved.Name,
+                string.IsNullOrWhiteSpace(backupPath)
+                    ? $"ID: {saved.Id}"
+                    : $"ID: {saved.Id}; Backup: {backupPath}",
+                before: existing is null ? string.Empty : WmiSummary(existing),
+                after: WmiSummary(saved));
+
             await RefreshAllAsync();
-            StatusText.Text = "WMI filter saved";
+            StatusText.Text = existing is null ? "WMI filter created" : "WMI filter saved";
         }
         catch (Exception ex)
         {
@@ -319,8 +345,17 @@ public partial class MainWindow : Window
 
         try
         {
-            await Task.Run(() =>
+            var clone = await Task.Run(() =>
                 _wmiFilterService.Clone(_domainContext.DomainName, selected, dialog.Value));
+
+            _auditService.Write(
+                "Clone",
+                "WMI Filter",
+                clone.Name,
+                $"Source: {selected.Name}; New ID: {clone.Id}",
+                before: WmiSummary(selected),
+                after: WmiSummary(clone));
+
             await RefreshAllAsync();
             StatusText.Text = "WMI filter cloned";
         }
@@ -342,9 +377,15 @@ public partial class MainWindow : Window
             return;
         }
 
-        var text = selected.UsedByCount > 0
-            ? $"The WMI filter '{selected.Name}' is currently used by {selected.UsedByCount} GPO(s).\n\nDeleting it can affect Group Policy processing. Delete it anyway?"
-            : $"Delete WMI filter '{selected.Name}'?";
+        var usedBy = _gpos
+            .Where(gpo =>
+                !string.IsNullOrWhiteSpace(gpo.WmiFilterPath) &&
+                gpo.WmiFilterPath.Contains(selected.Id, StringComparison.OrdinalIgnoreCase))
+            .ToArray();
+
+        var text = usedBy.Length > 0
+            ? $"The WMI filter '{selected.Name}' is used by {usedBy.Length} GPO(s).\n\nGPO Settings Explorer will back up those GPOs, unlink the filter, back up the filter definition, and then delete it. Continue?"
+            : $"Delete WMI filter '{selected.Name}'? A JSON backup will be created first.";
 
         if (MessageBox.Show(this, text, "Delete WMI Filter",
                 MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
@@ -356,8 +397,41 @@ public partial class MainWindow : Window
 
         try
         {
+            var wmiBackup = _wmiBackupService.Backup(
+                selected,
+                "Automatic backup before deleting WMI filter");
+
+            foreach (var gpo in usedBy)
+            {
+                StatusText.Text = $"Backing up and unlinking {gpo.DisplayName}...";
+                var gpoBackup = await Task.Run(() =>
+                    _gpmService.BackupGpo(
+                        _domainContext.DomainName,
+                        gpo.Id,
+                        $"Automatic backup before removing WMI filter '{selected.Name}'"));
+
+                await Task.Run(() =>
+                    _gpmService.SetWmiFilter(_domainContext.DomainName, gpo.Id, null));
+
+                _auditService.Write(
+                    "Unlink WMI filter",
+                    "GPO",
+                    gpo.DisplayName,
+                    $"Filter: {selected.Name}; Backup: {gpoBackup}",
+                    before: selected.Name,
+                    after: "<None>");
+            }
+
             await Task.Run(() =>
                 _wmiFilterService.Delete(_domainContext.DomainName, selected.Id));
+
+            _auditService.Write(
+                "Delete",
+                "WMI Filter",
+                selected.Name,
+                $"ID: {selected.Id}; Used by GPOs: {usedBy.Length}; Backup: {wmiBackup}",
+                before: WmiSummary(selected));
+
             await RefreshAllAsync();
             StatusText.Text = "WMI filter deleted";
         }
@@ -439,8 +513,23 @@ public partial class MainWindow : Window
         try
         {
             var selectedFilter = picker.SelectedFilter;
+            var backup = await Task.Run(() =>
+                _gpmService.BackupGpo(
+                    _domainContext.DomainName,
+                    gpo.Id,
+                    $"Automatic backup before assigning WMI filter '{selectedFilter.Name}'"));
+
             await Task.Run(() =>
                 _gpmService.SetWmiFilter(_domainContext.DomainName, gpo.Id, selectedFilter));
+
+            _auditService.Write(
+                "Assign WMI filter",
+                "GPO",
+                gpo.DisplayName,
+                $"Backup: {backup}",
+                before: string.IsNullOrWhiteSpace(gpo.WmiFilterName) ? "<None>" : gpo.WmiFilterName,
+                after: selectedFilter.Name);
+
             await RefreshAllAsync();
             StatusText.Text = "WMI filter assigned";
         }
@@ -482,8 +571,23 @@ public partial class MainWindow : Window
 
         try
         {
+            var backup = await Task.Run(() =>
+                _gpmService.BackupGpo(
+                    _domainContext.DomainName,
+                    gpo.Id,
+                    $"Automatic backup before removing WMI filter '{gpo.WmiFilterName}'"));
+
             await Task.Run(() =>
                 _gpmService.SetWmiFilter(_domainContext.DomainName, gpo.Id, null));
+
+            _auditService.Write(
+                "Remove WMI filter",
+                "GPO",
+                gpo.DisplayName,
+                $"Backup: {backup}",
+                before: gpo.WmiFilterName,
+                after: "<None>");
+
             await RefreshAllAsync();
             StatusText.Text = "WMI filter removed";
         }
@@ -556,6 +660,14 @@ public partial class MainWindow : Window
                filter.Author.Contains(search, StringComparison.CurrentCultureIgnoreCase) ||
                filter.Id.Contains(search, StringComparison.OrdinalIgnoreCase) ||
                filter.QueriesPreview.Contains(search, StringComparison.CurrentCultureIgnoreCase);
+    }
+
+    private static string WmiSummary(WmiFilterInfo filter)
+    {
+        var rules = string.Join(" | ", filter.Rules.Select(rule =>
+            $"{rule.TargetNamespace}: {rule.Query}"));
+
+        return $"Name={filter.Name}; Description={filter.Description}; Author={filter.Author}; Rules={rules}";
     }
 
     private void SetBusy(bool busy, string? message = null)
