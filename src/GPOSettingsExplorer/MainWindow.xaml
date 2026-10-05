@@ -157,6 +157,48 @@
                 </DockPanel>
             </TabItem>
 
+            <TabItem Header="Registry Preferences" Loaded="GppRegistryTab_Loaded">
+                <DockPanel Margin="6">
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal">
+                        <TextBlock Text="Search:" VerticalAlignment="Center"/>
+                        <TextBox x:Name="GppRegistrySearchBox"
+                                 Width="340"
+                                 TextChanged="GppRegistrySearchBox_TextChanged"/>
+                        <TextBlock Text="Scope:" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                        <ComboBox x:Name="GppRegistryScopeCombo"
+                                  Width="120"
+                                  SelectionChanged="GppRegistryScopeCombo_SelectionChanged"/>
+                        <Button Content="Refresh" Click="RefreshGppRegistry_Click"/>
+                        <Button Content="New..." Click="NewGppRegistry_Click"/>
+                        <Button Content="Edit..." Click="EditGppRegistry_Click"/>
+                        <Button Content="Clone..." Click="CloneGppRegistry_Click"/>
+                        <Button Content="Delete" Click="DeleteGppRegistry_Click"/>
+                        <Button Content="Open GPO" Click="OpenGppRegistryGpo_Click"/>
+                        <TextBlock x:Name="GppRegistryCountText"
+                                   Margin="14,0,0,0"
+                                   VerticalAlignment="Center"
+                                   Foreground="DimGray"/>
+                    </StackPanel>
+
+                    <DataGrid x:Name="GppRegistryGrid"
+                              MouseDoubleClick="GppRegistryGrid_MouseDoubleClick">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="GPO" Binding="{Binding GpoName}" Width="1.4*"/>
+                            <DataGridTextColumn Header="Scope" Binding="{Binding Scope}" Width="90"/>
+                            <DataGridTextColumn Header="Name" Binding="{Binding DisplayName}" Width="1.4*"/>
+                            <DataGridTextColumn Header="Action" Binding="{Binding ActionDisplay}" Width="90"/>
+                            <DataGridTextColumn Header="Hive" Binding="{Binding Hive}" Width="150"/>
+                            <DataGridTextColumn Header="Key" Binding="{Binding Key}" Width="1.8*"/>
+                            <DataGridTextColumn Header="Value name" Binding="{Binding ValueName}" Width="1.1*"/>
+                            <DataGridTextColumn Header="Type" Binding="{Binding ValueType}" Width="110"/>
+                            <DataGridTextColumn Header="Data" Binding="{Binding ValueData}" Width="1.6*"/>
+                            <DataGridCheckBoxColumn Header="Disabled" Binding="{Binding Disabled}" Width="80"/>
+                            <DataGridCheckBoxColumn Header="Targeting" Binding="{Binding HasFilters}" Width="80"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </TabItem>
+
             <TabItem Header="GPO Links">
                 <DockPanel Margin="6">
                     <StackPanel DockPanel.Dock="Top" Orientation="Horizontal">
