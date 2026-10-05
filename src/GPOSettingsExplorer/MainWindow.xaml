@@ -115,6 +115,45 @@
                 </DockPanel>
             </TabItem>
 
+            <TabItem Header="GPP Services" Loaded="GppServicesTab_Loaded">
+                <DockPanel Margin="6">
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal">
+                        <TextBlock Text="Search:" VerticalAlignment="Center"/>
+                        <TextBox x:Name="GppServicesSearchBox"
+                                 Width="330"
+                                 TextChanged="GppServicesSearchBox_TextChanged"/>
+                        <Button Content="Load all" Click="LoadGppServices_Click"/>
+                        <Button Content="New..." Click="NewGppService_Click"/>
+                        <Button Content="Edit" Click="EditGppService_Click"/>
+                        <Button Content="Clone..." Click="CloneGppService_Click"/>
+                        <Button Content="Delete" Click="DeleteGppService_Click"/>
+                        <Button Content="Show raw XML" Click="ShowGppServiceRawXml_Click"/>
+                        <TextBlock x:Name="GppServicesCountText"
+                                   Margin="14,0,0,0"
+                                   VerticalAlignment="Center"
+                                   Foreground="DimGray"/>
+                    </StackPanel>
+
+                    <DataGrid x:Name="GppServicesGrid"
+                              MouseDoubleClick="GppServicesGrid_MouseDoubleClick">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="GPO" Binding="{Binding GpoName}" Width="1.5*"/>
+                            <DataGridTextColumn Header="Service" Binding="{Binding ServiceName}" Width="1.2*"/>
+                            <DataGridTextColumn Header="Service action" Binding="{Binding ServiceAction}" Width="135"/>
+                            <DataGridTextColumn Header="Startup" Binding="{Binding StartupType}" Width="105"/>
+                            <DataGridTextColumn Header="Timeout" Binding="{Binding Timeout}" Width="75"/>
+                            <DataGridTextColumn Header="Account" Binding="{Binding AccountName}" Width="1.2*"/>
+                            <DataGridTextColumn Header="1st failure" Binding="{Binding FirstFailure}" Width="120"/>
+                            <DataGridTextColumn Header="2nd failure" Binding="{Binding SecondFailure}" Width="120"/>
+                            <DataGridTextColumn Header="3rd failure" Binding="{Binding ThirdFailure}" Width="120"/>
+                            <DataGridCheckBoxColumn Header="Disabled" Binding="{Binding Disabled}" Width="75"/>
+                            <DataGridCheckBoxColumn Header="Targeting" Binding="{Binding HasFilters}" Width="75"/>
+                            <DataGridCheckBoxColumn Header="Legacy credential" Binding="{Binding HasStoredCredential}" Width="110"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </TabItem>
+
             <TabItem Header="GPP Drive Maps" Loaded="GppDrivesTab_Loaded">
                 <DockPanel Margin="6">
                     <StackPanel DockPanel.Dock="Top" Orientation="Horizontal">
