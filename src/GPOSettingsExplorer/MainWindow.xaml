@@ -108,6 +108,33 @@
                 </DockPanel>
             </TabItem>
 
+            <TabItem Header="GPO Links">
+                <DockPanel Margin="6">
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal">
+                        <TextBlock Text="Search links:" VerticalAlignment="Center"/>
+                        <TextBox x:Name="LinkSearchBox" Width="360" TextChanged="LinkSearchBox_TextChanged"/>
+                        <Button Content="Load links" Click="LoadLinks_Click"/>
+                        <Button Content="New link..." Click="NewLink_Click"/>
+                        <Button Content="Edit link..." Click="EditLink_Click"/>
+                        <Button Content="Remove link" Click="RemoveLink_Click"/>
+                        <Button Content="Toggle block inheritance" Click="ToggleBlockInheritance_Click"/>
+                        <TextBlock x:Name="LinksCountText" Margin="16,0,0,0" VerticalAlignment="Center" Foreground="DimGray"/>
+                    </StackPanel>
+                    <DataGrid x:Name="LinksGrid" MouseDoubleClick="LinksGrid_MouseDoubleClick">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="GPO" Binding="{Binding GpoName}" Width="1.5*"/>
+                            <DataGridTextColumn Header="Target" Binding="{Binding TargetName}" Width="1.2*"/>
+                            <DataGridTextColumn Header="Type" Binding="{Binding TargetType}" Width="90"/>
+                            <DataGridTextColumn Header="Order" Binding="{Binding Order}" Width="70"/>
+                            <DataGridCheckBoxColumn Header="Enabled" Binding="{Binding Enabled}" Width="80"/>
+                            <DataGridCheckBoxColumn Header="Enforced" Binding="{Binding Enforced}" Width="80"/>
+                            <DataGridCheckBoxColumn Header="Block inheritance" Binding="{Binding BlockInheritance}" Width="120"/>
+                            <DataGridTextColumn Header="Target DN" Binding="{Binding TargetDn}" Width="2.2*"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </TabItem>
+
             <TabItem Header="WMI Filters">
                 <DockPanel Margin="6">
                     <StackPanel DockPanel.Dock="Top" Orientation="Horizontal">
