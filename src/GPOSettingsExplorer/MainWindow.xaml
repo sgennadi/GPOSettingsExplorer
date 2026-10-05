@@ -157,6 +157,50 @@
                 </DockPanel>
             </TabItem>
 
+            <TabItem Header="GPP XML" Loaded="GppXmlTab_Loaded">
+                <DockPanel Margin="6">
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal">
+                        <TextBlock Text="Search:" VerticalAlignment="Center"/>
+                        <TextBox x:Name="GppXmlSearchBox"
+                                 Width="300"
+                                 TextChanged="GppXmlSearchBox_TextChanged"/>
+                        <TextBlock Text="Scope:" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                        <ComboBox x:Name="GppXmlScopeCombo"
+                                  Width="105"
+                                  SelectionChanged="GppXmlFilter_SelectionChanged"/>
+                        <TextBlock Text="Type:" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                        <ComboBox x:Name="GppXmlTypeCombo"
+                                  Width="170"
+                                  SelectionChanged="GppXmlFilter_SelectionChanged"/>
+                        <Button Content="Load all" Click="LoadGppXml_Click"/>
+                        <Button Content="Edit XML" Click="EditGppXml_Click"/>
+                        <Button Content="Import / Replace..." Click="ImportGppXml_Click"/>
+                        <Button Content="Export XML" Click="ExportGppXml_Click"/>
+                        <Button Content="Delete document" Click="DeleteGppXml_Click"/>
+                        <Button Content="Open file" Click="OpenGppXmlFile_Click"/>
+                        <TextBlock x:Name="GppXmlCountText"
+                                   Margin="14,0,0,0"
+                                   VerticalAlignment="Center"
+                                   Foreground="DimGray"/>
+                    </StackPanel>
+
+                    <DataGrid x:Name="GppXmlGrid"
+                              MouseDoubleClick="GppXmlGrid_MouseDoubleClick">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="GPO" Binding="{Binding GpoName}" Width="1.4*"/>
+                            <DataGridTextColumn Header="Scope" Binding="{Binding Scope}" Width="90"/>
+                            <DataGridTextColumn Header="Preferences type" Binding="{Binding PreferenceType}" Width="150"/>
+                            <DataGridTextColumn Header="Root" Binding="{Binding RootElement}" Width="130"/>
+                            <DataGridTextColumn Header="Items" Binding="{Binding ItemCount}" Width="70"/>
+                            <DataGridTextColumn Header="Modified" Binding="{Binding LastWriteTime, StringFormat={}{0:yyyy-MM-dd HH:mm:ss}}" Width="165"/>
+                            <DataGridTextColumn Header="Size" Binding="{Binding SizeBytes}" Width="90"/>
+                            <DataGridTextColumn Header="Relative path" Binding="{Binding RelativePath}" Width="1.4*"/>
+                            <DataGridTextColumn Header="CSE GUID" Binding="{Binding CseGuidText}" Width="270"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </TabItem>
+
             <TabItem Header="GPO Links">
                 <DockPanel Margin="6">
                     <StackPanel DockPanel.Dock="Top" Orientation="Horizontal">
