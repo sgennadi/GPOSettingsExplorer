@@ -1,0 +1,65 @@
+name: build
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  portable:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore
+        shell: cmd
+        run: dotnet restore GPOSettingsExplorer.sln
+
+      - name: Build
+        shell: cmd
+        run: dotnet build GPOSettingsExplorer.sln -c Release --no-restore
+
+      - name: Publish win-x64
+        shell: cmd
+        run: dotnet publish src\GPOSettingsExplorer\GPOSettingsExplorer.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o artifacts\win-x64
+
+      - name: Publish win-arm64
+        shell: cmd
+        run: dotnet publish src\GPOSettingsExplorer\GPOSettingsExplorer.csproj -c Release -r win-arm64 --self-contained true -p:PublishSingleFile=true -o artifacts\win-arm64
+
+      - name: Create portable archives
+        shell: cmd
+        run: |
+          7z a -tzip artifacts\GPOSettingsExplorer-win-x64-portable.zip .\artifacts\win-x64\*
+          7z a -tzip artifacts\GPOSettingsExplorer-win-arm64-portable.zip .\artifacts\win-arm64\*
+
+      - name: Upload portable builds
+        uses: actions/upload-artifact@v4
+        with:
+          name: GPOSettingsExplorer-portable
+          path: |
+            artifacts/GPOSettingsExplorer-win-x64-portable.zip
+            artifacts/GPOSettingsExplorer-win-arm64-portable.zip
+
+      - name: Create GitHub release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: cmd
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "%GITHUB_REF_NAME%" artifacts\GPOSettingsExplorer-win-x64-portable.zip artifacts\GPOSettingsExplorer-win-arm64-portable.zip --generate-notes --title "%GITHUB_REF_NAME%"
