@@ -42,6 +42,7 @@
                         <TextBlock Text="Search:" VerticalAlignment="Center"/>
                         <TextBox x:Name="GpoSearchBox" Width="340" TextChanged="GpoSearchBox_TextChanged"/>
                         <Button Content="Open editor" Click="OpenGpoEditor_Click"/>
+                        <Button Content="Backup selected" Click="BackupSelectedGpo_Click"/>
                         <Button Content="Build settings index" Click="BuildSettingsIndex_Click"/>
                         <Separator Width="12"/>
                         <Button Content="Assign WMI filter" Click="AssignWmiFilter_Click"/>
@@ -65,10 +66,12 @@
                         <TextBlock Text="Search all configured settings:" VerticalAlignment="Center"/>
                         <TextBox x:Name="SettingsSearchBox" Width="460" TextChanged="SettingsSearchBox_TextChanged"/>
                         <Button Content="Rebuild index" Click="BuildSettingsIndex_Click"/>
+                        <Button Content="Edit setting" Click="EditSetting_Click"/>
                         <Button Content="Open selected GPO" Click="OpenSettingGpo_Click"/>
+                        <Button Content="Export CSV" Click="ExportSettingsCsv_Click"/>
                         <TextBlock x:Name="SettingsCountText" Margin="16,0,0,0" VerticalAlignment="Center" Foreground="DimGray"/>
                     </StackPanel>
-                    <DataGrid x:Name="SettingsGrid" MouseDoubleClick="SettingsGrid_MouseDoubleClick">
+                    <DataGrid x:Name="SettingsGrid" MouseDoubleClick="EditSetting_MouseDoubleClick">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="GPO" Binding="{Binding GpoName}" Width="1.4*"/>
                             <DataGridTextColumn Header="Scope" Binding="{Binding Scope}" Width="90"/>
@@ -94,6 +97,7 @@
                         <Button Content="Delete" Click="DeleteWmiFilter_Click"/>
                         <Separator Width="12"/>
                         <Button Content="Test on computer..." Click="TestWmiFilter_Click"/>
+                        <Button Content="Show used GPOs" Click="ShowWmiUsage_Click"/>
                     </StackPanel>
                     <DataGrid x:Name="WmiGrid" MouseDoubleClick="WmiGrid_MouseDoubleClick">
                         <DataGrid.Columns>
