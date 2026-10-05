@@ -1,0 +1,58 @@
+<Window x:Class="GPOSettingsExplorer.WmiFilterEditorWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="WMI Filter Editor"
+        Width="1000" Height="650"
+        MinWidth="760" MinHeight="500"
+        WindowStartupLocation="CenterOwner">
+    <DockPanel Margin="12">
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right">
+            <Button Content="Cancel" IsCancel="True"/>
+            <Button Content="Save" IsDefault="True" Click="Save_Click"/>
+        </StackPanel>
+
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="130"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <TextBlock Grid.Row="0" Grid.Column="0" Text="Name:" VerticalAlignment="Center"/>
+            <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"/>
+
+            <TextBlock Grid.Row="1" Grid.Column="0" Text="Description:" VerticalAlignment="Center"/>
+            <TextBox Grid.Row="1" Grid.Column="1" Height="70" AcceptsReturn="True"
+                     Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}"/>
+
+            <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal">
+                <TextBlock Text="Author:" VerticalAlignment="Center"/>
+                <TextBox Width="260" Text="{Binding Author, UpdateSourceTrigger=PropertyChanged}"/>
+                <TextBlock Text="Source organization:" VerticalAlignment="Center" Margin="16,0,0,0"/>
+                <TextBox Width="260" Text="{Binding SourceOrganization, UpdateSourceTrigger=PropertyChanged}"/>
+            </StackPanel>
+
+            <GroupBox Grid.Row="3" Grid.ColumnSpan="2" Header="WQL Rules" Margin="0,8,0,8">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal">
+                        <Button Content="Add rule" Click="AddRule_Click"/>
+                        <Button Content="Remove selected rule" Click="RemoveRule_Click"/>
+                    </StackPanel>
+                    <DataGrid x:Name="RulesGrid" ItemsSource="{Binding Rules}" IsReadOnly="False"
+                              CanUserAddRows="False" SelectionMode="Single">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Language" Binding="{Binding QueryLanguage}" Width="90"/>
+                            <DataGridTextColumn Header="Namespace" Binding="{Binding TargetNamespace}" Width="180"/>
+                            <DataGridTextColumn Header="Query" Binding="{Binding Query}" Width="*"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </GroupBox>
+        </Grid>
+    </DockPanel>
+</Window>
