@@ -807,6 +807,81 @@
                 </DockPanel>
             </TabItem>
 
+            <TabItem Header="GPP INI Files"
+                     Loaded="GppIniFilesTab_Loaded">
+                <DockPanel Margin="6">
+                    <StackPanel DockPanel.Dock="Top"
+                                Orientation="Horizontal">
+                        <TextBlock Text="Search:"
+                                   VerticalAlignment="Center"/>
+                        <TextBox x:Name="GppIniFilesSearchBox"
+                                 Width="300"
+                                 TextChanged="GppIniFilesSearchBox_TextChanged"/>
+                        <TextBlock Text="Scope:"
+                                   VerticalAlignment="Center"
+                                   Margin="8,0,0,0"/>
+                        <ComboBox x:Name="GppIniFilesScopeCombo"
+                                  Width="105"
+                                  SelectionChanged="GppIniFilesScopeCombo_SelectionChanged"/>
+                        <Button Content="Load all"
+                                Click="LoadGppIniFiles_Click"/>
+                        <Button Content="New..."
+                                Click="NewGppIniFile_Click"/>
+                        <Button Content="Edit"
+                                Click="EditGppIniFile_Click"/>
+                        <Button Content="Clone..."
+                                Click="CloneGppIniFile_Click"/>
+                        <Button Content="Delete"
+                                Click="DeleteGppIniFile_Click"/>
+                        <Button Content="Show raw XML"
+                                Click="ShowGppIniFileRawXml_Click"/>
+                        <TextBlock x:Name="GppIniFilesCountText"
+                                   Margin="14,0,0,0"
+                                   VerticalAlignment="Center"
+                                   Foreground="DimGray"/>
+                    </StackPanel>
+
+                    <DataGrid x:Name="GppIniFilesGrid"
+                              MouseDoubleClick="GppIniFilesGrid_MouseDoubleClick">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="GPO"
+                                                Binding="{Binding GpoName}"
+                                                Width="1.3*"/>
+                            <DataGridTextColumn Header="Scope"
+                                                Binding="{Binding Scope}"
+                                                Width="85"/>
+                            <DataGridTextColumn Header="Action"
+                                                Binding="{Binding ActionDisplay}"
+                                                Width="85"/>
+                            <DataGridTextColumn Header="File"
+                                                Binding="{Binding Path}"
+                                                Width="1.7*"/>
+                            <DataGridTextColumn Header="Section"
+                                                Binding="{Binding Section}"
+                                                Width="1.1*"/>
+                            <DataGridTextColumn Header="Property"
+                                                Binding="{Binding Property}"
+                                                Width="1.2*"/>
+                            <DataGridTextColumn Header="Value"
+                                                Binding="{Binding Value}"
+                                                Width="1.6*"/>
+                            <DataGridTextColumn Header="Delete target"
+                                                Binding="{Binding DeleteTargetDisplay}"
+                                                Width="95"/>
+                            <DataGridTextColumn Header="Description"
+                                                Binding="{Binding Description}"
+                                                Width="1.3*"/>
+                            <DataGridCheckBoxColumn Header="Disabled"
+                                                    Binding="{Binding Disabled}"
+                                                    Width="75"/>
+                            <DataGridCheckBoxColumn Header="Targeting"
+                                                    Binding="{Binding HasFilters}"
+                                                    Width="75"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </TabItem>
+
             <TabItem x:Name="GppXmlTab" Header="GPP XML" Loaded="GppXmlTab_Loaded">
                 <DockPanel Margin="6">
                     <StackPanel DockPanel.Dock="Top" Orientation="Horizontal">
