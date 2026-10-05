@@ -98,7 +98,11 @@ public sealed class RegistryPolicyService
 
     private static IGroupPolicyObject Open(GpoInfo gpo, string domainDistinguishedName)
     {
-        var instance = (IGroupPolicyObject)new GroupPolicyObjectCom();
+        var comType = Type.GetTypeFromCLSID(new Guid("EA502722-A23D-11D1-A7D3-0000F87571E3"))
+            ?? throw new InvalidOperationException("Windows Group Policy API is unavailable.");
+        var rawInstance = Activator.CreateInstance(comType)
+            ?? throw new InvalidOperationException("Unable to create the Windows Group Policy object.");
+        var instance = (IGroupPolicyObject)rawInstance;
         var ldapPath = $"LDAP://CN={gpo.Id:B},CN=Policies,CN=System,{domainDistinguishedName}";
         ThrowIfFailed(instance.OpenDSGPO(ldapPath, GpoOpenLoadRegistry));
         return instance;
