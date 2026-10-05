@@ -141,6 +141,39 @@
                 </DockPanel>
             </TabItem>
 
+            <TabItem Header="Security & Delegation">
+                <DockPanel Margin="6">
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal">
+                        <TextBlock Text="GPO:" VerticalAlignment="Center"/>
+                        <ComboBox x:Name="SecurityGpoCombo"
+                                  Width="330"
+                                  DisplayMemberPath="DisplayName"
+                                  SelectionChanged="SecurityGpoCombo_SelectionChanged"/>
+                        <Button Content="Refresh" Click="RefreshSecurity_Click"/>
+                        <Separator Width="12"/>
+                        <Button Content="Add Security Filter..." Click="AddSecurityFilter_Click"/>
+                        <Button Content="Add Delegation..." Click="AddDelegation_Click"/>
+                        <Button Content="Change..." Click="ChangePermission_Click"/>
+                        <Button Content="Remove" Click="RemovePermission_Click"/>
+                        <Separator Width="12"/>
+                        <TextBlock Text="Search:" VerticalAlignment="Center"/>
+                        <TextBox x:Name="PermissionSearchBox" Width="230" TextChanged="PermissionSearchBox_TextChanged"/>
+                        <TextBlock x:Name="PermissionCountText" Margin="12,0,0,0" VerticalAlignment="Center" Foreground="DimGray"/>
+                    </StackPanel>
+                    <DataGrid x:Name="PermissionGrid" MouseDoubleClick="PermissionGrid_MouseDoubleClick">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="140"/>
+                            <DataGridTextColumn Header="Trustee" Binding="{Binding TrusteeDisplay}" Width="1.5*"/>
+                            <DataGridTextColumn Header="Permission" Binding="{Binding PermissionDisplay}" Width="1.7*"/>
+                            <DataGridCheckBoxColumn Header="Inherited" Binding="{Binding Inherited}" Width="80"/>
+                            <DataGridCheckBoxColumn Header="Denied" Binding="{Binding Denied}" Width="70"/>
+                            <DataGridTextColumn Header="SID" Binding="{Binding TrusteeSid}" Width="1.5*"/>
+                            <DataGridTextColumn Header="Directory path" Binding="{Binding TrusteeDsPath}" Width="2*"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </TabItem>
+
             <TabItem Header="WMI Filters">
                 <DockPanel Margin="6">
                     <StackPanel DockPanel.Dock="Top" Orientation="Horizontal">
