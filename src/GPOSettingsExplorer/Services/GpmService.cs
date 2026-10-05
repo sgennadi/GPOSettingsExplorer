@@ -1,3 +1,4 @@
+using System.IO;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Xml.Linq;
@@ -33,8 +34,9 @@ public sealed class GpmService
                 // A missing filter may surface as either null or a COM status code.
             }
 
-            var idText = Convert.ToString(gpo.ID) ?? string.Empty;
-            if (!Guid.TryParse(idText, out var id))
+            string idText = Convert.ToString((object?)gpo.ID) ?? string.Empty;
+            Guid id;
+            if (!Guid.TryParse(idText, out id))
             {
                 continue;
             }
