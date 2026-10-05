@@ -184,9 +184,7 @@ public sealed class GppEnvironmentEditorWindow : Window
             Content =
                 "Add or remove a semicolon-delimited segment of the system PATH variable",
             IsChecked =
-                item.PartialPath,
-            TextWrapping =
-                TextWrapping.Wrap
+                item.PartialPath
         };
 
         AddRow(
