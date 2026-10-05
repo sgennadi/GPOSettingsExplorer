@@ -65,6 +65,7 @@
 
     <Style TargetType="{x:Type TextBlock}">
         <Setter Property="TextTrimming" Value="None"/>
+        <Setter Property="TextWrapping" Value="Wrap"/>
         <Setter Property="UseLayoutRounding" Value="True"/>
     </Style>
 
@@ -109,11 +110,19 @@
         <Setter Property="SnapsToDevicePixels" Value="True"/>
     </Style>
 
+    <DataTemplate x:Key="WrappingColumnHeaderTemplate">
+        <TextBlock Text="{Binding}"
+                   TextWrapping="Wrap"
+                   TextTrimming="None"/>
+    </DataTemplate>
+
     <Style TargetType="{x:Type DataGridColumnHeader}">
         <Setter Property="Padding" Value="6,4"/>
         <Setter Property="MinHeight" Value="28"/>
         <Setter Property="HorizontalContentAlignment" Value="Left"/>
         <Setter Property="VerticalContentAlignment" Value="Center"/>
+        <Setter Property="ContentTemplate"
+                Value="{StaticResource WrappingColumnHeaderTemplate}"/>
     </Style>
 
     <Style TargetType="{x:Type DataGridCell}">
