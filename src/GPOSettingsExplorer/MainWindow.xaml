@@ -648,6 +648,93 @@
                 </DockPanel>
             </TabItem>
 
+            <TabItem Header="GPP Scheduled Tasks"
+                     Loaded="GppScheduledTasksTab_Loaded">
+                <DockPanel Margin="6">
+                    <StackPanel DockPanel.Dock="Top"
+                                Orientation="Horizontal">
+                        <TextBlock Text="Search:"
+                                   VerticalAlignment="Center"/>
+                        <TextBox x:Name="GppScheduledTasksSearchBox"
+                                 Width="290"
+                                 TextChanged="GppScheduledTasksSearchBox_TextChanged"/>
+                        <TextBlock Text="Scope:"
+                                   VerticalAlignment="Center"
+                                   Margin="8,0,0,0"/>
+                        <ComboBox x:Name="GppScheduledTasksScopeCombo"
+                                  Width="105"
+                                  SelectionChanged="GppScheduledTasksScopeCombo_SelectionChanged"/>
+                        <TextBlock Text="Type:"
+                                   VerticalAlignment="Center"
+                                   Margin="8,0,0,0"/>
+                        <ComboBox x:Name="GppScheduledTasksTypeCombo"
+                                  Width="190"
+                                  SelectionChanged="GppScheduledTasksTypeCombo_SelectionChanged"/>
+                        <Button Content="Load all"
+                                Click="LoadGppScheduledTasks_Click"/>
+                        <Button Content="New..."
+                                Click="NewGppScheduledTask_Click"/>
+                        <Button Content="Edit"
+                                Click="EditGppScheduledTask_Click"/>
+                        <Button Content="Clone..."
+                                Click="CloneGppScheduledTask_Click"/>
+                        <Button Content="Delete"
+                                Click="DeleteGppScheduledTask_Click"/>
+                        <Button Content="Show raw XML"
+                                Click="ShowGppScheduledTaskRawXml_Click"/>
+                        <TextBlock x:Name="GppScheduledTasksCountText"
+                                   Margin="14,0,0,0"
+                                   VerticalAlignment="Center"
+                                   Foreground="DimGray"/>
+                    </StackPanel>
+
+                    <DataGrid x:Name="GppScheduledTasksGrid"
+                              MouseDoubleClick="GppScheduledTasksGrid_MouseDoubleClick">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="GPO"
+                                                Binding="{Binding GpoName}"
+                                                Width="1.3*"/>
+                            <DataGridTextColumn Header="Scope"
+                                                Binding="{Binding Scope}"
+                                                Width="85"/>
+                            <DataGridTextColumn Header="Type"
+                                                Binding="{Binding KindDisplay}"
+                                                Width="175"/>
+                            <DataGridTextColumn Header="Task name"
+                                                Binding="{Binding TaskName}"
+                                                Width="1.4*"/>
+                            <DataGridTextColumn Header="Action"
+                                                Binding="{Binding ActionDisplay}"
+                                                Width="85"/>
+                            <DataGridTextColumn Header="Run as"
+                                                Binding="{Binding RunAs}"
+                                                Width="1.2*"/>
+                            <DataGridTextColumn Header="Logon type"
+                                                Binding="{Binding LogonType}"
+                                                Width="115"/>
+                            <DataGridTextColumn Header="Command"
+                                                Binding="{Binding Command}"
+                                                Width="1.3*"/>
+                            <DataGridTextColumn Header="Arguments"
+                                                Binding="{Binding Arguments}"
+                                                Width="1.3*"/>
+                            <DataGridTextColumn Header="Triggers"
+                                                Binding="{Binding TriggerSummary}"
+                                                Width="1.8*"/>
+                            <DataGridCheckBoxColumn Header="Enabled"
+                                                    Binding="{Binding TaskEnabled}"
+                                                    Width="70"/>
+                            <DataGridCheckBoxColumn Header="Legacy credential"
+                                                    Binding="{Binding HasStoredCredential}"
+                                                    Width="110"/>
+                            <DataGridCheckBoxColumn Header="Targeting"
+                                                    Binding="{Binding HasFilters}"
+                                                    Width="75"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </TabItem>
+
             <TabItem x:Name="GppXmlTab" Header="GPP XML" Loaded="GppXmlTab_Loaded">
                 <DockPanel Margin="6">
                     <StackPanel DockPanel.Dock="Top" Orientation="Horizontal">
