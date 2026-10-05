@@ -2,7 +2,11 @@ using System.DirectoryServices;
 
 namespace GPOSettingsExplorer.Services;
 
-public sealed record DomainContext(string DomainName, string DomainDistinguishedName, string ConnectedServer);
+public sealed record DomainContext(
+    string DomainName,
+    string DomainDistinguishedName,
+    string ConfigurationNamingContext,
+    string ConnectedServer);
 
 public sealed class DomainContextService
 {
@@ -13,10 +17,17 @@ public sealed class DomainContextService
         var defaultNamingContext = Convert.ToString(rootDse.Properties["defaultNamingContext"].Value)
             ?? throw new InvalidOperationException("The current computer is not connected to an Active Directory domain.");
 
+        var configurationNamingContext = Convert.ToString(rootDse.Properties["configurationNamingContext"].Value)
+            ?? string.Empty;
+
         var dnsHostName = Convert.ToString(rootDse.Properties["dnsHostName"].Value) ?? Environment.MachineName;
         var domainName = DistinguishedNameToDns(defaultNamingContext);
 
-        return new DomainContext(domainName, defaultNamingContext, dnsHostName);
+        return new DomainContext(
+            domainName,
+            defaultNamingContext,
+            configurationNamingContext,
+            dnsHostName);
     }
 
     private static string DistinguishedNameToDns(string distinguishedName)
