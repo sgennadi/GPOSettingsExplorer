@@ -277,6 +277,96 @@
                 </DockPanel>
             </TabItem>
 
+            <TabItem Header="GPP Files &amp; Folders" Loaded="GppFilesFoldersTab_Loaded">
+                <TabControl Margin="6">
+                    <TabItem Header="Files">
+                        <DockPanel Margin="6">
+                            <StackPanel DockPanel.Dock="Top" Orientation="Horizontal">
+                                <TextBlock Text="Search:" VerticalAlignment="Center"/>
+                                <TextBox x:Name="GppFilesSearchBox"
+                                         Width="300"
+                                         TextChanged="GppFilesSearchBox_TextChanged"/>
+                                <TextBlock Text="Scope:" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                                <ComboBox x:Name="GppFilesScopeCombo"
+                                          Width="105"
+                                          SelectionChanged="GppFilesScopeCombo_SelectionChanged"/>
+                                <Button Content="Load all" Click="LoadGppFilesFolders_Click"/>
+                                <Button Content="New..." Click="NewGppFile_Click"/>
+                                <Button Content="Edit" Click="EditGppFile_Click"/>
+                                <Button Content="Clone..." Click="CloneGppFile_Click"/>
+                                <Button Content="Delete" Click="DeleteGppFile_Click"/>
+                                <Button Content="Show raw XML" Click="ShowGppFileRawXml_Click"/>
+                                <TextBlock x:Name="GppFilesCountText"
+                                           Margin="14,0,0,0"
+                                           VerticalAlignment="Center"
+                                           Foreground="DimGray"/>
+                            </StackPanel>
+
+                            <DataGrid x:Name="GppFilesGrid"
+                                      MouseDoubleClick="GppFilesGrid_MouseDoubleClick">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="GPO" Binding="{Binding GpoName}" Width="1.3*"/>
+                                    <DataGridTextColumn Header="Scope" Binding="{Binding Scope}" Width="85"/>
+                                    <DataGridTextColumn Header="Name" Binding="{Binding DisplayName}" Width="1.2*"/>
+                                    <DataGridTextColumn Header="Action" Binding="{Binding ActionDisplay}" Width="85"/>
+                                    <DataGridTextColumn Header="Source" Binding="{Binding FromPath}" Width="1.6*"/>
+                                    <DataGridTextColumn Header="Target" Binding="{Binding TargetPath}" Width="1.7*"/>
+                                    <DataGridCheckBoxColumn Header="Read-only" Binding="{Binding ReadOnly}" Width="80"/>
+                                    <DataGridCheckBoxColumn Header="Archive" Binding="{Binding Archive}" Width="75"/>
+                                    <DataGridCheckBoxColumn Header="Hidden" Binding="{Binding Hidden}" Width="70"/>
+                                    <DataGridCheckBoxColumn Header="Disabled" Binding="{Binding Disabled}" Width="75"/>
+                                    <DataGridCheckBoxColumn Header="Targeting" Binding="{Binding HasFilters}" Width="75"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </DockPanel>
+                    </TabItem>
+
+                    <TabItem Header="Folders">
+                        <DockPanel Margin="6">
+                            <StackPanel DockPanel.Dock="Top" Orientation="Horizontal">
+                                <TextBlock Text="Search:" VerticalAlignment="Center"/>
+                                <TextBox x:Name="GppFoldersSearchBox"
+                                         Width="300"
+                                         TextChanged="GppFoldersSearchBox_TextChanged"/>
+                                <TextBlock Text="Scope:" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                                <ComboBox x:Name="GppFoldersScopeCombo"
+                                          Width="105"
+                                          SelectionChanged="GppFoldersScopeCombo_SelectionChanged"/>
+                                <Button Content="Load all" Click="LoadGppFilesFolders_Click"/>
+                                <Button Content="New..." Click="NewGppFolder_Click"/>
+                                <Button Content="Edit" Click="EditGppFolder_Click"/>
+                                <Button Content="Clone..." Click="CloneGppFolder_Click"/>
+                                <Button Content="Delete" Click="DeleteGppFolder_Click"/>
+                                <Button Content="Show raw XML" Click="ShowGppFolderRawXml_Click"/>
+                                <TextBlock x:Name="GppFoldersCountText"
+                                           Margin="14,0,0,0"
+                                           VerticalAlignment="Center"
+                                           Foreground="DimGray"/>
+                            </StackPanel>
+
+                            <DataGrid x:Name="GppFoldersGrid"
+                                      MouseDoubleClick="GppFoldersGrid_MouseDoubleClick">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="GPO" Binding="{Binding GpoName}" Width="1.3*"/>
+                                    <DataGridTextColumn Header="Scope" Binding="{Binding Scope}" Width="85"/>
+                                    <DataGridTextColumn Header="Name" Binding="{Binding DisplayName}" Width="1.2*"/>
+                                    <DataGridTextColumn Header="Action" Binding="{Binding ActionDisplay}" Width="85"/>
+                                    <DataGridTextColumn Header="Path" Binding="{Binding Path}" Width="2.1*"/>
+                                    <DataGridCheckBoxColumn Header="Read-only" Binding="{Binding ReadOnly}" Width="80"/>
+                                    <DataGridCheckBoxColumn Header="Archive" Binding="{Binding Archive}" Width="75"/>
+                                    <DataGridCheckBoxColumn Header="Hidden" Binding="{Binding Hidden}" Width="70"/>
+                                    <DataGridCheckBoxColumn Header="Delete files" Binding="{Binding DeleteFiles}" Width="90"/>
+                                    <DataGridCheckBoxColumn Header="Delete subfolders" Binding="{Binding DeleteSubFolders}" Width="110"/>
+                                    <DataGridCheckBoxColumn Header="Delete folder" Binding="{Binding DeleteFolder}" Width="90"/>
+                                    <DataGridCheckBoxColumn Header="Disabled" Binding="{Binding Disabled}" Width="75"/>
+                                    <DataGridCheckBoxColumn Header="Targeting" Binding="{Binding HasFilters}" Width="75"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </DockPanel>
+                    </TabItem>
+                </TabControl>
+            </TabItem>
+
             <TabItem x:Name="GppXmlTab" Header="GPP XML" Loaded="GppXmlTab_Loaded">
                 <DockPanel Margin="6">
                     <StackPanel DockPanel.Dock="Top" Orientation="Horizontal">
