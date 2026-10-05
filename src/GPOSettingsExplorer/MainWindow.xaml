@@ -86,6 +86,28 @@
                 </DockPanel>
             </TabItem>
 
+            <TabItem Header="ADMX Catalog">
+                <DockPanel Margin="6">
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal">
+                        <TextBlock Text="Search all Administrative Template policies:" VerticalAlignment="Center"/>
+                        <TextBox x:Name="AdmxSearchBox" Width="440" TextChanged="AdmxSearchBox_TextChanged"/>
+                        <Button Content="Load catalog" Click="LoadAdmxCatalog_Click"/>
+                        <Button Content="Configure in GPO..." Click="ConfigureAdmxPolicy_Click"/>
+                        <TextBlock x:Name="AdmxCountText" Margin="16,0,0,0" VerticalAlignment="Center" Foreground="DimGray"/>
+                    </StackPanel>
+                    <DataGrid x:Name="AdmxGrid" MouseDoubleClick="AdmxGrid_MouseDoubleClick">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Setting" Binding="{Binding DisplayName}" Width="2*"/>
+                            <DataGridTextColumn Header="Scope" Binding="{Binding Scope}" Width="100"/>
+                            <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="1.7*"/>
+                            <DataGridTextColumn Header="ADMX" Binding="{Binding AdmxFile}" Width="160"/>
+                            <DataGridTextColumn Header="Registry key" Binding="{Binding Key}" Width="1.5*"/>
+                            <DataGridTextColumn Header="Registry value" Binding="{Binding ValueName}" Width="1.1*"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </TabItem>
+
             <TabItem Header="WMI Filters">
                 <DockPanel Margin="6">
                     <StackPanel DockPanel.Dock="Top" Orientation="Horizontal">
