@@ -408,6 +408,162 @@
                 </TabControl>
             </TabItem>
 
+            <TabItem Header="GPP Local Users &amp; Groups"
+                     Loaded="GppLocalUsersGroupsTab_Loaded">
+                <TabControl Margin="6">
+                    <TabItem Header="Users">
+                        <DockPanel Margin="6">
+                            <StackPanel DockPanel.Dock="Top"
+                                        Orientation="Horizontal">
+                                <TextBlock Text="Search:"
+                                           VerticalAlignment="Center"/>
+                                <TextBox x:Name="GppLocalUsersSearchBox"
+                                         Width="300"
+                                         TextChanged="GppLocalUsersSearchBox_TextChanged"/>
+                                <TextBlock Text="Scope:"
+                                           VerticalAlignment="Center"
+                                           Margin="8,0,0,0"/>
+                                <ComboBox x:Name="GppLocalUsersScopeCombo"
+                                          Width="105"
+                                          SelectionChanged="GppLocalUsersScopeCombo_SelectionChanged"/>
+                                <Button Content="Load all"
+                                        Click="LoadGppLocalUsersGroups_Click"/>
+                                <Button Content="New..."
+                                        Click="NewGppLocalUser_Click"/>
+                                <Button Content="Edit"
+                                        Click="EditGppLocalUser_Click"/>
+                                <Button Content="Clone..."
+                                        Click="CloneGppLocalUser_Click"/>
+                                <Button Content="Delete"
+                                        Click="DeleteGppLocalUser_Click"/>
+                                <Button Content="Show raw XML"
+                                        Click="ShowGppLocalUserRawXml_Click"/>
+                                <TextBlock x:Name="GppLocalUsersCountText"
+                                           Margin="14,0,0,0"
+                                           VerticalAlignment="Center"
+                                           Foreground="DimGray"/>
+                            </StackPanel>
+
+                            <DataGrid x:Name="GppLocalUsersGrid"
+                                      MouseDoubleClick="GppLocalUsersGrid_MouseDoubleClick">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="GPO"
+                                                        Binding="{Binding GpoName}"
+                                                        Width="1.3*"/>
+                                    <DataGridTextColumn Header="Scope"
+                                                        Binding="{Binding Scope}"
+                                                        Width="85"/>
+                                    <DataGridTextColumn Header="User"
+                                                        Binding="{Binding UserName}"
+                                                        Width="1.1*"/>
+                                    <DataGridTextColumn Header="Action"
+                                                        Binding="{Binding ActionDisplay}"
+                                                        Width="85"/>
+                                    <DataGridTextColumn Header="Rename to"
+                                                        Binding="{Binding NewName}"
+                                                        Width="1.1*"/>
+                                    <DataGridTextColumn Header="Full name"
+                                                        Binding="{Binding FullName}"
+                                                        Width="1.2*"/>
+                                    <DataGridTextColumn Header="Description"
+                                                        Binding="{Binding AccountDescription}"
+                                                        Width="1.5*"/>
+                                    <DataGridCheckBoxColumn Header="Account disabled"
+                                                            Binding="{Binding AccountDisabled}"
+                                                            Width="105"/>
+                                    <DataGridCheckBoxColumn Header="Never expires"
+                                                            Binding="{Binding PasswordNeverExpires}"
+                                                            Width="100"/>
+                                    <DataGridCheckBoxColumn Header="Legacy credential"
+                                                            Binding="{Binding HasStoredCredential}"
+                                                            Width="110"/>
+                                    <DataGridCheckBoxColumn Header="Item disabled"
+                                                            Binding="{Binding Disabled}"
+                                                            Width="90"/>
+                                    <DataGridCheckBoxColumn Header="Targeting"
+                                                            Binding="{Binding HasFilters}"
+                                                            Width="75"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </DockPanel>
+                    </TabItem>
+
+                    <TabItem Header="Groups">
+                        <DockPanel Margin="6">
+                            <StackPanel DockPanel.Dock="Top"
+                                        Orientation="Horizontal">
+                                <TextBlock Text="Search:"
+                                           VerticalAlignment="Center"/>
+                                <TextBox x:Name="GppLocalGroupsSearchBox"
+                                         Width="300"
+                                         TextChanged="GppLocalGroupsSearchBox_TextChanged"/>
+                                <TextBlock Text="Scope:"
+                                           VerticalAlignment="Center"
+                                           Margin="8,0,0,0"/>
+                                <ComboBox x:Name="GppLocalGroupsScopeCombo"
+                                          Width="105"
+                                          SelectionChanged="GppLocalGroupsScopeCombo_SelectionChanged"/>
+                                <Button Content="Load all"
+                                        Click="LoadGppLocalUsersGroups_Click"/>
+                                <Button Content="New..."
+                                        Click="NewGppLocalGroup_Click"/>
+                                <Button Content="Edit"
+                                        Click="EditGppLocalGroup_Click"/>
+                                <Button Content="Clone..."
+                                        Click="CloneGppLocalGroup_Click"/>
+                                <Button Content="Delete"
+                                        Click="DeleteGppLocalGroup_Click"/>
+                                <Button Content="Show raw XML"
+                                        Click="ShowGppLocalGroupRawXml_Click"/>
+                                <TextBlock x:Name="GppLocalGroupsCountText"
+                                           Margin="14,0,0,0"
+                                           VerticalAlignment="Center"
+                                           Foreground="DimGray"/>
+                            </StackPanel>
+
+                            <DataGrid x:Name="GppLocalGroupsGrid"
+                                      MouseDoubleClick="GppLocalGroupsGrid_MouseDoubleClick">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="GPO"
+                                                        Binding="{Binding GpoName}"
+                                                        Width="1.3*"/>
+                                    <DataGridTextColumn Header="Scope"
+                                                        Binding="{Binding Scope}"
+                                                        Width="85"/>
+                                    <DataGridTextColumn Header="Group"
+                                                        Binding="{Binding GroupName}"
+                                                        Width="1.2*"/>
+                                    <DataGridTextColumn Header="SID"
+                                                        Binding="{Binding GroupSid}"
+                                                        Width="1.3*"/>
+                                    <DataGridTextColumn Header="Action"
+                                                        Binding="{Binding ActionDisplay}"
+                                                        Width="85"/>
+                                    <DataGridTextColumn Header="Rename to"
+                                                        Binding="{Binding NewName}"
+                                                        Width="1.1*"/>
+                                    <DataGridTextColumn Header="Members"
+                                                        Binding="{Binding MembersPreview}"
+                                                        Width="2*"/>
+                                    <DataGridCheckBoxColumn Header="Delete users"
+                                                            Binding="{Binding DeleteAllUsers}"
+                                                            Width="90"/>
+                                    <DataGridCheckBoxColumn Header="Delete groups"
+                                                            Binding="{Binding DeleteAllGroups}"
+                                                            Width="95"/>
+                                    <DataGridCheckBoxColumn Header="Item disabled"
+                                                            Binding="{Binding Disabled}"
+                                                            Width="90"/>
+                                    <DataGridCheckBoxColumn Header="Targeting"
+                                                            Binding="{Binding HasFilters}"
+                                                            Width="75"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </DockPanel>
+                    </TabItem>
+                </TabControl>
+            </TabItem>
+
             <TabItem x:Name="GppXmlTab" Header="GPP XML" Loaded="GppXmlTab_Loaded">
                 <DockPanel Margin="6">
                     <StackPanel DockPanel.Dock="Top" Orientation="Horizontal">
