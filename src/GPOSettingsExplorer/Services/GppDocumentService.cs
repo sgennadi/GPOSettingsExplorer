@@ -11,87 +11,87 @@ public sealed class GppDocumentService
 
     private static readonly GppDocumentTypeInfo[] KnownTypes =
     {
-        Type("Applications", @"Applications\Applications.xml",
+        CreateTypeInfo("Applications", @"Applications\Applications.xml",
             "F9C77450-3A41-477E-9310-9ACD617BD9E3",
             "0DA274B5-EB93-47A7-AAFB-65BA532D3FE6"),
 
-        Type("Data Sources", @"DataSources\DataSources.xml",
+        CreateTypeInfo("Data Sources", @"DataSources\DataSources.xml",
             "728EE579-943C-4519-9EF7-AB56765798ED",
             "1612B55C-243C-48DD-A449-FFC097B19776"),
 
-        Type("Devices", @"Devices\Devices.xml",
+        CreateTypeInfo("Devices", @"Devices\Devices.xml",
             "1A6364EB-776B-4120-ADE1-B63A406A76B5",
             "1B767E9A-7BE4-4D35-85C1-2E174A7BA951"),
 
-        Type("Drive Maps", @"Drives\Drives.xml",
+        CreateTypeInfo("Drive Maps", @"Drives\Drives.xml",
             "5794DAFD-BE60-433F-88A2-1A31939AC01F",
             "2EA1A81B-48E5-45E9-8BB7-A6E3AC170006"),
 
-        Type("Environment Variables", @"EnvironmentVariables\EnvironmentVariables.xml",
+        CreateTypeInfo("Environment Variables", @"EnvironmentVariables\EnvironmentVariables.xml",
             "0E28E245-9368-4853-AD84-6DA3BA35BB75",
             "35141B6B-498A-4CC7-AD59-CEF93D89B2CE"),
 
-        Type("Files", @"Files\Files.xml",
+        CreateTypeInfo("Files", @"Files\Files.xml",
             "7150F9BF-48AD-4DA4-A49C-29EF4A8369BA",
             "3BAE7E51-E3F4-41D0-853D-9BB9FD47605F"),
 
-        Type("Folder Options", @"FolderOptions\FolderOptions.xml",
+        CreateTypeInfo("Folder Options", @"FolderOptions\FolderOptions.xml",
             "A3F3E39B-5D83-4940-B954-28315B82F0A8",
             "3BFAE46A-7F3A-467B-8CEA-6AA34DC71F53"),
 
-        Type("Folders", @"Folders\Folders.xml",
+        CreateTypeInfo("Folders", @"Folders\Folders.xml",
             "6232C319-91AC-4931-9385-E70C2B099F0E",
             "3EC4E9D3-714D-471F-88DC-4DD4471AAB47"),
 
-        Type("INI Files", @"IniFiles\IniFiles.xml",
+        CreateTypeInfo("INI Files", @"IniFiles\IniFiles.xml",
             "74EE6C03-5363-4554-B161-627540339CAB",
             "516FC620-5D34-4B08-8165-6A06B623EDEB"),
 
-        Type("Internet Settings", @"InternetSettings\InternetSettings.xml",
+        CreateTypeInfo("Internet Settings", @"InternetSettings\InternetSettings.xml",
             "E47248BA-94CC-49C4-BBB5-9EB7F05183D0",
             "5C935941-A954-4F7C-B507-885941ECE5C4"),
 
-        Type("Local Users and Groups", @"Groups\Groups.xml",
+        CreateTypeInfo("Local Users and Groups", @"Groups\Groups.xml",
             "17D89FEC-5C44-4972-B12D-241CAEF74509",
             "79F92669-4224-476C-9C5C-6EFB4D87DF4A"),
 
-        Type("Network Options", @"NetworkOptions\NetworkOptions.xml",
+        CreateTypeInfo("Network Options", @"NetworkOptions\NetworkOptions.xml",
             "3A0DBA37-F8B2-4356-83DE-3E90BD5C261F",
             "949FB894-E883-42C6-88C1-29169720E8CA"),
 
-        Type("Network Shares", @"NetworkShares\NetworkShares.xml",
+        CreateTypeInfo("Network Shares", @"NetworkShares\NetworkShares.xml",
             "6A4C88C6-C502-4F74-8F60-2CB23EDC24E2",
             "BFCBBEB0-9DF4-4C0C-A728-434EA66A0373"),
 
-        Type("Power Options", @"PowerOptions\PowerOptions.xml",
+        CreateTypeInfo("Power Options", @"PowerOptions\PowerOptions.xml",
             "E62688F0-25FD-4C90-BFF5-F508B9D2E31F",
             "9AD2BAFE-63B4-4883-A08C-C3C6196BCAFD"),
 
-        Type("Printers", @"Printers\Printers.xml",
+        CreateTypeInfo("Printers", @"Printers\Printers.xml",
             "BC75B1ED-5833-4858-9BB8-CBF0B166DF9D",
             "A8C42CEA-CDB8-4388-97F4-5831F933DA84"),
 
-        Type("Regional Options", @"RegionalOptions\RegionalOptions.xml",
+        CreateTypeInfo("Regional Options", @"RegionalOptions\RegionalOptions.xml",
             "E5094040-C46C-4115-B030-04FB2E545B00",
             "B9CCA4DE-E2B9-4CBD-BF7D-11B6EBFBDDF7"),
 
-        Type("Registry", @"Registry\Registry.xml",
+        CreateTypeInfo("Registry", @"Registry\Registry.xml",
             "B087BE9D-ED37-454F-AF9C-04291E351182",
             "BEE07A6A-EC9F-4659-B8C9-0B1937907C83"),
 
-        Type("Scheduled Tasks", @"ScheduledTasks\ScheduledTasks.xml",
+        CreateTypeInfo("Scheduled Tasks", @"ScheduledTasks\ScheduledTasks.xml",
             "AADCED64-746C-4633-A97C-D61349046527",
             "CAB54552-DEEA-4691-817E-ED4A4D1AFC72"),
 
-        Type("Services", @"Services\Services.xml",
+        CreateTypeInfo("Services", @"Services\Services.xml",
             "91FBB303-0CD5-4055-BF42-E512A681B325",
             "CC5746A9-9B74-4BE5-AE2E-64379C86E0E4"),
 
-        Type("Shortcuts", @"Shortcuts\Shortcuts.xml",
+        CreateTypeInfo("Shortcuts", @"Shortcuts\Shortcuts.xml",
             "C418DD9D-0D14-4EFB-8FBF-CFE535C8FAC7",
             "CEFFA6E2-E3BD-421B-852C-6F6A79A59BC1"),
 
-        Type("Start Menu and Taskbar", @"StartMenuTaskbar\StartMenuTaskbar.xml",
+        CreateTypeInfo("Start Menu and Taskbar", @"StartMenuTaskbar\StartMenuTaskbar.xml",
             "E4F48E54-F38D-4884-BFB9-D4D2E5729C18",
             "CF848D48-888D-4F45-B530-6A201E62A605")
     };
