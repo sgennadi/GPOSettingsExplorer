@@ -143,7 +143,7 @@ public sealed class GppScheduledTaskService
                 : "New Scheduled Task",
             RunAs = normalizedScope == "Computer"
                 ? "SYSTEM"
-                : "%LogonDomain%\%LogonUser%",
+                : "%LogonDomain%\\%LogonUser%",
             LogonType = normalizedScope == "Computer"
                 ? "ServiceAccount"
                 : "InteractiveToken",
