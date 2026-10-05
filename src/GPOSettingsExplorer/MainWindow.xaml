@@ -735,6 +735,78 @@
                 </DockPanel>
             </TabItem>
 
+            <TabItem Header="GPP Network Shares"
+                     Loaded="GppNetworkSharesTab_Loaded">
+                <DockPanel Margin="6">
+                    <StackPanel DockPanel.Dock="Top"
+                                Orientation="Horizontal">
+                        <TextBlock Text="Search:"
+                                   VerticalAlignment="Center"/>
+                        <TextBox x:Name="GppNetworkSharesSearchBox"
+                                 Width="340"
+                                 TextChanged="GppNetworkSharesSearchBox_TextChanged"/>
+                        <Button Content="Load all"
+                                Click="LoadGppNetworkShares_Click"/>
+                        <Button Content="New..."
+                                Click="NewGppNetworkShare_Click"/>
+                        <Button Content="Edit"
+                                Click="EditGppNetworkShare_Click"/>
+                        <Button Content="Clone..."
+                                Click="CloneGppNetworkShare_Click"/>
+                        <Button Content="Delete"
+                                Click="DeleteGppNetworkShare_Click"/>
+                        <Button Content="Show raw XML"
+                                Click="ShowGppNetworkShareRawXml_Click"/>
+                        <TextBlock x:Name="GppNetworkSharesCountText"
+                                   Margin="14,0,0,0"
+                                   VerticalAlignment="Center"
+                                   Foreground="DimGray"/>
+                    </StackPanel>
+
+                    <DataGrid x:Name="GppNetworkSharesGrid"
+                              MouseDoubleClick="GppNetworkSharesGrid_MouseDoubleClick">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="GPO"
+                                                Binding="{Binding GpoName}"
+                                                Width="1.4*"/>
+                            <DataGridTextColumn Header="Action"
+                                                Binding="{Binding ActionDisplay}"
+                                                Width="85"/>
+                            <DataGridTextColumn Header="Share"
+                                                Binding="{Binding ShareName}"
+                                                Width="1.2*"/>
+                            <DataGridTextColumn Header="Path"
+                                                Binding="{Binding Path}"
+                                                Width="1.8*"/>
+                            <DataGridTextColumn Header="Comment"
+                                                Binding="{Binding Comment}"
+                                                Width="1.5*"/>
+                            <DataGridTextColumn Header="User limit"
+                                                Binding="{Binding LimitUsersDisplay}"
+                                                Width="120"/>
+                            <DataGridTextColumn Header="ABE"
+                                                Binding="{Binding AbeDisplay}"
+                                                Width="90"/>
+                            <DataGridCheckBoxColumn Header="All regular"
+                                                    Binding="{Binding AllRegular}"
+                                                    Width="80"/>
+                            <DataGridCheckBoxColumn Header="All hidden"
+                                                    Binding="{Binding AllHidden}"
+                                                    Width="80"/>
+                            <DataGridCheckBoxColumn Header="Admin drives"
+                                                    Binding="{Binding AllAdminDrive}"
+                                                    Width="85"/>
+                            <DataGridCheckBoxColumn Header="Disabled"
+                                                    Binding="{Binding Disabled}"
+                                                    Width="75"/>
+                            <DataGridCheckBoxColumn Header="Targeting"
+                                                    Binding="{Binding HasFilters}"
+                                                    Width="75"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </TabItem>
+
             <TabItem x:Name="GppXmlTab" Header="GPP XML" Loaded="GppXmlTab_Loaded">
                 <DockPanel Margin="6">
                     <StackPanel DockPanel.Dock="Top" Orientation="Horizontal">
