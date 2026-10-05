@@ -507,7 +507,320 @@ public sealed class GpmService
             }
         }
 
+            foreach (var extension in scope
+                         .Descendants()
+                         .Where(e => e.Name.LocalName == "Extension"))
+            {
+                settings.AddRange(ParseGenericExtensionSettings(
+                    extension,
+                    scopeName,
+                    gpo,
+                    settings));
+            }
+        }
+
         return settings;
+    }
+
+    private static IEnumerable<PolicySettingInfo> ParseGenericExtensionSettings(
+        XElement extension,
+        string scopeName,
+        GpoInfo gpo,
+        IReadOnlyCollection<PolicySettingInfo> existing)
+    {
+        var extensionType = GetExtensionType(extension);
+        var rows = new List<PolicySettingInfo>();
+
+        var candidates = extension
+            .Descendants()
+            .Where(e => !e.Ancestors().Any(a => a.Name.LocalName == "Policy"))
+            .Where(e => !e.DescendantsAndSelf().Any(a => a.Name.LocalName == "Policy"))
+            .Where(IsGenericSettingCandidate)
+            .ToArray();
+
+        foreach (var element in candidates)
+        {
+            if (element.Ancestors()
+                .TakeWhile(a => a != extension)
+                .Any(a => IsPreferredOuterSettingNode(a)))
+            {
+                continue;
+            }
+
+            var settingName = GetGenericSettingName(element);
+            if (string.IsNullOrWhiteSpace(settingName))
+            {
+                continue;
+            }
+
+            var category = string.IsNullOrWhiteSpace(extensionType)
+                ? GetNamespaceTail(element.Name.NamespaceName)
+                : extensionType;
+
+            var state = GetDirectOrAttributeValue(element, "State");
+            if (string.IsNullOrWhiteSpace(state))
+            {
+                var action = GetDirectOrAttributeValue(element, "action");
+                state = string.IsNullOrWhiteSpace(action)
+                    ? "Configured"
+                    : $"Configured ({ExpandPreferenceAction(action)})";
+            }
+
+            var key = FirstNonEmpty(
+                GetDirectOrAttributeValue(element, "Key"),
+                GetDirectOrAttributeValue(element, "key"),
+                FindNamedValue(element, "Key"));
+
+            var valueName = FirstNonEmpty(
+                GetDirectOrAttributeValue(element, "ValueName"),
+                GetDirectOrAttributeValue(element, "valueName"),
+                FindNamedValue(element, "ValueName"),
+                FindNamedValue(element, "Name"));
+
+            var value = BuildGenericValueSummary(element, settingName, state);
+
+            if (existing.Any(item =>
+                    item.GpoId == gpo.Id &&
+                    item.Scope.Equals(scopeName, StringComparison.OrdinalIgnoreCase) &&
+                    item.SettingName.Equals(settingName, StringComparison.CurrentCultureIgnoreCase) &&
+                    item.Category.Equals(category, StringComparison.CurrentCultureIgnoreCase) &&
+                    item.Value.Equals(value, StringComparison.CurrentCultureIgnoreCase)) ||
+                rows.Any(item =>
+                    item.SettingName.Equals(settingName, StringComparison.CurrentCultureIgnoreCase) &&
+                    item.Category.Equals(category, StringComparison.CurrentCultureIgnoreCase) &&
+                    item.Value.Equals(value, StringComparison.CurrentCultureIgnoreCase)))
+            {
+                continue;
+            }
+
+            rows.Add(new PolicySettingInfo
+            {
+                GpoId = gpo.Id,
+                GpoName = gpo.DisplayName,
+                Scope = scopeName,
+                Extension = extensionType,
+                Category = category,
+                SettingName = settingName,
+                State = state,
+                Value = value,
+                RegistryKey = key,
+                RegistryValue = valueName
+            });
+        }
+
+        return rows;
+    }
+
+    private static bool IsGenericSettingCandidate(XElement element)
+    {
+        var localName = element.Name.LocalName;
+
+        if (localName is "Extension" or "ExtensionData" or "Properties" or "Filters" or
+            "Filter" or "GPOSettingOrder" or "Policy" or "Name" or "State" or
+            "Category" or "Explain" or "Supported")
+        {
+            return false;
+        }
+
+        if (localName.EndsWith("Settings", StringComparison.OrdinalIgnoreCase) &&
+            !element.Elements().Any(child => !child.HasElements))
+        {
+            return false;
+        }
+
+        var meaningfulAttributes = element.Attributes()
+            .Where(a => !a.IsNamespaceDeclaration)
+            .Where(a => a.Name.LocalName is not ("clsid" or "uid" or "changed" or "image"))
+            .ToArray();
+
+        var directLeaves = element.Elements()
+            .Where(child => !child.HasElements)
+            .Where(child => !string.IsNullOrWhiteSpace(child.Value))
+            .ToArray();
+
+        var hasPropertiesChild = element.Elements()
+            .Any(child => child.Name.LocalName == "Properties");
+
+        var hasIdentityAttribute = element.Attributes()
+            .Any(a => a.Name.LocalName.Equals("name", StringComparison.OrdinalIgnoreCase) ||
+                      a.Name.LocalName.Equals("status", StringComparison.OrdinalIgnoreCase) ||
+                      a.Name.LocalName.Equals("path", StringComparison.OrdinalIgnoreCase) ||
+                      a.Name.LocalName.Equals("key", StringComparison.OrdinalIgnoreCase) ||
+                      a.Name.LocalName.Equals("valueName", StringComparison.OrdinalIgnoreCase));
+
+        return hasPropertiesChild ||
+               hasIdentityAttribute ||
+               meaningfulAttributes.Length > 0 ||
+               directLeaves.Length >= 2;
+    }
+
+    private static bool IsPreferredOuterSettingNode(XElement element)
+    {
+        if (element.Name.LocalName is "Extension" or "ExtensionData")
+        {
+            return false;
+        }
+
+        return element.Elements().Any(child => child.Name.LocalName == "Properties") ||
+               element.Attributes().Any(a =>
+                   a.Name.LocalName.Equals("name", StringComparison.OrdinalIgnoreCase) ||
+                   a.Name.LocalName.Equals("status", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string GetGenericSettingName(XElement element)
+    {
+        var name = FirstNonEmpty(
+            GetDirectOrAttributeValue(element, "name"),
+            GetDirectOrAttributeValue(element, "Name"),
+            GetDirectOrAttributeValue(element, "status"),
+            GetDirectOrAttributeValue(element, "displayName"),
+            GetDirectOrAttributeValue(element, "label"));
+
+        if (!string.IsNullOrWhiteSpace(name))
+        {
+            return $"{HumanizeElementName(element.Name.LocalName)}: {name}";
+        }
+
+        var key = FindNamedValue(element, "KeyName");
+        if (!string.IsNullOrWhiteSpace(key))
+        {
+            return $"{HumanizeElementName(element.Name.LocalName)}: {key}";
+        }
+
+        return HumanizeElementName(element.Name.LocalName);
+    }
+
+    private static string BuildGenericValueSummary(
+        XElement element,
+        string settingName,
+        string state)
+    {
+        var parts = new List<string>();
+
+        foreach (var attribute in element
+                     .DescendantsAndSelf()
+                     .SelectMany(e => e.Attributes())
+                     .Where(a => !a.IsNamespaceDeclaration)
+                     .Where(a => a.Name.LocalName is not ("clsid" or "uid" or "image"))
+                     .Take(64))
+        {
+            var value = attribute.Value.Trim();
+            if (string.IsNullOrWhiteSpace(value) ||
+                value.Equals(settingName, StringComparison.CurrentCultureIgnoreCase) ||
+                value.Equals(state, StringComparison.CurrentCultureIgnoreCase))
+            {
+                continue;
+            }
+
+            parts.Add($"{attribute.Name.LocalName}={value}");
+        }
+
+        foreach (var leaf in element
+                     .Descendants()
+                     .Where(e => !e.HasElements)
+                     .Where(e => !string.IsNullOrWhiteSpace(e.Value))
+                     .Take(64))
+        {
+            var value = leaf.Value.Trim();
+            if (value.Equals(settingName, StringComparison.CurrentCultureIgnoreCase) ||
+                value.Equals(state, StringComparison.CurrentCultureIgnoreCase))
+            {
+                continue;
+            }
+
+            parts.Add($"{leaf.Name.LocalName}={value}");
+        }
+
+        return string.Join("; ",
+            parts.Distinct(StringComparer.CurrentCultureIgnoreCase).Take(40));
+    }
+
+    private static string GetExtensionType(XElement extension)
+    {
+        var type = extension.Attributes()
+            .FirstOrDefault(a => a.Name.LocalName == "type")?
+            .Value;
+
+        if (!string.IsNullOrWhiteSpace(type))
+        {
+            var colon = type.LastIndexOf(':');
+            return colon >= 0 ? type[(colon + 1)..] : type;
+        }
+
+        var first = extension.Elements().FirstOrDefault();
+        return first is null
+            ? "Other"
+            : FirstNonEmpty(
+                GetNamespaceTail(first.Name.NamespaceName),
+                HumanizeElementName(first.Name.LocalName));
+    }
+
+    private static string GetNamespaceTail(string namespaceName)
+    {
+        if (string.IsNullOrWhiteSpace(namespaceName))
+        {
+            return string.Empty;
+        }
+
+        var trimmed = namespaceName.TrimEnd('/');
+        var index = trimmed.LastIndexOf('/');
+        return index >= 0 ? trimmed[(index + 1)..] : trimmed;
+    }
+
+    private static string GetDirectOrAttributeValue(XElement element, string name)
+    {
+        var attribute = element.Attributes()
+            .FirstOrDefault(a => a.Name.LocalName.Equals(name, StringComparison.OrdinalIgnoreCase));
+        if (attribute is not null)
+        {
+            return attribute.Value.Trim();
+        }
+
+        return element.Elements()
+            .FirstOrDefault(e => e.Name.LocalName.Equals(name, StringComparison.OrdinalIgnoreCase))?
+            .Value.Trim() ?? string.Empty;
+    }
+
+    private static string FindNamedValue(XElement element, string name)
+    {
+        return element.Descendants()
+            .FirstOrDefault(e => e.Name.LocalName.Equals(name, StringComparison.OrdinalIgnoreCase))?
+            .Value.Trim() ?? string.Empty;
+    }
+
+    private static string FirstNonEmpty(params string[] values) =>
+        values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value)) ?? string.Empty;
+
+    private static string ExpandPreferenceAction(string action) =>
+        action.ToUpperInvariant() switch
+        {
+            "C" => "Create",
+            "R" => "Replace",
+            "U" => "Update",
+            "D" => "Delete",
+            _ => action
+        };
+
+    private static string HumanizeElementName(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return value;
+        }
+
+        var builder = new System.Text.StringBuilder(value.Length + 8);
+        for (var i = 0; i < value.Length; i++)
+        {
+            var ch = value[i];
+            if (i > 0 && char.IsUpper(ch) && !char.IsUpper(value[i - 1]))
+            {
+                builder.Append(' ');
+            }
+
+            builder.Append(ch);
+        }
+
+        return builder.ToString();
     }
 
     private static bool IsUsefulValueElement(string localName)
