@@ -41,6 +41,8 @@ public partial class MainWindow : Window
         _gpoView.Filter = FilterGpo;
         _settingsView.Filter = FilterSetting;
         _wmiView.Filter = FilterWmi;
+
+        InitializeSecurityUi();
     }
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -88,6 +90,12 @@ public partial class MainWindow : Window
                 }
 
                 ReplaceCollection(_wmiFilters, filters);
+
+                if (SecurityGpoCombo.SelectedItem is null && _gpos.Count > 0)
+                {
+                    SecurityGpoCombo.SelectedIndex = 0;
+                }
+
                 HeaderStatusText.Text = $"{_gpos.Count:N0} GPOs | {_wmiFilters.Count:N0} WMI filters";
             }
 
