@@ -15,10 +15,6 @@ public sealed class GppDocumentService
             "F9C77450-3A41-477E-9310-9ACD617BD9E3",
             "0DA274B5-EB93-47A7-AAFB-65BA532D3FE6"),
 
-        Type("Control Panel", @"ControlPanel\ControlPanel.xml",
-            "E47248BA-94CC-49C4-BBB5-9EB7F05183D0",
-            "5C935941-A954-4F7C-B507-885941ECE5C4"),
-
         Type("Data Sources", @"DataSources\DataSources.xml",
             "728EE579-943C-4519-9EF7-AB56765798ED",
             "1612B55C-243C-48DD-A449-FFC097B19776"),
