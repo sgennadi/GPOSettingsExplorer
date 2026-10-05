@@ -41,9 +41,15 @@
                     <StackPanel DockPanel.Dock="Top" Orientation="Horizontal">
                         <TextBlock Text="Search:" VerticalAlignment="Center"/>
                         <TextBox x:Name="GpoSearchBox" Width="340" TextChanged="GpoSearchBox_TextChanged"/>
+                        <Button Content="New GPO..." Click="NewGpo_Click"/>
+                        <Button Content="Rename" Click="RenameGpo_Click"/>
+                        <Button Content="Delete" Click="DeleteGpo_Click"/>
                         <Button Content="Open editor" Click="OpenGpoEditor_Click"/>
                         <Button Content="Backup selected" Click="BackupSelectedGpo_Click"/>
                         <Button Content="Build settings index" Click="BuildSettingsIndex_Click"/>
+                        <Separator Width="12"/>
+                        <Button Content="Toggle Computer" Click="ToggleComputerScope_Click"/>
+                        <Button Content="Toggle User" Click="ToggleUserScope_Click"/>
                         <Separator Width="12"/>
                         <Button Content="Assign WMI filter" Click="AssignWmiFilter_Click"/>
                         <Button Content="Remove WMI filter" Click="RemoveWmiFilter_Click"/>
