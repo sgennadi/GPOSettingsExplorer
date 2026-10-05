@@ -505,7 +505,6 @@ public sealed class GpmService
                     RegistryValue = valueName
                 });
             }
-        }
 
             foreach (var extension in scope
                          .Descendants()
