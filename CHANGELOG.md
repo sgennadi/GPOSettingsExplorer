@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added structured INI Files editing for Computer and User Configuration, including create/update/replace/delete semantics, property/section/file deletion modes, item-level targeting, automatic backups, audit logging, clone, and raw XML handoff.
 - Added structured Network Shares editing for Computer Configuration, including create/edit/clone/delete, share path/comment, bulk share operations, user limits, access-based enumeration, item-level targeting, automatic backups, audit logging, and raw XML handoff.
 - Added structured Scheduled Tasks editing for modern TaskV2 and ImmediateTaskV2 items, including run-as/logon settings, first Exec action, Task Scheduler XML preservation, item-level targeting, safe opaque legacy cpassword preservation/removal, backup, audit, clone, and raw XML handoff.
 - Added structured GUI editors for Group Policy Preferences Registry, Drive Maps, Services, Shortcuts, Files, and Folders.
