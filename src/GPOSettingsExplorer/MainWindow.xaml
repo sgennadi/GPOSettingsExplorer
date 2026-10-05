@@ -235,6 +235,48 @@
                 </DockPanel>
             </TabItem>
 
+            <TabItem Header="GPP Shortcuts" Loaded="GppShortcutsTab_Loaded">
+                <DockPanel Margin="6">
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal">
+                        <TextBlock Text="Search:" VerticalAlignment="Center"/>
+                        <TextBox x:Name="GppShortcutsSearchBox"
+                                 Width="320"
+                                 TextChanged="GppShortcutsSearchBox_TextChanged"/>
+                        <TextBlock Text="Scope:" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                        <ComboBox x:Name="GppShortcutsScopeCombo"
+                                  Width="105"
+                                  SelectionChanged="GppShortcutsScopeCombo_SelectionChanged"/>
+                        <Button Content="Load all" Click="LoadGppShortcuts_Click"/>
+                        <Button Content="New..." Click="NewGppShortcut_Click"/>
+                        <Button Content="Edit" Click="EditGppShortcut_Click"/>
+                        <Button Content="Clone..." Click="CloneGppShortcut_Click"/>
+                        <Button Content="Delete" Click="DeleteGppShortcut_Click"/>
+                        <Button Content="Show raw XML" Click="ShowGppShortcutRawXml_Click"/>
+                        <TextBlock x:Name="GppShortcutsCountText"
+                                   Margin="14,0,0,0"
+                                   VerticalAlignment="Center"
+                                   Foreground="DimGray"/>
+                    </StackPanel>
+
+                    <DataGrid x:Name="GppShortcutsGrid"
+                              MouseDoubleClick="GppShortcutsGrid_MouseDoubleClick">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="GPO" Binding="{Binding GpoName}" Width="1.3*"/>
+                            <DataGridTextColumn Header="Scope" Binding="{Binding Scope}" Width="85"/>
+                            <DataGridTextColumn Header="Name" Binding="{Binding DisplayName}" Width="1.2*"/>
+                            <DataGridTextColumn Header="Action" Binding="{Binding ActionDisplay}" Width="85"/>
+                            <DataGridTextColumn Header="Shortcut path" Binding="{Binding ShortcutPath}" Width="1.7*"/>
+                            <DataGridTextColumn Header="Target type" Binding="{Binding TargetTypeDisplay}" Width="100"/>
+                            <DataGridTextColumn Header="Target" Binding="{Binding TargetPath}" Width="1.7*"/>
+                            <DataGridTextColumn Header="Arguments" Binding="{Binding Arguments}" Width="1.1*"/>
+                            <DataGridTextColumn Header="Icon" Binding="{Binding IconPath}" Width="1.1*"/>
+                            <DataGridCheckBoxColumn Header="Disabled" Binding="{Binding Disabled}" Width="75"/>
+                            <DataGridCheckBoxColumn Header="Targeting" Binding="{Binding HasFilters}" Width="75"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </TabItem>
+
             <TabItem x:Name="GppXmlTab" Header="GPP XML" Loaded="GppXmlTab_Loaded">
                 <DockPanel Margin="6">
                     <StackPanel DockPanel.Dock="Top" Orientation="Horizontal">
