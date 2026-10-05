@@ -212,6 +212,42 @@
                 </DockPanel>
             </TabItem>
 
+            <TabItem Header="Audit Log" Loaded="AuditTab_Loaded">
+                <DockPanel Margin="6">
+                    <StackPanel DockPanel.Dock="Top" Orientation="Vertical">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="Audit directory:" VerticalAlignment="Center"/>
+                            <TextBox x:Name="AuditPathBox" Width="520"/>
+                            <Button Content="Refresh" Click="RefreshAudit_Click"/>
+                            <Button Content="Open folder" Click="OpenAuditFolder_Click"/>
+                            <Button Content="Export CSV" Click="ExportAuditCsv_Click"/>
+                            <TextBlock Text="Search:" VerticalAlignment="Center" Margin="12,0,0,0"/>
+                            <TextBox x:Name="AuditSearchBox"
+                                     Width="260"
+                                     TextChanged="AuditSearchBox_TextChanged"/>
+                            <TextBlock x:Name="AuditCountText"
+                                       Margin="12,0,0,0"
+                                       VerticalAlignment="Center"
+                                       Foreground="DimGray"/>
+                        </StackPanel>
+                    </StackPanel>
+
+                    <DataGrid x:Name="AuditGrid">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Time" Binding="{Binding Timestamp, StringFormat={}{0:yyyy-MM-dd HH:mm:ss zzz}}" Width="190"/>
+                            <DataGridTextColumn Header="User" Binding="{Binding User}" Width="170"/>
+                            <DataGridTextColumn Header="Computer" Binding="{Binding Computer}" Width="130"/>
+                            <DataGridTextColumn Header="Action" Binding="{Binding Action}" Width="135"/>
+                            <DataGridTextColumn Header="Object type" Binding="{Binding ObjectType}" Width="125"/>
+                            <DataGridTextColumn Header="Object" Binding="{Binding ObjectName}" Width="1.5*"/>
+                            <DataGridTextColumn Header="Details" Binding="{Binding Details}" Width="2*"/>
+                            <DataGridTextColumn Header="Before" Binding="{Binding Before}" Width="1.5*"/>
+                            <DataGridTextColumn Header="After" Binding="{Binding After}" Width="1.5*"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </TabItem>
+
             <TabItem Header="Compare &amp; Conflicts">
                 <Grid Margin="6">
                     <Grid.RowDefinitions>
