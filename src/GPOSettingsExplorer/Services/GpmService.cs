@@ -130,6 +130,90 @@ public sealed class GpmService
         return id;
     }
 
+    public Guid CopyGpo(
+        string domainName,
+        Guid sourceGpoId,
+        string newDisplayName,
+        bool copyAcl)
+    {
+        if (string.IsNullOrWhiteSpace(newDisplayName))
+        {
+            throw new ArgumentException("GPO name cannot be empty.", nameof(newDisplayName));
+        }
+
+        dynamic gpm = CreateGpm();
+        dynamic constants = gpm.GetConstants();
+        dynamic domain = gpm.GetDomain(domainName, string.Empty, constants.UseAnyDC);
+        dynamic source = domain.GetGPO(sourceGpoId.ToString("B"));
+
+        var flags = copyAcl
+            ? Convert.ToInt32((object?)constants.ProcessSecurity)
+            : 0;
+
+        dynamic result = source.CopyTo(
+            flags,
+            domain,
+            newDisplayName.Trim());
+
+        EnsureGpmResultSuccess(result, "Copy GPO");
+
+        dynamic copiedGpo = result.Result;
+        string idText = Convert.ToString((object?)copiedGpo.ID) ?? string.Empty;
+
+        if (!Guid.TryParse(idText, out Guid copiedId))
+        {
+            throw new InvalidOperationException(
+                "The GPO copy completed, but the new GPO GUID could not be read.");
+        }
+
+        return copiedId;
+    }
+
+    public void ImportBackupSettings(
+        string domainName,
+        Guid targetGpoId,
+        GpoBackupInfo backup,
+        string? migrationTablePath = null)
+    {
+        if (!Directory.Exists(backup.BackupDirectory))
+        {
+            throw new DirectoryNotFoundException(
+                $"Backup directory does not exist: {backup.BackupDirectory}");
+        }
+
+        dynamic gpm = CreateGpm();
+        dynamic constants = gpm.GetConstants();
+        dynamic domain = gpm.GetDomain(domainName, string.Empty, constants.UseAnyDC);
+        dynamic target = domain.GetGPO(targetGpoId.ToString("B"));
+
+        dynamic backupDirectory = gpm.GetBackupDir(backup.BackupDirectory);
+        dynamic backupObject = backupDirectory.GetBackup(backup.BackupId.ToString("B"));
+
+        dynamic result;
+
+        if (string.IsNullOrWhiteSpace(migrationTablePath))
+        {
+            result = target.Import(0, backupObject);
+        }
+        else
+        {
+            var fullMigrationPath = Path.GetFullPath(
+                Environment.ExpandEnvironmentVariables(migrationTablePath.Trim()));
+
+            if (!File.Exists(fullMigrationPath))
+            {
+                throw new FileNotFoundException(
+                    "Migration table file was not found.",
+                    fullMigrationPath);
+            }
+
+            dynamic migrationTable = gpm.GetMigrationTable(fullMigrationPath);
+            result = target.Import(0, backupObject, migrationTable);
+        }
+
+        EnsureGpmResultSuccess(result, "Import GPO settings");
+    }
+
     public void RenameGpo(string domainName, Guid gpoId, string newDisplayName)
     {
         if (string.IsNullOrWhiteSpace(newDisplayName))
@@ -427,6 +511,39 @@ public sealed class GpmService
             GpoPermissionLevel.FullControl => constants.PermGPOEditSecurityAndDelete,
             _ => throw new InvalidOperationException("Unsupported GPO permission level.")
         };
+    }
+
+    private static void EnsureGpmResultSuccess(
+        dynamic result,
+        string operation)
+    {
+        if (result is null)
+        {
+            throw new InvalidOperationException(
+                $"{operation} did not return a GPMC result object.");
+        }
+
+        int status;
+
+        try
+        {
+            status = Convert.ToInt32((object?)result.OverallStatus());
+        }
+        catch (Microsoft.CSharp.RuntimeBinder.RuntimeBinderException)
+        {
+            status = Convert.ToInt32((object?)result.OverallStatus);
+        }
+
+        if (status < 0)
+        {
+            Marshal.ThrowExceptionForHR(status);
+        }
+
+        if (status != 0)
+        {
+            throw new InvalidOperationException(
+                $"{operation} returned GPMC status 0x{status:X8}.");
+        }
     }
 
     private static string SanitizeFileName(string value)
