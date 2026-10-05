@@ -330,7 +330,7 @@ public partial class MainWindow
         }
     }
 
-    private void ShowGppDriveRawXml_Click(object sender, RoutedEventArgs e)
+    private async void ShowGppDriveRawXml_Click(object sender, RoutedEventArgs e)
     {
         if (GppDrivesGrid.SelectedItem is not GppDriveItemInfo selected)
             return;
@@ -358,11 +358,12 @@ public partial class MainWindow
             GppXmlTypeCombo.SelectedIndex = 0;
         }
 
+        MainTabs.SelectedItem = GppXmlTab;
+        await LoadGppDocumentsAsync();
+
         GppXmlSearchBox.Text = selected.GpoName;
         GppXmlScopeCombo.SelectedItem = "User";
         GppXmlTypeCombo.SelectedItem = "Drive Maps";
-
-        MainTabs.SelectedItem = GppXmlTab;
         _gppDocumentView?.Refresh();
 
         StatusText.Text =
