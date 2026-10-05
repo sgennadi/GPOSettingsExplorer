@@ -223,13 +223,14 @@ public sealed class GppRegistryEditorWindow : Window
         };
 
         var targetingPanel = new DockPanel { Margin = new Thickness(10) };
-        targetingPanel.Children.Add(new TextBlock
+        var targetingHelp = new TextBlock
         {
             Text = "Advanced item-level targeting XML. Leave empty for no targeting. Existing targeting is preserved unless you edit it here.",
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(4, 4, 4, 8)
-        });
-        DockPanel.SetDock(targetingPanel.Children[^1], Dock.Top);
+        };
+        DockPanel.SetDock(targetingHelp, Dock.Top);
+        targetingPanel.Children.Add(targetingHelp);
 
         _filtersBox = new TextBox
         {
