@@ -141,7 +141,7 @@
                 </DockPanel>
             </TabItem>
 
-            <TabItem Header="Security & Delegation">
+            <TabItem Header="Security &amp; Delegation">
                 <DockPanel Margin="6">
                     <StackPanel DockPanel.Dock="Top" Orientation="Horizontal">
                         <TextBlock Text="GPO:" VerticalAlignment="Center"/>
