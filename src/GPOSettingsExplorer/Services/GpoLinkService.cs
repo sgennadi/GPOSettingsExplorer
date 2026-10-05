@@ -226,6 +226,7 @@ public sealed class GpoLinkService
 
     private static bool TryGetGpoId(string path, out Guid id)
     {
+        id = Guid.Empty;
         var match = GpoIdRegex.Match(path);
         return match.Success && Guid.TryParse(match.Groups["id"].Value, out id);
     }
