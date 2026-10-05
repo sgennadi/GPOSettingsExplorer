@@ -1357,8 +1357,7 @@ public sealed class GppLocalUsersGroupsService
         }
 
         if (item.UserName.Contains(
-                '\\',
-                StringComparison.Ordinal))
+                '\\'))
         {
             throw new InvalidOperationException(
                 "Local user name must not contain a domain prefix.");
