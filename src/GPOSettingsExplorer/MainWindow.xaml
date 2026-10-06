@@ -185,6 +185,92 @@
                 </DockPanel>
             </TabItem>
 
+            <TabItem Header="GPP Power Options"
+                     Loaded="GppPowerOptionsTab_Loaded">
+                <DockPanel Margin="6">
+                    <WrapPanel DockPanel.Dock="Top">
+                        <TextBlock Text="Search:"
+                                   VerticalAlignment="Center"/>
+                        <TextBox x:Name="GppPowerOptionsSearchBox"
+                                 Width="280"
+                                 TextChanged="GppPowerOptionsSearchBox_TextChanged"/>
+                        <TextBlock Text="Scope:"
+                                   VerticalAlignment="Center"
+                                   Margin="8,0,0,0"/>
+                        <ComboBox x:Name="GppPowerOptionsScopeCombo"
+                                  Width="105"
+                                  SelectionChanged="GppPowerOptionsFilter_SelectionChanged"/>
+                        <TextBlock Text="Type:"
+                                   VerticalAlignment="Center"
+                                   Margin="8,0,0,0"/>
+                        <ComboBox x:Name="GppPowerOptionsTypeCombo"
+                                  Width="150"
+                                  SelectionChanged="GppPowerOptionsFilter_SelectionChanged"/>
+                        <Button Content="Load all"
+                                Click="LoadGppPowerOptions_Click"/>
+                        <Button Content="New..."
+                                Click="NewGppPowerOption_Click"/>
+                        <Button Content="Edit"
+                                Click="EditGppPowerOption_Click"/>
+                        <Button Content="Clone..."
+                                Click="CloneGppPowerOption_Click"/>
+                        <Button Content="Delete"
+                                Click="DeleteGppPowerOption_Click"/>
+                        <Button Content="Show raw XML"
+                                Click="ShowGppPowerOptionRawXml_Click"/>
+                        <TextBlock x:Name="GppPowerOptionsCountText"
+                                   Margin="14,0,0,0"
+                                   VerticalAlignment="Center"
+                                   Foreground="DimGray"/>
+                    </WrapPanel>
+
+                    <DataGrid x:Name="GppPowerOptionsGrid"
+                              MouseDoubleClick="GppPowerOptionsGrid_MouseDoubleClick">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="GPO"
+                                                Binding="{Binding GpoName}"
+                                                Width="1.3*"/>
+                            <DataGridTextColumn Header="Scope"
+                                                Binding="{Binding Scope}"
+                                                Width="85"/>
+                            <DataGridTextColumn Header="Type"
+                                                Binding="{Binding KindDisplay}"
+                                                Width="1.3*"/>
+                            <DataGridTextColumn Header="Name"
+                                                Binding="{Binding DisplayName}"
+                                                Width="1.4*"/>
+                            <DataGridTextColumn Header="Action"
+                                                Binding="{Binding ActionDisplay}"
+                                                Width="85"/>
+                            <DataGridTextColumn Header="Plan GUID"
+                                                Binding="{Binding PlanGuid}"
+                                                Width="260"/>
+                            <DataGridCheckBoxColumn Header="Default"
+                                                    Binding="{Binding SetAsDefault}"
+                                                    Width="75"/>
+                            <DataGridTextColumn Header="Sleep AC"
+                                                Binding="{Binding SleepAfterAc}"
+                                                Width="80"/>
+                            <DataGridTextColumn Header="Sleep DC"
+                                                Binding="{Binding SleepAfterDc}"
+                                                Width="80"/>
+                            <DataGridTextColumn Header="Display AC"
+                                                Binding="{Binding DisplayOffAc}"
+                                                Width="85"/>
+                            <DataGridTextColumn Header="Display DC"
+                                                Binding="{Binding DisplayOffDc}"
+                                                Width="85"/>
+                            <DataGridCheckBoxColumn Header="Item disabled"
+                                                    Binding="{Binding Disabled}"
+                                                    Width="90"/>
+                            <DataGridCheckBoxColumn Header="Targeting"
+                                                    Binding="{Binding HasFilters}"
+                                                    Width="75"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </TabItem>
+
             <TabItem Header="GPP Environment" Loaded="GppEnvironmentTab_Loaded">
                 <DockPanel Margin="6">
                     <WrapPanel DockPanel.Dock="Top">
