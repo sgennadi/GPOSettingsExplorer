@@ -312,6 +312,49 @@
                 </DockPanel>
             </TabItem>
 
+            <TabItem Header="GPP Folder Options"
+                     Loaded="GppFolderOptionsTab_Loaded">
+                <DockPanel Margin="6">
+                    <WrapPanel DockPanel.Dock="Top">
+                        <TextBlock Text="Search:" VerticalAlignment="Center"/>
+                        <TextBox x:Name="GppFolderOptionsSearchBox"
+                                 Width="300"
+                                 TextChanged="GppFolderOptionsSearchBox_TextChanged"/>
+                        <TextBlock Text="Type:" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                        <ComboBox x:Name="GppFolderOptionsTypeCombo"
+                                  Width="170"
+                                  SelectionChanged="GppFolderOptionsType_SelectionChanged"/>
+                        <Button Content="Load all" Click="LoadGppFolderOptions_Click"/>
+                        <Button Content="New..." Click="NewGppFolderOption_Click"/>
+                        <Button Content="Edit" Click="EditGppFolderOption_Click"/>
+                        <Button Content="Clone..." Click="CloneGppFolderOption_Click"/>
+                        <Button Content="Delete" Click="DeleteGppFolderOption_Click"/>
+                        <Button Content="Show raw XML" Click="ShowGppFolderOptionRawXml_Click"/>
+                        <TextBlock x:Name="GppFolderOptionsCountText"
+                                   Margin="14,0,0,0"
+                                   VerticalAlignment="Center"
+                                   Foreground="DimGray"/>
+                    </WrapPanel>
+
+                    <DataGrid x:Name="GppFolderOptionsGrid"
+                              MouseDoubleClick="GppFolderOptionsGrid_MouseDoubleClick">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="GPO" Binding="{Binding GpoName}" Width="1.4*"/>
+                            <DataGridTextColumn Header="Scope" Binding="{Binding Scope}" Width="85"/>
+                            <DataGridTextColumn Header="Type" Binding="{Binding KindDisplay}" Width="1.4*"/>
+                            <DataGridTextColumn Header="Name" Binding="{Binding DisplayName}" Width="1.5*"/>
+                            <DataGridTextColumn Header="Hidden files" Binding="{Binding HiddenFilesDisplay}" Width="1.2*"/>
+                            <DataGridCheckBoxColumn Header="Hide extensions" Binding="{Binding HideFileExtensions}" Width="100"/>
+                            <DataGridCheckBoxColumn Header="Protected OS files" Binding="{Binding ShowSuperHidden}" Width="110"/>
+                            <DataGridCheckBoxColumn Header="Check boxes" Binding="{Binding UseCheckBoxes}" Width="85"/>
+                            <DataGridCheckBoxColumn Header="Sharing Wizard" Binding="{Binding UseSharingWizard}" Width="100"/>
+                            <DataGridCheckBoxColumn Header="Item disabled" Binding="{Binding Disabled}" Width="90"/>
+                            <DataGridCheckBoxColumn Header="Targeting" Binding="{Binding HasFilters}" Width="75"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </TabItem>
+
             <TabItem Header="GPP Regional Options"
                      Loaded="GppRegionalOptionsTab_Loaded">
                 <DockPanel Margin="6">
