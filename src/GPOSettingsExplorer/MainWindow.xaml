@@ -137,6 +137,54 @@
                 </DockPanel>
             </TabItem>
 
+            <TabItem Header="GPP Data Sources"
+                     Loaded="GppDataSourcesTab_Loaded">
+                <DockPanel Margin="6">
+                    <WrapPanel DockPanel.Dock="Top">
+                        <TextBlock Text="Search:" VerticalAlignment="Center"/>
+                        <TextBox x:Name="GppDataSourcesSearchBox"
+                                 Width="280"
+                                 TextChanged="GppDataSourcesSearchBox_TextChanged"/>
+                        <TextBlock Text="Scope:" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                        <ComboBox x:Name="GppDataSourcesScopeCombo"
+                                  Width="105"
+                                  SelectionChanged="GppDataSourcesFilter_SelectionChanged"/>
+                        <TextBlock Text="Type:" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                        <ComboBox x:Name="GppDataSourcesTypeCombo"
+                                  Width="120"
+                                  SelectionChanged="GppDataSourcesFilter_SelectionChanged"/>
+                        <Button Content="Load all" Click="LoadGppDataSources_Click"/>
+                        <Button Content="New..." Click="NewGppDataSource_Click"/>
+                        <Button Content="Edit" Click="EditGppDataSource_Click"/>
+                        <Button Content="Clone..." Click="CloneGppDataSource_Click"/>
+                        <Button Content="Delete" Click="DeleteGppDataSource_Click"/>
+                        <Button Content="Show raw XML" Click="ShowGppDataSourceRawXml_Click"/>
+                        <TextBlock x:Name="GppDataSourcesCountText"
+                                   Margin="14,0,0,0"
+                                   VerticalAlignment="Center"
+                                   Foreground="DimGray"/>
+                    </WrapPanel>
+
+                    <DataGrid x:Name="GppDataSourcesGrid"
+                              MouseDoubleClick="GppDataSourcesGrid_MouseDoubleClick">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="GPO" Binding="{Binding GpoName}" Width="1.3*"/>
+                            <DataGridTextColumn Header="Scope" Binding="{Binding Scope}" Width="85"/>
+                            <DataGridTextColumn Header="DSN type" Binding="{Binding DsnTypeDisplay}" Width="100"/>
+                            <DataGridTextColumn Header="DSN" Binding="{Binding Dsn}" Width="1.2*"/>
+                            <DataGridTextColumn Header="Action" Binding="{Binding ActionDisplay}" Width="85"/>
+                            <DataGridTextColumn Header="Driver" Binding="{Binding Driver}" Width="1.5*"/>
+                            <DataGridTextColumn Header="Description" Binding="{Binding DsnDescription}" Width="1.4*"/>
+                            <DataGridTextColumn Header="User" Binding="{Binding UserName}" Width="1.1*"/>
+                            <DataGridTextColumn Header="Attributes" Binding="{Binding AttributesPreview}" Width="2*"/>
+                            <DataGridCheckBoxColumn Header="Legacy credential" Binding="{Binding HasStoredCredential}" Width="110"/>
+                            <DataGridCheckBoxColumn Header="Item disabled" Binding="{Binding Disabled}" Width="90"/>
+                            <DataGridCheckBoxColumn Header="Targeting" Binding="{Binding HasFilters}" Width="75"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </TabItem>
+
             <TabItem Header="GPP Environment" Loaded="GppEnvironmentTab_Loaded">
                 <DockPanel Margin="6">
                     <WrapPanel DockPanel.Dock="Top">
