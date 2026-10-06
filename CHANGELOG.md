@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added structured GPP Regional Options editing for user locale, number, currency, time and date formats, with item-level targeting, backups, audit, clone/delete, and raw XML handoff.
 - Added structured GPP Power Options editing for Vista+ power plans with AC/DC settings, safe legacy read-only handling, item-level targeting, backup, audit, clone/delete, and raw XML handoff.
 - Added structured GPP Data Sources editing for ODBC System/User DSNs, driver-specific attributes, item-level targeting, safe opaque legacy credential preservation/removal, backup, audit, clone, and raw XML handoff.
 - Unified the application around a compact native Windows-style resource theme and added Per-Monitor V2 HiDPI behavior, adaptive wrapping command bars, monitor-aware dialog sizing, wrapped labels/grid headers, and no-ellipsis text handling for 125%-200% scaling and 4K displays.
