@@ -312,6 +312,71 @@
                 </DockPanel>
             </TabItem>
 
+            <TabItem Header="GPP Regional Options"
+                     Loaded="GppRegionalOptionsTab_Loaded">
+                <DockPanel Margin="6">
+                    <WrapPanel DockPanel.Dock="Top">
+                        <TextBlock Text="Search:"
+                                   VerticalAlignment="Center"/>
+                        <TextBox x:Name="GppRegionalOptionsSearchBox"
+                                 Width="300"
+                                 TextChanged="GppRegionalOptionsSearchBox_TextChanged"/>
+                        <Button Content="Load all"
+                                Click="LoadGppRegionalOptions_Click"/>
+                        <Button Content="New..."
+                                Click="NewGppRegionalOption_Click"/>
+                        <Button Content="Edit"
+                                Click="EditGppRegionalOption_Click"/>
+                        <Button Content="Clone..."
+                                Click="CloneGppRegionalOption_Click"/>
+                        <Button Content="Delete"
+                                Click="DeleteGppRegionalOption_Click"/>
+                        <Button Content="Show raw XML"
+                                Click="ShowGppRegionalOptionRawXml_Click"/>
+                        <TextBlock x:Name="GppRegionalOptionsCountText"
+                                   Margin="14,0,0,0"
+                                   VerticalAlignment="Center"
+                                   Foreground="DimGray"/>
+                    </WrapPanel>
+
+                    <DataGrid x:Name="GppRegionalOptionsGrid"
+                              MouseDoubleClick="GppRegionalOptionsGrid_MouseDoubleClick">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="GPO"
+                                                Binding="{Binding GpoName}"
+                                                Width="1.4*"/>
+                            <DataGridTextColumn Header="Locale"
+                                                Binding="{Binding LocaleName}"
+                                                Width="1.5*"/>
+                            <DataGridTextColumn Header="LCID"
+                                                Binding="{Binding LocaleId}"
+                                                Width="85"/>
+                            <DataGridTextColumn Header="Number decimal"
+                                                Binding="{Binding NumberDecimalSymbol}"
+                                                Width="100"/>
+                            <DataGridTextColumn Header="Currency"
+                                                Binding="{Binding CurrencySymbol}"
+                                                Width="90"/>
+                            <DataGridTextColumn Header="Time"
+                                                Binding="{Binding TimeFormat}"
+                                                Width="1.1*"/>
+                            <DataGridTextColumn Header="Short date"
+                                                Binding="{Binding ShortDateFormat}"
+                                                Width="1.2*"/>
+                            <DataGridTextColumn Header="Long date"
+                                                Binding="{Binding LongDateFormat}"
+                                                Width="1.8*"/>
+                            <DataGridCheckBoxColumn Header="Item disabled"
+                                                    Binding="{Binding Disabled}"
+                                                    Width="90"/>
+                            <DataGridCheckBoxColumn Header="Targeting"
+                                                    Binding="{Binding HasFilters}"
+                                                    Width="75"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </TabItem>
+
             <TabItem Header="GPP Services" Loaded="GppServicesTab_Loaded">
                 <DockPanel Margin="6">
                     <WrapPanel DockPanel.Dock="Top">
