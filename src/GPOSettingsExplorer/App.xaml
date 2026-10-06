@@ -4,26 +4,10 @@
              StartupUri="MainWindow.xaml"
              ShutdownMode="OnMainWindowClose">
     <Application.Resources>
-        <Style TargetType="Button">
-            <Setter Property="Margin" Value="4"/>
-            <Setter Property="Padding" Value="10,5"/>
-        </Style>
-        <Style TargetType="TextBox">
-            <Setter Property="Margin" Value="4"/>
-            <Setter Property="Padding" Value="5,3"/>
-        </Style>
-        <Style TargetType="ComboBox">
-            <Setter Property="Margin" Value="4"/>
-            <Setter Property="Padding" Value="4,2"/>
-        </Style>
-        <Style TargetType="DataGrid">
-            <Setter Property="Margin" Value="4"/>
-            <Setter Property="AutoGenerateColumns" Value="False"/>
-            <Setter Property="IsReadOnly" Value="True"/>
-            <Setter Property="CanUserAddRows" Value="False"/>
-            <Setter Property="CanUserDeleteRows" Value="False"/>
-            <Setter Property="SelectionMode" Value="Single"/>
-            <Setter Property="GridLinesVisibility" Value="Horizontal"/>
-        </Style>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Themes/WindowsCompact.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
     </Application.Resources>
 </Application>
