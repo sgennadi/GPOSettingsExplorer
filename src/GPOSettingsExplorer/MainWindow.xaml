@@ -312,6 +312,49 @@
                 </DockPanel>
             </TabItem>
 
+            <TabItem Header="GPP File Associations"
+                     Loaded="GppFileAssociationsTab_Loaded">
+                <DockPanel Margin="6">
+                    <WrapPanel DockPanel.Dock="Top">
+                        <TextBlock Text="Search:" VerticalAlignment="Center"/>
+                        <TextBox x:Name="GppFileAssociationsSearchBox"
+                                 Width="300"
+                                 TextChanged="GppFileAssociationsSearchBox_TextChanged"/>
+                        <TextBlock Text="Type:" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                        <ComboBox x:Name="GppFileAssociationsTypeCombo"
+                                  Width="115"
+                                  SelectionChanged="GppFileAssociationsType_SelectionChanged"/>
+                        <Button Content="Load all" Click="LoadGppFileAssociations_Click"/>
+                        <Button Content="New Open With..." Click="NewOpenWith_Click"/>
+                        <Button Content="New File Type..." Click="NewFileType_Click"/>
+                        <Button Content="Edit" Click="EditGppFileAssociation_Click"/>
+                        <Button Content="Clone..." Click="CloneGppFileAssociation_Click"/>
+                        <Button Content="Delete" Click="DeleteGppFileAssociation_Click"/>
+                        <Button Content="Show raw XML" Click="ShowGppFileAssociationRawXml_Click"/>
+                        <TextBlock x:Name="GppFileAssociationsCountText"
+                                   Margin="14,0,0,0"
+                                   VerticalAlignment="Center"
+                                   Foreground="DimGray"/>
+                    </WrapPanel>
+
+                    <DataGrid x:Name="GppFileAssociationsGrid"
+                              MouseDoubleClick="GppFileAssociationsGrid_MouseDoubleClick">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="GPO" Binding="{Binding GpoName}" Width="1.4*"/>
+                            <DataGridTextColumn Header="Scope" Binding="{Binding Scope}" Width="85"/>
+                            <DataGridTextColumn Header="Type" Binding="{Binding KindDisplay}" Width="100"/>
+                            <DataGridTextColumn Header="Extension" Binding="{Binding FileExtension}" Width="100"/>
+                            <DataGridTextColumn Header="Action" Binding="{Binding ActionDisplay}" Width="85"/>
+                            <DataGridTextColumn Header="Target" Binding="{Binding TargetDisplay}" Width="2*"/>
+                            <DataGridCheckBoxColumn Header="Default" Binding="{Binding DefaultApplication}" Width="75"/>
+                            <DataGridCheckBoxColumn Header="Configure actions" Binding="{Binding ConfigureActions}" Width="105"/>
+                            <DataGridCheckBoxColumn Header="Item disabled" Binding="{Binding Disabled}" Width="90"/>
+                            <DataGridCheckBoxColumn Header="Targeting" Binding="{Binding HasFilters}" Width="75"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </TabItem>
+
             <TabItem Header="GPP Folder Options"
                      Loaded="GppFolderOptionsTab_Loaded">
                 <DockPanel Margin="6">

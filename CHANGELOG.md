@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Added structured GPP file-association editing for user Open With and computer File Type preferences, with item-level targeting, backups, audit, clone/delete, and raw XML handoff.
 - Added structured GPP Folder Options editing for Vista-and-later user shell/view settings, with legacy/file-association visibility, item-level targeting, backups, audit, clone/delete, and raw XML handoff.
 - Added structured GPP Regional Options editing for user locale, number, currency, time and date formats, with item-level targeting, backups, audit, clone/delete, and raw XML handoff.
 - Added structured GPP Power Options editing for Vista+ power plans with AC/DC settings, safe legacy read-only handling, item-level targeting, backup, audit, clone/delete, and raw XML handoff.
