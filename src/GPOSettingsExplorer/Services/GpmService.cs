@@ -154,6 +154,16 @@ public sealed class GpmService
         dynamic gpm = CreateGpm();
         dynamic constants = gpm.GetConstants();
         dynamic domain = GetDomain(gpm, constants, domainName);
+
+        ChangePreviewGuard.Confirm(
+            new ChangePreviewRequest(
+                "Create GPO",
+                domainName,
+                "<not present>",
+                displayName.Trim(),
+                "A new Group Policy Object will be created.",
+                "Create"));
+
         dynamic gpo = domain.CreateGPO();
         gpo.DisplayName = displayName.Trim();
 
@@ -183,6 +193,17 @@ public sealed class GpmService
         dynamic constants = gpm.GetConstants();
         dynamic domain = GetDomain(gpm, constants, domainName);
         dynamic source = domain.GetGPO(sourceGpoId.ToString("B"));
+
+        ChangePreviewGuard.Confirm(
+            new ChangePreviewRequest(
+                "Copy GPO",
+                domainName,
+                $"Source: {Convert.ToString((object?)source.DisplayName) ?? sourceGpoId.ToString("B")}",
+                $"New GPO: {newDisplayName.Trim()}",
+                copyAcl
+                    ? "The GPO settings and ACL will be copied."
+                    : "The GPO settings will be copied without processing the source ACL.",
+                "Copy"));
 
         var flags = copyAcl
             ? Convert.ToInt32((object?)constants.ProcessSecurity)
@@ -226,6 +247,17 @@ public sealed class GpmService
         dynamic domain = GetDomain(gpm, constants, domainName);
         dynamic target = domain.GetGPO(targetGpoId.ToString("B"));
 
+        ChangePreviewGuard.Confirm(
+            new ChangePreviewRequest(
+                "Import GPO settings",
+                Convert.ToString((object?)target.DisplayName) ?? targetGpoId.ToString("B"),
+                "Current GPO settings",
+                $"Backup: {backup.DisplayName} | {backup.BackupId:B}",
+                string.IsNullOrWhiteSpace(migrationTablePath)
+                    ? "No migration table will be used."
+                    : $"Migration table: {migrationTablePath}",
+                "Import"));
+
         dynamic backupDirectory = gpm.GetBackupDir(backup.BackupDirectory);
         dynamic backupObject = backupDirectory.GetBackup(backup.BackupId.ToString("B"));
 
@@ -267,6 +299,16 @@ public sealed class GpmService
         dynamic constants = gpm.GetConstants();
         dynamic domain = GetDomain(gpm, constants, domainName);
         dynamic gpo = domain.GetGPO(gpoId.ToString("B"));
+
+        ChangePreviewGuard.Confirm(
+            new ChangePreviewRequest(
+                "Rename GPO",
+                gpoId.ToString("B"),
+                Convert.ToString((object?)gpo.DisplayName) ?? string.Empty,
+                newDisplayName.Trim(),
+                string.Empty,
+                "Rename"));
+
         gpo.DisplayName = newDisplayName.Trim();
     }
 
@@ -278,6 +320,16 @@ public sealed class GpmService
         dynamic constants = gpm.GetConstants();
         dynamic domain = GetDomain(gpm, constants, domainName);
         dynamic gpo = domain.GetGPO(gpoId.ToString("B"));
+
+        ChangePreviewGuard.Confirm(
+            new ChangePreviewRequest(
+                "Delete GPO",
+                Convert.ToString((object?)gpo.DisplayName) ?? gpoId.ToString("B"),
+                gpoId.ToString("B"),
+                "<deleted>",
+                "This deletes the Group Policy Object.",
+                "Delete"));
+
         gpo.Delete();
     }
 
@@ -289,6 +341,20 @@ public sealed class GpmService
         dynamic constants = gpm.GetConstants();
         dynamic domain = GetDomain(gpm, constants, domainName);
         dynamic gpo = domain.GetGPO(gpoId.ToString("B"));
+
+        var current =
+            SafeBool(
+                () => gpo.IsComputerEnabled());
+
+        ChangePreviewGuard.Confirm(
+            new ChangePreviewRequest(
+                "Change Computer Configuration scope",
+                Convert.ToString((object?)gpo.DisplayName) ?? gpoId.ToString("B"),
+                current ? "Enabled" : "Disabled",
+                enabled ? "Enabled" : "Disabled",
+                string.Empty,
+                "Apply"));
+
         gpo.SetComputerEnabled(enabled);
     }
 
@@ -300,6 +366,20 @@ public sealed class GpmService
         dynamic constants = gpm.GetConstants();
         dynamic domain = GetDomain(gpm, constants, domainName);
         dynamic gpo = domain.GetGPO(gpoId.ToString("B"));
+
+        var current =
+            SafeBool(
+                () => gpo.IsUserEnabled());
+
+        ChangePreviewGuard.Confirm(
+            new ChangePreviewRequest(
+                "Change User Configuration scope",
+                Convert.ToString((object?)gpo.DisplayName) ?? gpoId.ToString("B"),
+                current ? "Enabled" : "Disabled",
+                enabled ? "Enabled" : "Disabled",
+                string.Empty,
+                "Apply"));
+
         gpo.SetUserEnabled(enabled);
     }
 
