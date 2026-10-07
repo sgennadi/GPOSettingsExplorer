@@ -61,85 +61,157 @@ public partial class MainWindow
         }
     }
 
-    private async void RestoreBackup_Click(object sender, RoutedEventArgs e)
+    private async void RestoreBackup_Click(
+        object sender,
+        RoutedEventArgs e)
     {
-        if (_domainContext is null ||
-            BackupsGrid.SelectedItem is not GpoBackupInfo backup)
+        if (BackupsGrid.SelectedItem
+            is not GpoBackupInfo backup)
+        {
+            return;
+        }
+
+        await RestoreGpoBackupAsync(
+            backup,
+            "Backups tab");
+    }
+
+    private async Task RestoreGpoBackupAsync(
+        GpoBackupInfo backup,
+        string source)
+    {
+        if (_domainContext is null)
             return;
 
         if (!backup.DomainName.Equals(
                 _domainContext.DomainName,
                 StringComparison.OrdinalIgnoreCase))
         {
-            MessageBox.Show(this,
+            MessageBox.Show(
+                this,
                 $"This backup belongs to '{backup.DomainName}' and cannot be restored to '{_domainContext.DomainName}'.",
                 "Restore GPO Backup",
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);
+
             return;
         }
 
-        var currentGpo = _gpos.FirstOrDefault(gpo => gpo.Id == backup.GpoId);
-        var currentStateText = currentGpo is null
-            ? "The original GPO is currently missing and will be recreated with its original GUID."
-            : "The current GPO exists. Its current state will be backed up before the restore.";
+        var currentGpo =
+            _gpos.FirstOrDefault(
+                gpo =>
+                    gpo.Id ==
+                    backup.GpoId);
 
-        if (MessageBox.Show(this,
+        var currentStateText =
+            currentGpo is null
+                ? "The original GPO is currently missing and will be recreated with its original GUID."
+                : "The current GPO exists. Its current state will be backed up before the restore.";
+
+        if (MessageBox.Show(
+                this,
                 $"Restore '{backup.DisplayName}' from {backup.Timestamp:yyyy-MM-dd HH:mm:ss}?\n\n" +
                 $"{currentStateText}\n\n" +
                 "GPO links on OUs/domains/sites are not recreated by a normal GPMC restore. " +
                 "The GPO settings, ACLs and WMI-filter association are restored.",
                 "Restore GPO Backup",
                 MessageBoxButton.YesNo,
-                MessageBoxImage.Warning) != MessageBoxResult.Yes)
+                MessageBoxImage.Warning) !=
+            MessageBoxResult.Yes)
+        {
             return;
+        }
 
-        SetBusy(true, "Preparing GPO restore...");
+        SetBusy(
+            true,
+            "Preparing GPO restore...");
 
         try
         {
-            string safetyBackup = string.Empty;
+            var safetyBackup =
+                string.Empty;
 
             if (currentGpo is not null)
             {
-                safetyBackup = await Task.Run(() =>
-                    _gpmService.BackupGpo(
-                        _domainContext.DomainName,
-                        currentGpo.Id,
-                        $"Safety backup before restoring backup {backup.BackupId:B}"));
+                safetyBackup =
+                    await Task.Run(
+                        () =>
+                            _gpmService.BackupGpo(
+                                _domainContext.DomainName,
+                                currentGpo.Id,
+                                $"Safety backup before restoring backup {backup.BackupId:B}"));
             }
 
-            StatusText.Text = "Restoring GPO backup...";
-            await Task.Run(() =>
-                _gpoBackupService.Restore(_domainContext.DomainName, backup));
+            StatusText.Text =
+                "Restoring GPO backup...";
+
+            await Task.Run(
+                () =>
+                    _gpoBackupService.Restore(
+                        _domainContext.DomainName,
+                        backup));
 
             _auditService.Write(
                 "Restore",
                 "GPO Backup",
                 backup.DisplayName,
-                $"Backup ID: {backup.BackupId:B}; Source: {backup.BackupDirectory}; Safety backup: {safetyBackup}",
-                before: currentGpo is null ? "<GPO missing>" : "Current GPO state",
-                after: $"Restored {backup.Timestamp:O}");
+                $"Backup ID: {backup.BackupId:B}; Source: {backup.BackupDirectory}; " +
+                $"Safety backup: {safetyBackup}; Requested from: {source}",
+                before:
+                    currentGpo is null
+                        ? "<GPO missing>"
+                        : "Current GPO state",
+                after:
+                    $"Restored {backup.Timestamp:O}");
 
-            var hadIndex = _settings.Count > 0;
+            var hadIndex =
+                _settings.Count >
+                0;
+
             await RefreshAllAsync();
 
-            var restored = _gpos.FirstOrDefault(gpo => gpo.Id == backup.GpoId);
-            if (hadIndex && restored is not null)
-                await RefreshSingleGpoSettingsAsync(restored);
+            var restored =
+                _gpos.FirstOrDefault(
+                    gpo =>
+                        gpo.Id ==
+                        backup.GpoId);
 
-            await LoadBackupsAsync();
-            StatusText.Text = "GPO restore completed";
+            if (hadIndex &&
+                restored is not null)
+            {
+                await RefreshSingleGpoSettingsAsync(
+                    restored);
+            }
+
+            if (_backupsInitialized)
+            {
+                await LoadBackupsAsync();
+            }
+
+            StatusText.Text =
+                "GPO restore completed";
+        }
+        catch (OperationCanceledException)
+        {
+            StatusText.Text =
+                "GPO restore canceled";
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, ex.Message, "Restore GPO Backup",
-                MessageBoxButton.OK, MessageBoxImage.Error);
-            StatusText.Text = "GPO restore failed";
+            MessageBox.Show(
+                this,
+                ex.Message,
+                "Restore GPO Backup",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+
+            StatusText.Text =
+                "GPO restore failed";
         }
         finally
         {
-            SetBusy(false);
+            SetBusy(
+                false);
         }
     }
 
