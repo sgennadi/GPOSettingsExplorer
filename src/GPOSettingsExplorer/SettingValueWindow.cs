@@ -6,18 +6,34 @@ namespace GPOSettingsExplorer;
 
 public sealed class SettingValueWindow : Window
 {
+    private readonly ComboBox? _booleanCombo;
+
+    public bool? SelectedBooleanValue =>
+        _booleanCombo?.SelectedItem is bool value
+            ? value
+            : null;
+
     public SettingValueWindow(
         GpoInfo gpo,
         PolicySettingInfo setting,
+        bool canEditBoolean,
         Action openGpoEditor)
     {
         Title =
             $"Setting Value - {setting.SettingName}";
 
-        Width = 820;
-        Height = 560;
-        MinWidth = 620;
-        MinHeight = 420;
+        Width = 660;
+        Height =
+            canEditBoolean
+                ? 360
+                : 430;
+
+        MinWidth = 520;
+        MinHeight =
+            canEditBoolean
+                ? 310
+                : 350;
+
         WindowStartupLocation =
             WindowStartupLocation.CenterOwner;
 
@@ -25,7 +41,7 @@ public sealed class SettingValueWindow : Window
             new DockPanel
             {
                 Margin =
-                    new Thickness(14)
+                    new Thickness(12)
             };
 
         var footer =
@@ -62,15 +78,50 @@ public sealed class SettingValueWindow : Window
             }
         };
 
-        var close =
+        footer.Children.Add(
+            open);
+
+        if (canEditBoolean &&
+            bool.TryParse(
+                setting.Value,
+                out var currentBoolean))
+        {
+            _booleanCombo =
+                new ComboBox
+                {
+                    ItemsSource =
+                        new object[]
+                        {
+                            true,
+                            false
+                        },
+                    SelectedItem =
+                        currentBoolean,
+                    MinWidth = 120
+                };
+
+            var apply =
+                new Button
+                {
+                    Content = "Apply",
+                    IsDefault = true
+                };
+
+            apply.Click += (_, _) =>
+            {
+                DialogResult = true;
+            };
+
+            footer.Children.Add(
+                apply);
+        }
+
+        footer.Children.Add(
             new Button
             {
                 Content = "Close",
                 IsCancel = true
-            };
-
-        footer.Children.Add(open);
-        footer.Children.Add(close);
+            });
 
         var panel =
             new StackPanel();
@@ -87,88 +138,135 @@ public sealed class SettingValueWindow : Window
                         4,
                         0,
                         4,
-                        10)
+                        8)
             });
 
         panel.Children.Add(
             Meta(
                 "GPO",
                 gpo.DisplayName));
-        panel.Children.Add(
-            Meta(
-                "Scope",
-                setting.Scope));
-        panel.Children.Add(
-            Meta(
-                "Extension",
-                setting.Extension));
+
         panel.Children.Add(
             Meta(
                 "Category",
                 setting.Category));
-        panel.Children.Add(
-            Meta(
-                "State",
-                setting.State));
-        panel.Children.Add(
-            Meta(
-                "Registry key",
-                setting.RegistryKey));
-        panel.Children.Add(
-            Meta(
-                "Registry value",
-                setting.RegistryValue));
-
-        var valueBox =
-            new TextBox
-            {
-                Text =
-                    string.IsNullOrWhiteSpace(setting.Value)
-                        ? "<not reported>"
-                        : setting.Value,
-                IsReadOnly = true,
-                AcceptsReturn = true,
-                TextWrapping = TextWrapping.Wrap,
-                MinHeight = 150,
-                VerticalScrollBarVisibility =
-                    ScrollBarVisibility.Auto,
-                Margin =
-                    new Thickness(
-                        4,
-                        8,
-                        4,
-                        8)
-            };
 
         panel.Children.Add(
-            new GroupBox
-            {
-                Header = "Value",
-                Content = valueBox,
-                Margin =
-                    new Thickness(
-                        4,
-                        10,
-                        4,
-                        8)
-            });
+            Meta(
+                "Registry",
+                BuildRegistrySummary(
+                    setting)));
 
-        panel.Children.Add(
-            new TextBlock
-            {
-                Text =
-                    "This setting is not backed by an ADMX definition that can be safely edited by the built-in registry-policy editor. The selected value is shown directly here. Use Open GPO editor for the native editor.",
-                TextWrapping =
-                    TextWrapping.Wrap,
-                Margin =
-                    new Thickness(
-                        8,
-                        4,
-                        8,
-                        8),
-                Foreground =
-                    System.Windows.Media.Brushes.DimGray
-            });
+        if (_booleanCombo is not null)
+        {
+            var valueGrid =
+                new Grid
+                {
+                    Margin =
+                        new Thickness(
+                            4,
+                            12,
+                            4,
+                            8)
+                };
+
+            valueGrid.ColumnDefinitions.Add(
+                new ColumnDefinition
+                {
+                    Width =
+                        new GridLength(130)
+                });
+
+            valueGrid.ColumnDefinitions.Add(
+                new ColumnDefinition
+                {
+                    Width =
+                        new GridLength(
+                            1,
+                            GridUnitType.Star)
+                });
+
+            var label =
+                new TextBlock
+                {
+                    Text = "Value:",
+                    FontWeight =
+                        FontWeights.SemiBold,
+                    VerticalAlignment =
+                        VerticalAlignment.Center
+                };
+
+            Grid.SetColumn(
+                label,
+                0);
+
+            Grid.SetColumn(
+                _booleanCombo,
+                1);
+
+            valueGrid.Children.Add(
+                label);
+
+            valueGrid.Children.Add(
+                _booleanCombo);
+
+            panel.Children.Add(
+                valueGrid);
+
+            panel.Children.Add(
+                new TextBlock
+                {
+                    Text =
+                        "This Boolean Security Option can be changed directly. A GPO backup is created before the value is written.",
+                    TextWrapping =
+                        TextWrapping.Wrap,
+                    Margin =
+                        new Thickness(
+                            8,
+                            4,
+                            8,
+                            8),
+                    Foreground =
+                        System.Windows.Media.Brushes.DimGray
+                });
+        }
+        else
+        {
+            var valueBox =
+                new TextBox
+                {
+                    Text =
+                        string.IsNullOrWhiteSpace(setting.Value)
+                            ? "<not reported>"
+                            : setting.Value,
+                    IsReadOnly = true,
+                    AcceptsReturn = true,
+                    TextWrapping = TextWrapping.Wrap,
+                    MinHeight = 80,
+                    MaxHeight = 140,
+                    VerticalScrollBarVisibility =
+                        ScrollBarVisibility.Auto,
+                    Margin =
+                        new Thickness(
+                            4,
+                            8,
+                            4,
+                            8)
+                };
+
+            panel.Children.Add(
+                new GroupBox
+                {
+                    Header = "Value",
+                    Content = valueBox,
+                    Margin =
+                        new Thickness(
+                            4,
+                            8,
+                            4,
+                            8)
+                });
+        }
 
         var scroll =
             new ScrollViewer
@@ -180,6 +278,7 @@ public sealed class SettingValueWindow : Window
 
         root.Children.Add(
             footer);
+
         root.Children.Add(
             scroll);
 
@@ -188,10 +287,25 @@ public sealed class SettingValueWindow : Window
 
         Loaded += (_, _) =>
         {
-            valueBox.BringIntoView();
-            valueBox.Focus();
-            valueBox.SelectAll();
+            _booleanCombo?.Focus();
         };
+    }
+
+    private static string BuildRegistrySummary(
+        PolicySettingInfo setting)
+    {
+        if (string.IsNullOrWhiteSpace(
+                setting.RegistryKey))
+        {
+            return "<not reported>";
+        }
+
+        return string.IsNullOrWhiteSpace(
+                setting.RegistryValue)
+            ? setting.RegistryKey
+            : setting.RegistryKey +
+              " \\ " +
+              setting.RegistryValue;
     }
 
     private static FrameworkElement Meta(
@@ -256,6 +370,7 @@ public sealed class SettingValueWindow : Window
 
         grid.Children.Add(
             label);
+
         grid.Children.Add(
             text);
 
