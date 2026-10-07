@@ -104,7 +104,7 @@ public sealed class GpoEditorNavigatorService
     {
         var deadline =
             DateTime.UtcNow.AddSeconds(
-                30);
+                15);
 
         var window =
             WaitForWindow(
