@@ -45,20 +45,27 @@ public partial class MainWindow
         {
             await EnsureAdmxCatalogAsync();
 
-            var definition = _admxCatalogService.Find(_admxPolicies!, setting);
+            var definition =
+                _admxCatalogService.Find(
+                    _admxPolicies!,
+                    setting);
+
             if (definition is null)
             {
-                var answer = MessageBox.Show(
-                    this,
-                    "This setting could not be mapped to an ADMX definition for direct editing.\n\nOpen the selected GPO in the standard Group Policy editor instead?",
-                    "Direct editor unavailable",
-                    MessageBoxButton.YesNo,
-                    MessageBoxImage.Information);
+                SetBusy(false);
 
-                if (answer == MessageBoxResult.Yes)
+                new SettingValueWindow(
+                    gpo,
+                    setting,
+                    () => _gpmService.OpenEditor(
+                        gpo,
+                        _domainContext.DomainDistinguishedName))
                 {
-                    _gpmService.OpenEditor(gpo, _domainContext.DomainDistinguishedName);
-                }
+                    Owner = this
+                }.ShowDialog();
+
+                StatusText.Text =
+                    $"Showing value for {setting.SettingName}";
 
                 return;
             }
