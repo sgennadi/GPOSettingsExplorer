@@ -17,6 +17,7 @@ public sealed class SettingValueWindow : Window
         GpoInfo gpo,
         PolicySettingInfo setting,
         bool canEditBoolean,
+        bool exactNavigationAvailable,
         Func<Task<bool>> openExactGpoEditor)
     {
         Title =
@@ -58,7 +59,10 @@ public sealed class SettingValueWindow : Window
         var open =
             new Button
             {
-                Content = "Open exact setting in GPO editor..."
+                Content =
+                    exactNavigationAvailable
+                        ? "Open exact setting in GPO editor..."
+                        : "Open GPO editor..."
             };
 
         open.Click += async (_, _) =>
@@ -70,7 +74,8 @@ public sealed class SettingValueWindow : Window
                 var exact =
                     await openExactGpoEditor();
 
-                if (exact)
+                if (exact ||
+                    !exactNavigationAvailable)
                 {
                     Close();
                     return;
@@ -78,7 +83,7 @@ public sealed class SettingValueWindow : Window
 
                 MessageBox.Show(
                     this,
-                    "The GPO editor was opened, but MMC could not automatically select the exact setting on this Windows build. The GPO remains open for manual navigation.",
+                    "The GPO editor was opened, but MMC could not automatically select the exact Security Option on this Windows build. The GPO remains open for manual navigation.",
                     "GPO Editor Navigation",
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
