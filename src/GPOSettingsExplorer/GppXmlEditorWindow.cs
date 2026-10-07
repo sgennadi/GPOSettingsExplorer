@@ -35,7 +35,7 @@ public sealed class GppXmlEditorWindow : Window
             Foreground = System.Windows.Media.Brushes.DimGray
         };
 
-        var buttons = new StackPanel
+        var buttons = new WrapPanel
         {
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Right
