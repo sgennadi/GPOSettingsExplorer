@@ -378,6 +378,16 @@ public sealed class GpoScriptService
             File.ReadAllBytes(
                 fullPath);
 
+        ChangePreviewGuard.Confirm(
+            new ChangePreviewRequest(
+                "Save GPO script",
+                $"{gpo.DisplayName} | {script.Scope} {script.EventName} | {script.FileName}",
+                ReadText(
+                    fullPath),
+                document.Text,
+                $"SYSVOL path: {fullPath}",
+                "Save"));
+
         var temp =
             fullPath +
             ".gposes-" +
