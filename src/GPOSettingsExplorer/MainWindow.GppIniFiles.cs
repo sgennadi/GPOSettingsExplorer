@@ -27,35 +27,68 @@ public partial class MainWindow
         if (_gppIniFileInitialized)
             return;
 
-        _gppIniFileInitialized = true;
+        try
+        {
+            _gppIniFileView =
+                CollectionViewSource.GetDefaultView(
+                    _gppIniFileItems);
 
-        _gppIniFileView =
-            CollectionViewSource.GetDefaultView(
-                _gppIniFileItems);
+            _gppIniFileView.Filter =
+                FilterGppIniFile;
 
-        _gppIniFileView.Filter =
-            FilterGppIniFile;
+            GppIniFilesGrid.ItemsSource =
+                _gppIniFileView;
 
-        GppIniFilesGrid.ItemsSource =
-            _gppIniFileView;
+            GppIniFilesScopeCombo.ItemsSource =
+                new[]
+                {
+                    "All",
+                    "Computer",
+                    "User"
+                };
 
-        GppIniFilesScopeCombo.ItemsSource =
-            new[]
-            {
-                "All",
-                "Computer",
-                "User"
-            };
+            GppIniFilesScopeCombo.SelectedIndex =
+                0;
 
-        GppIniFilesScopeCombo.SelectedIndex =
-            0;
+            _gppIniFileInitialized =
+                true;
+        }
+        catch (Exception ex)
+        {
+            var log =
+                CrashLogService.Write(
+                    "Initialize GPP INI Files tab",
+                    ex);
+
+            StatusText.Text =
+                "INI Files tab initialization failed";
+
+            MessageBox.Show(
+                this,
+                BuildRecoverableErrorMessage(
+                    "The INI Files tab could not be initialized.",
+                    ex,
+                    log),
+                "GPP INI Files",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
     }
 
     private async void LoadGppIniFiles_Click(
         object sender,
         RoutedEventArgs e)
     {
-        await LoadGppIniFilesAsync();
+        try
+        {
+            await LoadGppIniFilesAsync();
+        }
+        catch (Exception ex)
+        {
+            HandleIniFilesUnexpectedError(
+                "Load INI Files command",
+                ex);
+        }
     }
 
     private async Task LoadGppIniFilesAsync()
@@ -63,21 +96,50 @@ public partial class MainWindow
         if (_gpos.Count == 0)
             return;
 
-        _gppIniFileCancellation?.Cancel();
+        if (!_gppIniFileInitialized)
+        {
+            GppIniFilesTab_Loaded(
+                this,
+                new RoutedEventArgs());
 
-        _gppIniFileCancellation =
+            if (!_gppIniFileInitialized)
+                return;
+        }
+
+        var previous =
+            _gppIniFileCancellation;
+
+        var current =
             new CancellationTokenSource();
 
-        SetBusy(
-            true,
-            "Loading INI Files preferences...");
+        _gppIniFileCancellation =
+            current;
 
         try
         {
+            try
+            {
+                previous?.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+
+            SetBusy(
+                true,
+                "Loading INI Files preferences...");
+
             var progress =
                 new Progress<string>(
                     message =>
                     {
+                        if (!ReferenceEquals(
+                                _gppIniFileCancellation,
+                                current))
+                        {
+                            return;
+                        }
+
                         StatusText.Text =
                             message;
                         HeaderStatusText.Text =
@@ -88,9 +150,19 @@ public partial class MainWindow
                 await Task.Run(
                     () =>
                         _gppIniFileService.Load(
-                            _gpos,
+                            _gpos.ToArray(),
                             progress,
-                            _gppIniFileCancellation.Token));
+                            current.Token),
+                    current.Token);
+
+            current.Token.ThrowIfCancellationRequested();
+
+            if (!ReferenceEquals(
+                    _gppIniFileCancellation,
+                    current))
+            {
+                return;
+            }
 
             ReplaceCollection(
                 _gppIniFileItems,
@@ -108,24 +180,53 @@ public partial class MainWindow
         }
         catch (OperationCanceledException)
         {
-            StatusText.Text =
-                "INI Files loading canceled";
+            if (ReferenceEquals(
+                    _gppIniFileCancellation,
+                    current))
+            {
+                StatusText.Text =
+                    "INI Files loading canceled";
+            }
         }
         catch (Exception ex)
         {
-            MessageBox.Show(
-                this,
-                ex.Message,
-                "Load INI Files",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+            var log =
+                CrashLogService.Write(
+                    "Load GPP INI Files",
+                    ex);
 
-            StatusText.Text =
-                "INI Files load failed";
+            if (ReferenceEquals(
+                    _gppIniFileCancellation,
+                    current))
+            {
+                StatusText.Text =
+                    "INI Files load failed";
+
+                MessageBox.Show(
+                    this,
+                    BuildRecoverableErrorMessage(
+                        "INI Files could not be loaded. The application will stay open.",
+                        ex,
+                        log),
+                    "Load INI Files",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
         }
         finally
         {
-            SetBusy(false);
+            if (ReferenceEquals(
+                    _gppIniFileCancellation,
+                    current))
+            {
+                _gppIniFileCancellation =
+                    null;
+
+                SetBusy(false);
+            }
+
+            current.Dispose();
+            previous?.Dispose();
         }
     }
 
@@ -630,6 +731,50 @@ public partial class MainWindow
             RunInUserContext = source.RunInUserContext,
             FiltersXml = source.FiltersXml
         };
+
+    private void HandleIniFilesUnexpectedError(
+        string context,
+        Exception ex)
+    {
+        var log =
+            CrashLogService.Write(
+                context,
+                ex);
+
+        StatusText.Text =
+            "INI Files operation failed";
+
+        MessageBox.Show(
+            this,
+            BuildRecoverableErrorMessage(
+                "The INI Files operation failed. The application will stay open.",
+                ex,
+                log),
+            "GPP INI Files",
+            MessageBoxButton.OK,
+            MessageBoxImage.Error);
+    }
+
+    private static string BuildRecoverableErrorMessage(
+        string message,
+        Exception ex,
+        string log)
+    {
+        var result =
+            message +
+            "\n\n" +
+            ex.Message;
+
+        if (!string.IsNullOrWhiteSpace(
+                log))
+        {
+            result +=
+                "\n\nDiagnostic log:\n" +
+                log;
+        }
+
+        return result;
+    }
 
     private static string GppIniFileSummary(
         GppIniFileItemInfo item) =>
