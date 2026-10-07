@@ -153,6 +153,22 @@ public sealed class PolicyEditorWindow : Window
         Content = root;
 
         UpdateEditorsEnabledState();
+
+        Loaded += (_, _) =>
+        {
+            var target =
+                FindPreferredValueEditor(
+                    setting,
+                    definition);
+
+            target.BringIntoView();
+            target.Focus();
+
+            if (target is TextBox textBox)
+            {
+                textBox.SelectAll();
+            }
+        };
     }
 
     private FrameworkElement BuildElementEditor(AdmxElementDefinition element)
@@ -362,6 +378,61 @@ public sealed class PolicyEditorWindow : Window
         {
             editor.IsEnabled = enabled;
         }
+    }
+
+    private Control FindPreferredValueEditor(
+        PolicySettingInfo setting,
+        AdmxPolicyDefinition definition)
+    {
+        if (_session.State == PolicyEditState.Enabled)
+        {
+            var wantedValueName =
+                NormalizeValueName(
+                    setting.RegistryValue);
+
+            if (!string.IsNullOrWhiteSpace(wantedValueName))
+            {
+                var matchingElement =
+                    definition.Elements.FirstOrDefault(element =>
+                        NormalizeValueName(element.ValueName)
+                            .Equals(
+                                wantedValueName,
+                                StringComparison.OrdinalIgnoreCase));
+
+                if (matchingElement is not null &&
+                    _editors.TryGetValue(
+                        matchingElement.Id,
+                        out var matchingEditor))
+                {
+                    return matchingEditor;
+                }
+            }
+
+            var firstValueEditor =
+                _editors.Values.FirstOrDefault();
+
+            if (firstValueEditor is not null)
+            {
+                return firstValueEditor;
+            }
+        }
+
+        return _stateCombo;
+    }
+
+    private static string NormalizeValueName(
+        string value)
+    {
+        var text =
+            (value ?? string.Empty)
+            .Trim();
+
+        var equals =
+            text.IndexOf('=');
+
+        return equals >= 0
+            ? text[(equals + 1)..].Trim()
+            : text;
     }
 
     private static FrameworkElement Meta(string name, string value)
