@@ -98,7 +98,7 @@ public sealed class StructuredGppEditorWindow : Window
             new TextBlock
             {
                 Text =
-                    "Structured tree/attribute editor. Unknown elements and attributes are preserved. Use the raw XML editor for namespaces, comments or advanced manual repair.",
+                    "Structured tree/attribute editor. Unknown elements, attributes, and XML namespaces are preserved. Use the raw XML editor for comments, mixed-content documents, or advanced manual repair.",
                 TextWrapping =
                     TextWrapping.Wrap,
                 Foreground =
@@ -897,7 +897,7 @@ public sealed class StructuredGppEditorWindow : Window
     {
         var node =
             new XmlNodeModel(
-                element.Name.LocalName,
+                element.Name.ToString(),
                 parent)
             {
                 TextValue =
@@ -910,7 +910,7 @@ public sealed class StructuredGppEditorWindow : Window
         {
             node.Attributes.Add(
                 new XmlAttributeModel(
-                    attribute.Name.LocalName,
+                    attribute.Name.ToString(),
                     attribute.Value));
         }
 
