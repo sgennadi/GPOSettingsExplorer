@@ -108,6 +108,43 @@ public sealed class ConnectionWindow : Window
         footer.Children.Add(
             _connectButton);
 
+        var forget =
+            new Button
+            {
+                Content =
+                    "Forget saved"
+            };
+
+        forget.Click +=
+            (_, _) =>
+            {
+                _profileService.Delete();
+
+                _domainBox.Text =
+                    string.Empty;
+
+                _dcBox.Text =
+                    string.Empty;
+
+                _userBox.Text =
+                    string.Empty;
+
+                _passwordBox.Password =
+                    string.Empty;
+
+                _currentCredentialsRadio.IsChecked =
+                    true;
+
+                _persistenceCombo.SelectedIndex =
+                    0;
+
+                _statusText.Text =
+                    "Saved connection profile removed.";
+            };
+
+        footer.Children.Add(
+            forget);
+
         footer.Children.Add(
             new Button
             {
