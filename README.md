@@ -14,7 +14,7 @@ Download the latest portable build from:
 
 **[GitHub Releases](https://github.com/sgennadi/GPOSettingsExplorer/releases/latest)**
 
-Current release: **v0.2.6**
+Current release: **v0.2.7**
 
 Available packages:
 
@@ -46,6 +46,8 @@ The builds are self-contained. A separate .NET runtime installation is not requi
 
 - Load policies from the domain Central Store when available.
 - Fall back to the local Windows `PolicyDefinitions` store.
+- Persist the parsed ADMX catalog under `%LOCALAPPDATA%\GPOSettingsExplorer\Cache` so 10,000+ policy catalogs appear immediately on later runs.
+- Validate the Central Store in the background using an ADMX/ADML file fingerprint and reparse only when it actually changes.
 - Search the ADMX catalog.
 - View policy scope, category, registry key, value, and explanation.
 - Configure supported Administrative Template settings directly from the application.
@@ -57,6 +59,17 @@ The builds are self-contained. A separate .NET runtime installation is not requi
 - Edit WQL rules.
 - Assign or remove WMI filters from GPOs.
 - Test filter rules against computers.
+
+### GPO scripts
+
+- Browse script files stored inside GPO SYSVOL folders for Computer and User Configuration.
+- Resolve Startup, Shutdown, Logon, and Logoff assignments from `scripts.ini` and `psscripts.ini`.
+- Show GPO, scope, event, order, parameters, full UNC path, size, and modification time.
+- Edit BAT, CMD, PS1, PSM1, PSD1, VBS, JS, WSF, and HTA text files in the built-in editor.
+- Editing never executes the script.
+- Every save creates a GPO backup, updates the Scripts extension revision, writes an audit entry, and rolls back the file if the GPO revision update fails.
+- Search script contents in **All files** or a **Selected file**. Searches such as `wmic`, `.vbs`, `cscript`, `powershell.exe`, or `net use` return file, line number, and matching text.
+- Double-click a search result to open the script directly at the matching line.
 
 ### Group Policy Preferences
 
@@ -220,7 +233,7 @@ GPOSettingsExplorer/
 
 ## Current status
 
-**v0.2.6** includes the persistent incremental All Settings cache from v0.2.5, plus resilient background refresh behavior that keeps cached results available when an incremental update fails.
+**v0.2.7** adds persistent ADMX caching, a GPO Scripts browser/editor with all-file or selected-file content search, safer script saves with automatic backup/rollback, and fixes for MMC working-directory and Group Policy COM apartment errors seen on Windows Server/GPMC systems.
 
 See [CHANGELOG.md](CHANGELOG.md) for release details.
 

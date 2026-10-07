@@ -4,6 +4,17 @@
 
 - No unreleased changes yet.
 
+## 0.2.7 - 2026-10-07
+
+- Added persistent ADMX Catalog caching under %LOCALAPPDATA%\GPOSettingsExplorer\Cache. Cached Administrative Templates load immediately and the Central Store is validated in the background using an ADMX/ADML file fingerprint; full XML parsing runs only when PolicyDefinitions actually changes.
+- Fixed native GPO editor launch failures caused by inheriting an inaccessible current working directory such as C:\Temp. MMC is now started from the full %SystemRoot%\System32\mmc.exe path with System32 as its working directory.
+- Hardened direct Administrative Template editing by running Group Policy COM operations on dedicated STA threads and explicitly initializing COM apartment state, addressing "Interface not registered" failures on affected Windows/GPMC builds.
+- Added a GPO Scripts tab that discovers Computer/User Startup, Shutdown, Logon and Logoff scripts from scripts.ini / psscripts.ini and also finds unassigned script files stored under the GPO Scripts folders.
+- GPO Scripts supports BAT, CMD, PowerShell (PS1/PSM1/PSD1), VBS, JS, WSF and HTA text files. Double-click/Edit opens the file in the built-in editor; scripts are never executed by the application.
+- Saving a GPO script creates an automatic GPO backup, writes the SYSVOL file atomically, updates the Scripts Group Policy extension revision, writes an audit entry, and rolls the file back if the revision update fails.
+- Added full-text GPO script search across All files or a Selected file. Results include GPO, scope/event, file, line number and matching line; double-click opens the built-in editor at the matching line.
+- Script search also checks file names, parameters and paths, so searches such as "wmic" or "vbs" can find both content and script references.
+
 ## 0.2.6 - 2026-10-07
 
 - Background All Settings refresh failures now keep the previously cached index visible instead of interrupting normal use.
