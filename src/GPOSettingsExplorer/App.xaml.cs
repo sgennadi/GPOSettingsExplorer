@@ -96,6 +96,9 @@ public partial class App : Application
 
         try
         {
+            System.Windows.Input.Mouse.OverrideCursor =
+                null;
+
             var message =
                 "An unexpected error was caught. The application will stay open.";
 
