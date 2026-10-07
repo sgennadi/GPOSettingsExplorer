@@ -31,6 +31,10 @@ jobs:
         shell: cmd
         run: dotnet restore GPOSettingsExplorer.sln
 
+      - name: UI style lint
+        shell: cmd
+        run: dotnet run --project tools\UiStyleLint\UiStyleLint.csproj -- src\GPOSettingsExplorer
+
       - name: Build
         shell: cmd
         run: dotnet build GPOSettingsExplorer.sln -c Release --no-restore
