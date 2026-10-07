@@ -1,0 +1,103 @@
+using System.Windows;
+using System.Xml.Linq;
+
+namespace GPOSettingsExplorer.Services;
+
+public sealed record ChangePreviewRequest(
+    string Title,
+    string Target,
+    string Before,
+    string After,
+    string Details = "",
+    string ActionText = "Apply");
+
+public static class ChangePreviewGuard
+{
+    private static int _enabled =
+        1;
+
+    public static bool IsEnabled
+    {
+        get =>
+            Volatile.Read(
+                ref _enabled) != 0;
+
+        set =>
+            Interlocked.Exchange(
+                ref _enabled,
+                value ? 1 : 0);
+    }
+
+    public static void Confirm(
+        ChangePreviewRequest request)
+    {
+        EditingGuard.EnsureEnabled(
+            request.Title);
+
+        if (!IsEnabled)
+            return;
+
+        var application =
+            Application.Current;
+
+        if (application is null)
+            return;
+
+        bool approved =
+            false;
+
+        void Show()
+        {
+            var window =
+                new ChangePreviewWindow(
+                    request)
+                {
+                    Owner =
+                        application.MainWindow
+                };
+
+            approved =
+                window.ShowDialog() ==
+                true &&
+                window.Approved;
+        }
+
+        if (application.Dispatcher.CheckAccess())
+        {
+            Show();
+        }
+        else
+        {
+            application.Dispatcher.Invoke(
+                Show);
+        }
+
+        if (!approved)
+        {
+            throw new OperationCanceledException(
+                "The change was canceled in the preview window.");
+        }
+    }
+
+    public static string NormalizeXmlForPreview(
+        string? xml)
+    {
+        if (string.IsNullOrWhiteSpace(
+                xml))
+        {
+            return "<none>";
+        }
+
+        try
+        {
+            return XDocument.Parse(
+                    xml,
+                    LoadOptions.PreserveWhitespace)
+                .ToString();
+        }
+        catch
+        {
+            return xml;
+        }
+    }
+}
