@@ -238,7 +238,7 @@ public sealed class GpoEditorNavigatorService
                         scopeNamespace,
                         child,
                         wantedName,
-                        recursive: true,
+                        true,
                         depth + 1);
 
                 if (nested is not null)
