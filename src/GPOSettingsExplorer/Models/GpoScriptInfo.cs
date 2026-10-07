@@ -31,15 +31,30 @@ public sealed class GpoScriptInfo
 
 public sealed class GpoScriptSearchResult
 {
-    public GpoScriptInfo Script { get; init; } = new();
+    public IReadOnlyList<GpoScriptInfo> Scripts { get; init; } =
+        Array.Empty<GpoScriptInfo>();
+
+    public string Identity { get; init; } = string.Empty;
     public int LineNumber { get; init; }
     public string LineText { get; init; } = string.Empty;
 
-    public string GpoName => Script.GpoName;
-    public string Scope => Script.Scope;
-    public string EventName => Script.EventName;
+    public GpoScriptInfo Script =>
+        Scripts.FirstOrDefault() ?? new GpoScriptInfo();
+
     public string FileName => Script.FileName;
     public string FullPath => Script.FullPath;
+
+    public int CopyCount =>
+        Scripts
+            .Select(item => item.FullPath)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Count();
+
+    public int GpoReferenceCount =>
+        Scripts
+            .Select(item => item.GpoId)
+            .Distinct()
+            .Count();
 }
 
 public sealed class GpoScriptDocument
