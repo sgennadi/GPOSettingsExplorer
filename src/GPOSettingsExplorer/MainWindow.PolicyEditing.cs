@@ -12,6 +12,7 @@ public partial class MainWindow
     private readonly AdmxCatalogService _admxCatalogService = new();
     private readonly RegistryPolicyService _registryPolicyService = new();
     private readonly SecurityTemplateService _securityTemplateService = new();
+    private readonly GpoEditorNavigatorService _gpoEditorNavigatorService = new();
     private readonly AuditService _auditService = new();
 
     private IReadOnlyList<AdmxPolicyDefinition>? _admxPolicies;
@@ -64,9 +65,10 @@ public partial class MainWindow
                         gpo,
                         setting,
                         canEditBoolean,
-                        () => _gpmService.OpenEditor(
+                        () => _gpoEditorNavigatorService.OpenAtSettingAsync(
                             gpo,
-                            _domainContext.DomainDistinguishedName))
+                            _domainContext.DomainDistinguishedName,
+                            setting))
                     {
                         Owner = this
                     };
