@@ -40,7 +40,7 @@ public sealed class GppShortcutEditorWindow : Window
         Width = 1000;
         Height = 790;
         MinWidth = 800;
-        MinMinMinHeight = 620;
+        MinHeight = 620;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
 
         var root = new DockPanel { Margin = new Thickness(12) };
@@ -125,7 +125,7 @@ public sealed class GppShortcutEditorWindow : Window
         {
             Text = item.Comment,
             AcceptsReturn = true,
-            Height = 62
+            MinHeight = 62
         };
         _iconPathBox = new TextBox { Text = item.IconPath };
         _iconIndexBox = new TextBox
