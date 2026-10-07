@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using System.Xml.Linq;
 using GPOSettingsExplorer.Models;
 using Microsoft.Win32;
@@ -10,21 +12,37 @@ public sealed class AdmxCatalogService
     public string LastSourcePath { get; private set; } = string.Empty;
     public string LastLanguage { get; private set; } = string.Empty;
 
-    public IReadOnlyList<AdmxPolicyDefinition> Load(string domainName)
+    public IReadOnlyList<AdmxPolicyDefinition> Load(
+        string domainName)
     {
-        var store = ResolvePolicyDefinitionsStore(domainName);
-        var language = ResolveLanguage(store);
+        return Load(
+            GetStoreState(
+                domainName));
+    }
 
-        LastSourcePath = store;
-        LastLanguage = language;
+    public IReadOnlyList<AdmxPolicyDefinition> Load(
+        AdmxStoreState storeState)
+    {
+        LastSourcePath =
+            storeState.SourcePath;
 
-        var result = new List<AdmxPolicyDefinition>();
+        LastLanguage =
+            storeState.Language;
 
-        foreach (var admxPath in Directory.EnumerateFiles(store, "*.admx", SearchOption.TopDirectoryOnly))
+        var result =
+            new List<AdmxPolicyDefinition>();
+
+        foreach (var admxPath in Directory.EnumerateFiles(
+                     storeState.SourcePath,
+                     "*.admx",
+                     SearchOption.TopDirectoryOnly))
         {
             try
             {
-                result.AddRange(ParseFile(admxPath, language));
+                result.AddRange(
+                    ParseFile(
+                        admxPath,
+                        storeState.Language));
             }
             catch
             {
@@ -33,8 +51,43 @@ public sealed class AdmxCatalogService
         }
 
         return result
-            .OrderBy(p => p.DisplayName, StringComparer.CurrentCultureIgnoreCase)
+            .OrderBy(
+                policy => policy.DisplayName,
+                StringComparer.CurrentCultureIgnoreCase)
             .ToArray();
+    }
+
+    public AdmxStoreState GetStoreState(
+        string domainName)
+    {
+        var store =
+            ResolvePolicyDefinitionsStore(
+                domainName);
+
+        var language =
+            ResolveLanguage(
+                store);
+
+        return new AdmxStoreState
+        {
+            SourcePath = store,
+            Language = language,
+            Fingerprint =
+                BuildStoreFingerprint(
+                    store,
+                    language)
+        };
+    }
+
+    public void UseCachedStoreState(
+        string sourcePath,
+        string language)
+    {
+        LastSourcePath =
+            sourcePath;
+
+        LastLanguage =
+            language;
     }
 
     public AdmxPolicyDefinition? Find(
@@ -185,6 +238,69 @@ public sealed class AdmxCatalogService
         return equals >= 0
             ? text[(equals + 1)..].Trim()
             : text;
+    }
+
+    private static string BuildStoreFingerprint(
+        string store,
+        string language)
+    {
+        var records =
+            new List<string>();
+
+        foreach (var path in Directory.EnumerateFiles(
+                     store,
+                     "*.admx",
+                     SearchOption.TopDirectoryOnly)
+                 .OrderBy(
+                     value => value,
+                     StringComparer.OrdinalIgnoreCase))
+        {
+            var info =
+                new FileInfo(
+                    path);
+
+            records.Add(
+                $"ADMX|{info.Name}|{info.Length}|{info.LastWriteTimeUtc.Ticks}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(
+                language))
+        {
+            var languagePath =
+                Path.Combine(
+                    store,
+                    language);
+
+            if (Directory.Exists(
+                    languagePath))
+            {
+                foreach (var path in Directory.EnumerateFiles(
+                             languagePath,
+                             "*.adml",
+                             SearchOption.TopDirectoryOnly)
+                         .OrderBy(
+                             value => value,
+                             StringComparer.OrdinalIgnoreCase))
+                {
+                    var info =
+                        new FileInfo(
+                            path);
+
+                    records.Add(
+                        $"ADML|{language}|{info.Name}|{info.Length}|{info.LastWriteTimeUtc.Ticks}");
+                }
+            }
+        }
+
+        var payload =
+            Encoding.UTF8.GetBytes(
+                string.Join(
+                    "\n",
+                    records));
+
+        return Convert.ToHexString(
+            SHA256.HashData(
+                payload));
     }
 
     private static string ResolvePolicyDefinitionsStore(string domainName)
@@ -589,3 +705,11 @@ public sealed class AdmxCatalogService
 
     private sealed record CategoryRecord(string DisplayName, string ParentRef);
 }
+
+public sealed class AdmxStoreState
+{
+    public string SourcePath { get; init; } = string.Empty;
+    public string Language { get; init; } = string.Empty;
+    public string Fingerprint { get; init; } = string.Empty;
+}
+
