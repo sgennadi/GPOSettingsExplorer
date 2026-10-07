@@ -27,6 +27,8 @@ internal static class AdaptiveWindowManager
         if (sender is not Window window)
             return;
 
+        UiStyle.ApplyWindowDefaults(window);
+
         if (!OriginalWindowLimits.TryGetValue(
                 window,
                 out _))
@@ -44,6 +46,9 @@ internal static class AdaptiveWindowManager
 
             window.StateChanged +=
                 Window_StateChanged;
+
+            window.DpiChanged +=
+                Window_DpiChanged;
         }
 
         ConstrainToCurrentMonitor(
@@ -64,6 +69,17 @@ internal static class AdaptiveWindowManager
     private static void Window_StateChanged(
         object? sender,
         EventArgs e)
+    {
+        if (sender is Window window)
+        {
+            ConstrainToCurrentMonitor(
+                window);
+        }
+    }
+
+    private static void Window_DpiChanged(
+        object sender,
+        DpiChangedEventArgs e)
     {
         if (sender is Window window)
         {
