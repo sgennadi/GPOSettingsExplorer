@@ -638,8 +638,7 @@ public sealed class GppScheduledTaskEditorWindow : Window
                 AcceptsTab =
                     true,
                 FontFamily =
-                    new System.Windows.Media.FontFamily(
-                        "Consolas"),
+                    UiStyle.MonospaceFontFamily,
                 HorizontalScrollBarVisibility =
                     ScrollBarVisibility.Auto,
                 VerticalScrollBarVisibility =
@@ -693,8 +692,7 @@ public sealed class GppScheduledTaskEditorWindow : Window
                 AcceptsTab =
                     true,
                 FontFamily =
-                    new System.Windows.Media.FontFamily(
-                        "Consolas"),
+                    UiStyle.MonospaceFontFamily,
                 HorizontalScrollBarVisibility =
                     ScrollBarVisibility.Auto,
                 VerticalScrollBarVisibility =
