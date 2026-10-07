@@ -176,6 +176,19 @@ public sealed class GpoLinkService
         var targetIndex = Math.Clamp(order <= 0 ? links.Count + 1 : order, 1, links.Count + 1) - 1;
         links.Insert(targetIndex, new LinkRecord(path, options));
 
+        var updatedRaw =
+            SerializeLinks(
+                links);
+
+        ChangePreviewGuard.Confirm(
+            new ChangePreviewRequest(
+                "Change GPO link",
+                targetDn,
+                string.IsNullOrEmpty(raw) ? "<no links>" : raw,
+                string.IsNullOrEmpty(updatedRaw) ? "<no links>" : updatedRaw,
+                $"GPO: {gpoId:B}; Enabled: {enabled}; Enforced: {enforced}; Order: {targetIndex + 1}",
+                "Apply"));
+
         WriteLinks(entry, links);
     }
 
@@ -192,6 +205,19 @@ public sealed class GpoLinkService
         var links = ParseLinks(raw);
         links.RemoveAll(link => TryGetGpoId(link.Path, out var id) && id == gpoId);
 
+        var updatedRaw =
+            SerializeLinks(
+                links);
+
+        ChangePreviewGuard.Confirm(
+            new ChangePreviewRequest(
+                "Remove GPO link",
+                targetDn,
+                string.IsNullOrEmpty(raw) ? "<no links>" : raw,
+                string.IsNullOrEmpty(updatedRaw) ? "<no links>" : updatedRaw,
+                $"GPO: {gpoId:B}",
+                "Remove"));
+
         WriteLinks(entry, links);
     }
 
@@ -202,7 +228,29 @@ public sealed class GpoLinkService
         using var entry = new DirectoryEntry(
                 DomainConnectionState.BuildLdapPath(
                     targetDn));
-        entry.Properties["gPOptions"].Value = block ? 1 : 0;
+
+        entry.RefreshCache(
+            new[]
+            {
+                "gPOptions"
+            });
+
+        var before =
+            ReadBlockInheritance(
+                entry);
+
+        ChangePreviewGuard.Confirm(
+            new ChangePreviewRequest(
+                "Change block inheritance",
+                targetDn,
+                before ? "Blocked" : "Inherited",
+                block ? "Blocked" : "Inherited",
+                string.Empty,
+                "Apply"));
+
+        entry.Properties["gPOptions"].Value =
+            block ? 1 : 0;
+
         entry.CommitChanges();
     }
 
@@ -226,9 +274,18 @@ public sealed class GpoLinkService
         return result;
     }
 
+    private static string SerializeLinks(
+        IReadOnlyList<LinkRecord> links) =>
+        string.Concat(
+            links.Select(
+                link =>
+                    $"[{link.Path};{link.Options}]"));
+
     private static void WriteLinks(DirectoryEntry entry, IReadOnlyList<LinkRecord> links)
     {
-        var value = string.Concat(links.Select(link => $"[{link.Path};{link.Options}]"));
+        var value =
+            SerializeLinks(
+                links);
 
         if (string.IsNullOrEmpty(value))
         {
