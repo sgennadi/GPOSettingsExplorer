@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.DirectoryServices;
+using System.Globalization;
 using System.Management;
 using GPOSettingsExplorer.Models;
 
@@ -8,27 +10,68 @@ public sealed class WmiFilterService
 {
     public IReadOnlyList<WmiFilterInfo> LoadFilters(string domainName)
     {
-        var scope = CreatePolicyScope();
-        using var searcher = new ManagementObjectSearcher(
-            scope,
-            new ObjectQuery("SELECT * FROM MSFT_SomFilter"));
+        // WMI filters are directory objects (msWMI-Som). Reading them through
+        // LDAP avoids depending on the local root\\policy PolicSOM provider,
+        // which can return WBEM_E_PROVIDER_NOT_CAPABLE on otherwise healthy
+        // management hosts.
+        using var rootDse =
+            new DirectoryEntry("LDAP://RootDSE");
 
-        using var results = searcher.Get();
-        var filters = new List<WmiFilterInfo>();
+        var defaultNamingContext =
+            Convert.ToString(
+                rootDse.Properties[
+                    "defaultNamingContext"].Value)
+            ?? throw new InvalidOperationException(
+                "The Active Directory default naming context is unavailable.");
 
-        foreach (ManagementObject item in results)
-        {
-            var itemDomain = Convert.ToString(item["Domain"]) ?? string.Empty;
-            if (!string.Equals(itemDomain, domainName, StringComparison.OrdinalIgnoreCase))
+        using var systemContainer =
+            new DirectoryEntry(
+                $"LDAP://CN=System,{defaultNamingContext}");
+
+        using var searcher =
+            new DirectorySearcher(systemContainer)
             {
-                continue;
-            }
+                Filter = "(objectClass=msWMI-Som)",
+                SearchScope = SearchScope.Subtree,
+                PageSize = 500,
+                CacheResults = false
+            };
 
-            filters.Add(ToInfo(item));
+        foreach (var propertyName in new[]
+                 {
+                     "cn",
+                     "msWMI-ID",
+                     "msWMI-Name",
+                     "msWMI-Parm1",
+                     "msWMI-Parm2",
+                     "msWMI-Author",
+                     "msWMI-SourceOrganization",
+                     "msWMI-CreationDate",
+                     "msWMI-ChangeDate"
+                 })
+        {
+            searcher.PropertiesToLoad.Add(
+                propertyName);
+        }
+
+        using var results =
+            searcher.FindAll();
+
+        var filters =
+            new List<WmiFilterInfo>();
+
+        foreach (SearchResult result in results)
+        {
+            filters.Add(
+                ToInfo(
+                    result,
+                    domainName));
         }
 
         return filters
-            .OrderBy(f => f.Name, StringComparer.CurrentCultureIgnoreCase)
+            .OrderBy(
+                filter => filter.Name,
+                StringComparer.CurrentCultureIgnoreCase)
             .ToArray();
     }
 
@@ -152,6 +195,234 @@ public sealed class WmiFilterService
         }
 
         return results;
+    }
+
+    private static WmiFilterInfo ToInfo(
+        SearchResult result,
+        string domainName)
+    {
+        var id =
+            ReadDirectoryProperty(
+                result,
+                "msWMI-ID");
+
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            id =
+                ReadDirectoryProperty(
+                    result,
+                    "cn");
+        }
+
+        var serializedRules =
+            ReadDirectoryProperty(
+                result,
+                "msWMI-Parm2");
+
+        return new WmiFilterInfo
+        {
+            Id = id,
+            Domain = domainName,
+            Name =
+                ReadDirectoryProperty(
+                    result,
+                    "msWMI-Name"),
+            Description =
+                ReadDirectoryProperty(
+                    result,
+                    "msWMI-Parm1")
+                .TrimEnd(),
+            Author =
+                ReadDirectoryProperty(
+                    result,
+                    "msWMI-Author"),
+            SourceOrganization =
+                ReadDirectoryProperty(
+                    result,
+                    "msWMI-SourceOrganization"),
+            CreationDate =
+                ParseWmiDate(
+                    ReadDirectoryProperty(
+                        result,
+                        "msWMI-CreationDate")),
+            ChangeDate =
+                ParseWmiDate(
+                    ReadDirectoryProperty(
+                        result,
+                        "msWMI-ChangeDate")),
+            Rules =
+                ParseDirectoryRules(
+                    serializedRules)
+        };
+    }
+
+    private static string ReadDirectoryProperty(
+        SearchResult result,
+        string propertyName)
+    {
+        var values =
+            result.Properties[propertyName];
+
+        return values.Count == 0
+            ? string.Empty
+            : Convert.ToString(
+                  values[0],
+                  CultureInfo.InvariantCulture)
+              ?? string.Empty;
+    }
+
+    private static System.Collections.ObjectModel.ObservableCollection<WmiRuleInfo>
+        ParseDirectoryRules(string serialized)
+    {
+        var rules =
+            new System.Collections.ObjectModel.ObservableCollection<WmiRuleInfo>();
+
+        if (string.IsNullOrWhiteSpace(serialized))
+        {
+            return rules;
+        }
+
+        var offset = 0;
+
+        if (!TryReadNumber(
+                serialized,
+                ref offset,
+                out var ruleCount) ||
+            ruleCount < 0)
+        {
+            return rules;
+        }
+
+        for (var index = 0;
+             index < ruleCount;
+             index++)
+        {
+            if (!TryReadNumber(
+                    serialized,
+                    ref offset,
+                    out var languageLength) ||
+                !TryReadNumber(
+                    serialized,
+                    ref offset,
+                    out var namespaceLength) ||
+                !TryReadNumber(
+                    serialized,
+                    ref offset,
+                    out var queryLength) ||
+                !TryReadSizedField(
+                    serialized,
+                    ref offset,
+                    languageLength,
+                    out var language) ||
+                !TryReadSizedField(
+                    serialized,
+                    ref offset,
+                    namespaceLength,
+                    out var targetNamespace) ||
+                !TryReadSizedField(
+                    serialized,
+                    ref offset,
+                    queryLength,
+                    out var query))
+            {
+                // Do not make one malformed legacy filter prevent the rest of
+                // the domain's filters from loading.
+                break;
+            }
+
+            rules.Add(
+                new WmiRuleInfo
+                {
+                    QueryLanguage =
+                        string.IsNullOrWhiteSpace(language)
+                            ? "WQL"
+                            : language,
+                    TargetNamespace =
+                        string.IsNullOrWhiteSpace(targetNamespace)
+                            ? @"root\CIMv2"
+                            : targetNamespace,
+                    Query = query
+                });
+        }
+
+        return rules;
+    }
+
+    private static bool TryReadNumber(
+        string value,
+        ref int offset,
+        out int number)
+    {
+        number = 0;
+
+        if (offset < 0 ||
+            offset >= value.Length)
+        {
+            return false;
+        }
+
+        var separator =
+            value.IndexOf(
+                ';',
+                offset);
+
+        if (separator < 0)
+        {
+            return false;
+        }
+
+        var token =
+            value.AsSpan(
+                offset,
+                separator - offset);
+
+        if (!int.TryParse(
+                token,
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out number))
+        {
+            return false;
+        }
+
+        offset =
+            separator + 1;
+
+        return true;
+    }
+
+    private static bool TryReadSizedField(
+        string value,
+        ref int offset,
+        int length,
+        out string field)
+    {
+        field = string.Empty;
+
+        if (length < 0 ||
+            offset < 0 ||
+            offset + length > value.Length)
+        {
+            return false;
+        }
+
+        field =
+            value.Substring(
+                offset,
+                length);
+
+        offset +=
+            length;
+
+        if (offset < value.Length &&
+            value[offset] == ';')
+        {
+            offset++;
+            return true;
+        }
+
+        return offset ==
+               value.Length;
     }
 
     private static ManagementScope CreatePolicyScope()

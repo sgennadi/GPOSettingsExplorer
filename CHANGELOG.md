@@ -4,6 +4,12 @@
 
 - No unreleased changes yet.
 
+## 0.2.1 - 2026-10-07
+
+- Fixed startup failure "Provider is not capable of the attempted operation" when the local root\\policy WMI provider cannot enumerate Group Policy WMI filters.
+- WMI filter discovery now reads the domain's msWMI-Som objects directly through LDAP and parses the native msWMI-Parm2 rule format.
+- GPO discovery and WMI filter discovery are isolated: a WMI filter error no longer prevents the GPO list from loading.
+
 ## 0.2.0 - 2026-10-07
 
 - Completed the application-wide UiStyle/HiDPI cleanup pass: centralized typography, adaptive dialog button bars, resizable compact dialogs, flexible multiline fields, WMI editor layout cleanup, per-monitor DPI reflow, and overflow-safe compact dialogs for 100/125/150/175/200% Windows scaling.

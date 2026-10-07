@@ -72,34 +72,78 @@ public partial class MainWindow : Window
             }
             else
             {
-                HeaderStatusText.Text = "Loading GPOs and WMI filters...";
+                HeaderStatusText.Text = "Loading GPOs...";
 
-                var gpoTask = Task.Run(() => _gpmService.LoadGpos(_domainContext.DomainName));
-                var wmiTask = Task.Run(() => _wmiFilterService.LoadFilters(_domainContext.DomainName));
+                var gpos = await Task.Run(() =>
+                    _gpmService.LoadGpos(
+                        _domainContext.DomainName));
 
-                await Task.WhenAll(gpoTask, wmiTask);
+                ReplaceCollection(
+                    _gpos,
+                    gpos);
 
-                ReplaceCollection(_gpos, await gpoTask);
-                var filters = (await wmiTask).ToList();
-
-                foreach (var filter in filters)
-                {
-                    filter.UsedByCount = _gpos.Count(g =>
-                        !string.IsNullOrWhiteSpace(g.WmiFilterPath) &&
-                        g.WmiFilterPath.Contains(filter.Id, StringComparison.OrdinalIgnoreCase));
-                }
-
-                ReplaceCollection(_wmiFilters, filters);
-
-                if (SecurityGpoCombo.SelectedItem is null && _gpos.Count > 0)
+                if (SecurityGpoCombo.SelectedItem is null &&
+                    _gpos.Count > 0)
                 {
                     SecurityGpoCombo.SelectedIndex = 0;
                 }
 
-                HeaderStatusText.Text = $"{_gpos.Count:N0} GPOs | {_wmiFilters.Count:N0} WMI filters";
+                HeaderStatusText.Text =
+                    $"Loading WMI filters... | {_gpos.Count:N0} GPOs";
+
+                Exception? wmiLoadError = null;
+
+                try
+                {
+                    var filters = (await Task.Run(() =>
+                            _wmiFilterService.LoadFilters(
+                                _domainContext.DomainName)))
+                        .ToList();
+
+                    foreach (var filter in filters)
+                    {
+                        filter.UsedByCount =
+                            _gpos.Count(g =>
+                                !string.IsNullOrWhiteSpace(
+                                    g.WmiFilterPath) &&
+                                g.WmiFilterPath.Contains(
+                                    filter.Id,
+                                    StringComparison.OrdinalIgnoreCase));
+                    }
+
+                    ReplaceCollection(
+                        _wmiFilters,
+                        filters);
+                }
+                catch (Exception ex)
+                {
+                    // WMI filter discovery is optional for the main GPO list.
+                    // A provider/LDAP problem must never make the application
+                    // look as if GPO discovery itself failed.
+                    wmiLoadError = ex;
+                    _wmiFilters.Clear();
+                }
+
+                if (wmiLoadError is null)
+                {
+                    HeaderStatusText.Text =
+                        $"{_gpos.Count:N0} GPOs | {_wmiFilters.Count:N0} WMI filters";
+                    StatusText.Text =
+                        "Ready";
+                }
+                else
+                {
+                    HeaderStatusText.Text =
+                        $"{_gpos.Count:N0} GPOs | WMI filters unavailable";
+                    StatusText.Text =
+                        $"Ready - WMI filters unavailable: {wmiLoadError.Message}";
+                }
             }
 
-            StatusText.Text = "Ready";
+            if (!_gpmService.IsAvailable)
+            {
+                StatusText.Text = "Ready";
+            }
         }
         catch (Exception ex)
         {
