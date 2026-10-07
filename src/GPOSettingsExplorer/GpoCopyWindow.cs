@@ -103,7 +103,13 @@ public sealed class GpoCopyWindow : Window
         });
 
         root.Children.Add(buttons);
-        root.Children.Add(panel);
+        root.Children.Add(
+            new ScrollViewer
+            {
+                Content = panel,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled
+            });
         Content = root;
 
         Loaded += (_, _) => _nameBox.Focus();
