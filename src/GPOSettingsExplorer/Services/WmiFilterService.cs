@@ -15,7 +15,8 @@ public sealed class WmiFilterService
         // which can return WBEM_E_PROVIDER_NOT_CAPABLE on otherwise healthy
         // management hosts.
         using var rootDse =
-            new DirectoryEntry("LDAP://RootDSE");
+            new DirectoryEntry(
+                DomainConnectionState.BuildRootDsePath());
 
         var defaultNamingContext =
             Convert.ToString(
@@ -26,7 +27,8 @@ public sealed class WmiFilterService
 
         using var systemContainer =
             new DirectoryEntry(
-                $"LDAP://CN=System,{defaultNamingContext}");
+                DomainConnectionState.BuildLdapPath(
+                    $"CN=System,{defaultNamingContext}"));
 
         using var searcher =
             new DirectorySearcher(systemContainer)
@@ -75,56 +77,179 @@ public sealed class WmiFilterService
             .ToArray();
     }
 
-    public WmiFilterInfo Save(string domainName, WmiFilterInfo filter)
+    public WmiFilterInfo Save(
+        string domainName,
+        WmiFilterInfo filter)
     {
-        Validate(filter);
+        EditingGuard.EnsureEnabled(
+            "Edit WMI filter");
 
-        var scope = CreatePolicyScope();
-        var now = DateTime.Now;
-        ManagementObject target;
+        Validate(
+            filter);
 
-        if (string.IsNullOrWhiteSpace(filter.Id))
+        var existing =
+            string.IsNullOrWhiteSpace(
+                filter.Id)
+                ? null
+                : LoadFilters(
+                        domainName)
+                    .FirstOrDefault(
+                        candidate =>
+                            candidate.Id.Equals(
+                                filter.Id,
+                                StringComparison.OrdinalIgnoreCase));
+
+        ChangePreviewGuard.Confirm(
+            new ChangePreviewRequest(
+                existing is null
+                    ? "Create WMI filter"
+                    : "Edit WMI filter",
+                domainName,
+                existing is null
+                    ? "<not present>"
+                    : WmiSummary(
+                        existing),
+                WmiSummary(
+                    filter),
+                existing is null
+                    ? "A new msWMI-Som object will be created on the connected domain controller."
+                    : $"WMI filter ID: {filter.Id}",
+                existing is null
+                    ? "Create"
+                    : "Apply"));
+
+        var domainDn =
+            GetDomainDistinguishedName(
+                domainName);
+
+        var containerDn =
+            $"CN=SOM,CN=WMIPolicy,CN=System,{domainDn}";
+
+        using var container =
+            new DirectoryEntry(
+                DomainConnectionState.BuildLdapPath(
+                    containerDn));
+
+        container.RefreshCache();
+
+        var now =
+            DateTime.Now;
+
+        var isNew =
+            string.IsNullOrWhiteSpace(
+                filter.Id);
+
+        if (isNew)
         {
-            using var filterClass = new ManagementClass(
-                scope,
-                new ManagementPath("MSFT_SomFilter"),
-                null);
-
-            target = filterClass.CreateInstance()
-                ?? throw new InvalidOperationException("Unable to create a WMI filter instance.");
-
-            filter.Id = Guid.NewGuid().ToString("B").ToUpperInvariant();
-            target["ID"] = filter.Id;
-            target["Domain"] = domainName;
-            target["CreationDate"] = ManagementDateTimeConverter.ToDmtfDateTime(now);
+            filter.Id =
+                Guid.NewGuid()
+                    .ToString("B")
+                    .ToUpperInvariant();
         }
-        else
+
+        var objectDn =
+            $"CN={filter.Id},{containerDn}";
+
+        using var target =
+            isNew
+                ? container.Children.Add(
+                    $"CN={filter.Id}",
+                    "msWMI-Som")
+                : new DirectoryEntry(
+                    DomainConnectionState.BuildLdapPath(
+                        objectDn));
+
+        if (!isNew)
         {
-            target = GetFilterObject(scope, domainName, filter.Id);
-            target.Get();
+            target.RefreshCache();
         }
 
-        using (target)
-        {
-            target["Name"] = filter.Name.Trim();
-            target["Description"] = filter.Description ?? string.Empty;
-            target["Author"] = string.IsNullOrWhiteSpace(filter.Author)
+        var author =
+            string.IsNullOrWhiteSpace(
+                filter.Author)
                 ? $"{Environment.UserDomainName}\\{Environment.UserName}"
                 : filter.Author.Trim();
-            target["SourceOrganization"] = string.IsNullOrWhiteSpace(filter.SourceOrganization)
+
+        var sourceOrganization =
+            string.IsNullOrWhiteSpace(
+                filter.SourceOrganization)
                 ? domainName
                 : filter.SourceOrganization.Trim();
-            target["ChangeDate"] = ManagementDateTimeConverter.ToDmtfDateTime(now);
-            target["Rules"] = BuildRules(scope, filter.Rules);
 
-            target.Put();
-            target.Get();
-            return ToInfo(target);
+        SetDirectoryValue(
+            target,
+            "msWMI-ID",
+            filter.Id);
+
+        SetDirectoryValue(
+            target,
+            "msWMI-Name",
+            filter.Name.Trim());
+
+        SetDirectoryValue(
+            target,
+            "msWMI-Parm1",
+            filter.Description
+            ?? string.Empty);
+
+        SetDirectoryValue(
+            target,
+            "msWMI-Parm2",
+            SerializeDirectoryRules(
+                filter.Rules));
+
+        SetDirectoryValue(
+            target,
+            "msWMI-Author",
+            author);
+
+        SetDirectoryValue(
+            target,
+            "msWMI-SourceOrganization",
+            sourceOrganization);
+
+        if (isNew)
+        {
+            SetDirectoryValue(
+                target,
+                "msWMI-CreationDate",
+                ManagementDateTimeConverter.ToDmtfDateTime(
+                    now));
         }
+
+        SetDirectoryValue(
+            target,
+            "msWMI-ChangeDate",
+            ManagementDateTimeConverter.ToDmtfDateTime(
+                now));
+
+        target.CommitChanges();
+
+        filter.Domain =
+            domainName;
+
+        filter.Author =
+            author;
+
+        filter.SourceOrganization =
+            sourceOrganization;
+
+        if (isNew)
+        {
+            filter.CreationDate =
+                now;
+        }
+
+        filter.ChangeDate =
+            now;
+
+        return filter.Clone();
     }
 
     public WmiFilterInfo Clone(string domainName, WmiFilterInfo source, string newName)
     {
+        EditingGuard.EnsureEnabled(
+            "Clone WMI filter");
         var clone = source.Clone();
         clone.Id = string.Empty;
         clone.Name = newName;
@@ -134,11 +259,50 @@ public sealed class WmiFilterService
         return Save(domainName, clone);
     }
 
-    public void Delete(string domainName, string id)
+    public void Delete(
+        string domainName,
+        string id)
     {
-        var scope = CreatePolicyScope();
-        using var target = GetFilterObject(scope, domainName, id);
-        target.Delete();
+        EditingGuard.EnsureEnabled(
+            "Delete WMI filter");
+
+        var existing =
+            LoadFilters(
+                    domainName)
+                .FirstOrDefault(
+                    candidate =>
+                        candidate.Id.Equals(
+                            id,
+                            StringComparison.OrdinalIgnoreCase));
+
+        if (existing is null)
+        {
+            return;
+        }
+
+        ChangePreviewGuard.Confirm(
+            new ChangePreviewRequest(
+                "Delete WMI filter",
+                existing.Name,
+                WmiSummary(
+                    existing),
+                "<deleted>",
+                $"WMI filter ID: {existing.Id}",
+                "Delete"));
+
+        var domainDn =
+            GetDomainDistinguishedName(
+                domainName);
+
+        var objectDn =
+            $"CN={existing.Id},CN=SOM,CN=WMIPolicy,CN=System,{domainDn}";
+
+        using var target =
+            new DirectoryEntry(
+                DomainConnectionState.BuildLdapPath(
+                    objectDn));
+
+        target.DeleteTree();
     }
 
     public IReadOnlyList<WmiTestResult> Test(WmiFilterInfo filter, string computerName)
@@ -423,6 +587,144 @@ public sealed class WmiFilterService
 
         return offset ==
                value.Length;
+    }
+
+    private static string GetDomainDistinguishedName(
+        string domainName)
+    {
+        var context =
+            DomainConnectionState.Context;
+
+        if (context is not null &&
+            context.DomainName.Equals(
+                domainName,
+                StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrWhiteSpace(
+                context.DomainDistinguishedName))
+        {
+            return context.DomainDistinguishedName;
+        }
+
+        using var rootDse =
+            new DirectoryEntry(
+                DomainConnectionState.BuildRootDsePath());
+
+        rootDse.RefreshCache(
+            new[]
+            {
+                "defaultNamingContext"
+            });
+
+        return Convert.ToString(
+                   rootDse.Properties[
+                       "defaultNamingContext"].Value)
+               ?? throw new InvalidOperationException(
+                   "The Active Directory default naming context is unavailable.");
+    }
+
+    private static void SetDirectoryValue(
+        DirectoryEntry entry,
+        string name,
+        string value)
+    {
+        entry.Properties[
+                name].Value =
+            value
+            ?? string.Empty;
+    }
+
+    private static string SerializeDirectoryRules(
+        IEnumerable<WmiRuleInfo> rules)
+    {
+        var normalized =
+            rules
+                .Select(
+                    rule =>
+                        new
+                        {
+                            Language =
+                                string.IsNullOrWhiteSpace(
+                                    rule.QueryLanguage)
+                                    ? "WQL"
+                                    : rule.QueryLanguage.Trim(),
+                            Namespace =
+                                NormalizeNamespace(
+                                    rule.TargetNamespace),
+                            Query =
+                                rule.Query.Trim()
+                        })
+                .ToArray();
+
+        var builder =
+            new System.Text.StringBuilder();
+
+        builder.Append(
+            normalized.Length.ToString(
+                CultureInfo.InvariantCulture));
+
+        builder.Append(
+            ';');
+
+        foreach (var rule in normalized)
+        {
+            builder.Append(
+                rule.Language.Length.ToString(
+                    CultureInfo.InvariantCulture));
+
+            builder.Append(
+                ';');
+
+            builder.Append(
+                rule.Namespace.Length.ToString(
+                    CultureInfo.InvariantCulture));
+
+            builder.Append(
+                ';');
+
+            builder.Append(
+                rule.Query.Length.ToString(
+                    CultureInfo.InvariantCulture));
+
+            builder.Append(
+                ';');
+
+            builder.Append(
+                rule.Language);
+
+            builder.Append(
+                ';');
+
+            builder.Append(
+                rule.Namespace);
+
+            builder.Append(
+                ';');
+
+            builder.Append(
+                rule.Query);
+
+            builder.Append(
+                ';');
+        }
+
+        return builder.ToString();
+    }
+
+    private static string WmiSummary(
+        WmiFilterInfo filter)
+    {
+        var rules =
+            filter.Rules
+                .Select(
+                    (rule, index) =>
+                        $"{index + 1}. [{rule.TargetNamespace}] {rule.Query}");
+
+        return
+            $"Name: {filter.Name}\n" +
+            $"Description: {filter.Description}\n" +
+            $"Author: {filter.Author}\n" +
+            $"Source organization: {filter.SourceOrganization}\n" +
+            $"Rules:\n{string.Join("\n", rules)}";
     }
 
     private static ManagementScope CreatePolicyScope()

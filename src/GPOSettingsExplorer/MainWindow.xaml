@@ -36,8 +36,32 @@
                            TextWrapping="Wrap"
                            TextTrimming="None"
                            MinWidth="180"
-                           MaxWidth="640"
+                           MaxWidth="420"
                            Margin="0,0,10,0"/>
+
+                <Button Content="Connection..."
+                        Click="Connection_Click"/>
+
+                <ToggleButton x:Name="WriteModeToggle"
+                              Content="Safe mode: READ ONLY"
+                              Checked="WriteModeToggle_Changed"
+                              Unchecked="WriteModeToggle_Changed"
+                              ToolTip="Write operations are blocked while Safe mode is active."/>
+
+                <TextBox x:Name="GlobalSearchBox"
+                         Width="220"
+                         ToolTip="Search GPOs, settings, scripts, WMI filters and loaded preference items."
+                         KeyDown="GlobalSearchBox_KeyDown"/>
+
+                <Button Content="Search"
+                        Click="GlobalSearch_Click"/>
+
+                <Button Content="Diagnostics"
+                        Click="Diagnostics_Click"/>
+
+                <Button x:Name="UpdateButton"
+                        Content="Check updates"
+                        Click="CheckUpdates_Click"/>
 
                 <Button Content="Refresh all"
                         Click="RefreshAll_Click"/>
@@ -1271,6 +1295,7 @@
                                   Width="170"
                                   SelectionChanged="GppXmlFilter_SelectionChanged"/>
                         <Button Content="Load all" Click="LoadGppXml_Click"/>
+                        <Button Content="Structured edit" Click="StructuredEditGppXml_Click"/>
                         <Button Content="Edit XML" Click="EditGppXml_Click"/>
                         <Button Content="Import / Replace..." Click="ImportGppXml_Click"/>
                         <Button Content="Export XML" Click="ExportGppXml_Click"/>
@@ -1360,7 +1385,7 @@
                 </DockPanel>
             </TabItem>
 
-            <TabItem Header="Backups" Loaded="BackupsTab_Loaded">
+            <TabItem x:Name="BackupsTab" Header="Backups" Loaded="BackupsTab_Loaded">
                 <DockPanel Margin="6">
                     <StackPanel DockPanel.Dock="Top" Orientation="Vertical">
                         <WrapPanel>
@@ -1408,6 +1433,8 @@
                             <Button Content="Refresh" Click="RefreshAudit_Click"/>
                             <Button Content="Open folder" Click="OpenAuditFolder_Click"/>
                             <Button Content="Export CSV" Click="ExportAuditCsv_Click"/>
+                            <Button Content="Open linked backup" Click="OpenAuditBackup_Click"/>
+                            <Button Content="Restore linked backup" Click="RestoreAuditBackup_Click"/>
                             <TextBlock Text="Search:" VerticalAlignment="Center" Margin="12,0,0,0"/>
                             <TextBox x:Name="AuditSearchBox"
                                      Width="260"

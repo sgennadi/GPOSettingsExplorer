@@ -44,6 +44,8 @@ public sealed class GpoBackupService
 
     public void Restore(string currentDomainName, GpoBackupInfo backup)
     {
+        EditingGuard.EnsureEnabled(
+            "Restore GPO backup");
         if (!string.Equals(
                 currentDomainName,
                 backup.DomainName,
@@ -60,13 +62,36 @@ public sealed class GpoBackupService
 
         dynamic gpm = CreateGpm();
         dynamic constants = gpm.GetConstants();
-        dynamic domain = gpm.GetDomain(
-            currentDomainName,
-            string.Empty,
-            constants.UseAnyDC);
+        var server =
+            DomainConnectionState.GetServerFor(
+                currentDomainName);
+
+        dynamic domain =
+            string.IsNullOrWhiteSpace(
+                server)
+                ? gpm.GetDomain(
+                    currentDomainName,
+                    string.Empty,
+                    constants.UseAnyDC)
+                : gpm.GetDomain(
+                    currentDomainName,
+                    server,
+                    0);
 
         dynamic backupDirectory = gpm.GetBackupDir(backup.BackupDirectory);
         dynamic backupObject = backupDirectory.GetBackup(backup.BackupId.ToString("B"));
+
+        ChangePreviewGuard.Confirm(
+            new ChangePreviewRequest(
+                "Restore GPO backup",
+                string.IsNullOrWhiteSpace(backup.DisplayName)
+                    ? backup.GpoId.ToString("B")
+                    : backup.DisplayName,
+                "Current GPO state",
+                $"Backup from {backup.Timestamp:yyyy-MM-dd HH:mm:ss}",
+                $"Backup ID: {backup.BackupId:B}\nDirectory: {backup.BackupDirectory}",
+                "Restore"));
+
         dynamic result = domain.RestoreGPO(backupObject, null, null);
 
         var status = ReadOverallStatus(result);
@@ -80,12 +105,24 @@ public sealed class GpoBackupService
 
     public void DeleteBackup(GpoBackupInfo backup)
     {
+        EditingGuard.EnsureEnabled(
+            "Delete GPO backup");
         if (!Directory.Exists(backup.BackupDirectory))
             return;
 
         dynamic gpm = CreateGpm();
         dynamic backupDirectory = gpm.GetBackupDir(backup.BackupDirectory);
         dynamic backupObject = backupDirectory.GetBackup(backup.BackupId.ToString("B"));
+
+        ChangePreviewGuard.Confirm(
+            new ChangePreviewRequest(
+                "Delete GPO backup",
+                backup.DisplayName,
+                $"{backup.BackupId:B} | {backup.Timestamp:yyyy-MM-dd HH:mm:ss}",
+                "<deleted>",
+                backup.BackupDirectory,
+                "Delete"));
+
         backupObject.Delete();
 
         TryDeleteEmptyDirectory(backup.BackupDirectory);

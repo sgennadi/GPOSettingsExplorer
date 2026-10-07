@@ -72,7 +72,7 @@ public sealed class GppPrinterService
                 try
                 {
                     var document =
-                        XDocument.Load(
+                        GppXmlCacheService.Load(
                             target.XmlPath,
                             LoadOptions.PreserveWhitespace);
 
@@ -230,7 +230,7 @@ public sealed class GppPrinterService
                 target.XmlPath))
         {
             document =
-                XDocument.Load(
+                GppXmlCacheService.Load(
                     target.XmlPath,
                     LoadOptions.PreserveWhitespace);
 
@@ -318,7 +318,7 @@ public sealed class GppPrinterService
             return;
 
         var document =
-            XDocument.Load(
+            GppXmlCacheService.Load(
                 target.XmlPath,
                 LoadOptions.PreserveWhitespace);
 

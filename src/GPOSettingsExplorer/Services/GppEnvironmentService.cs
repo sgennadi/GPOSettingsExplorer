@@ -41,7 +41,7 @@ public sealed class GppEnvironmentService
 
                 try
                 {
-                    var document = XDocument.Load(
+                    var document = GppXmlCacheService.Load(
                         target.XmlPath,
                         LoadOptions.PreserveWhitespace);
 
@@ -171,7 +171,7 @@ public sealed class GppEnvironmentService
 
         if (File.Exists(target.XmlPath))
         {
-            document = XDocument.Load(
+            document = GppXmlCacheService.Load(
                 target.XmlPath,
                 LoadOptions.PreserveWhitespace);
 
@@ -244,7 +244,7 @@ public sealed class GppEnvironmentService
         if (!File.Exists(target.XmlPath))
             return;
 
-        var document = XDocument.Load(
+        var document = GppXmlCacheService.Load(
             target.XmlPath,
             LoadOptions.PreserveWhitespace);
 

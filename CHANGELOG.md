@@ -4,6 +4,24 @@
 
 - No unreleased changes yet.
 
+## 0.3.0 - 2026-10-07
+
+- Added a startup Active Directory connection manager with current-session or alternate credentials, optional DC pinning, connection testing, and DPAPI-protected credential persistence.
+- Added session-wide single-DC routing so LDAP, GPMC, SYSVOL, GPO scripts, WMI filters, links, Administrative Templates, Security Options, and Group Policy Preferences use the selected domain controller consistently.
+- Added Safe mode. The application starts read-only and all supported Group Policy write paths are blocked until WRITE ENABLED is explicitly confirmed.
+- Added before/after change previews for GPO creation/copy/import/rename/delete, scope changes, permissions, WMI assignments, GPO links, GPP XML, scripts, Administrative Templates, Security Options, and backup restore/delete operations.
+- Added a visual Group Policy Preferences item-level targeting tree editor that preserves existing and unknown filter elements and attributes while keeping raw XML available for advanced editing.
+- Added structured tree/attribute editing for every known GPP XML document, including Applications, Devices, Internet Settings, Network Options, and Start Menu and Taskbar, while retaining the specialized editors for the common preference types.
+- Added a Diagnostics window with domain/DC/GPMC/SYSVOL/Central Store checks, selected-GPO write-access testing, crash-log access, and sanitized support-package ZIP creation.
+- Added global cross-feature search over loaded GPOs, settings, WMI filters, scripts, GPP items, backups, audit entries, and other loaded model collections with navigation back to the source tab.
+- Added Audit Log actions to open or restore the GPO backup linked to an audit entry, reusing the safety-backup restore workflow.
+- Added persistent GPP XML and GPO script inventory caches. Cache entries are invalidated when source metadata changes or writes occur, reducing repeated SYSVOL reads.
+- WMI filter create/edit/delete now writes the msWMI-Som objects directly through LDAP on the pinned DC instead of depending on the local root\\policy provider.
+- Added architecture-aware in-app update checks and staged portable self-update for x64 and ARM64 GitHub releases.
+- Added a CoreTests regression runner and CI test stage covering script sanitization, single-DC path routing, DPAPI, GPP XML cache freshness, and script cache invalidation.
+- Removed the redundant System.DirectoryServices package reference on .NET 10.
+
+
 ## 0.2.11 - 2026-10-07
 
 - Hardened GPP INI Files loading so overlapping scans, cancellation, tab initialization failures, or unexpected read errors no longer terminate the application.

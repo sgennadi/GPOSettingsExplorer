@@ -17,7 +17,7 @@ public sealed class GpmService
     {
         dynamic gpm = CreateGpm();
         dynamic constants = gpm.GetConstants();
-        dynamic domain = gpm.GetDomain(domainName, string.Empty, constants.UseAnyDC);
+        dynamic domain = GetDomain(gpm, constants, domainName);
         dynamic criteria = gpm.CreateSearchCriteria();
         dynamic collection = domain.SearchGPOs(criteria);
 
@@ -69,7 +69,7 @@ public sealed class GpmService
     {
         dynamic gpm = CreateGpm();
         dynamic constants = gpm.GetConstants();
-        dynamic domain = gpm.GetDomain(domainName, string.Empty, constants.UseAnyDC);
+        dynamic domain = GetDomain(gpm, constants, domainName);
 
         var settings = new List<PolicySettingInfo>();
         var gpoList = gpos.ToList();
@@ -112,7 +112,8 @@ public sealed class GpmService
         string domainDistinguishedName)
     {
         var objectPath =
-            $"LDAP://CN={gpo.Id:B},CN=Policies,CN=System,{domainDistinguishedName}";
+            DomainConnectionState.BuildLdapPath(
+                $"CN={gpo.Id:B},CN=Policies,CN=System,{domainDistinguishedName}");
 
         var arguments =
             $"gpme.msc /gpobject:\"{objectPath}\"";
@@ -144,6 +145,8 @@ public sealed class GpmService
 
     public Guid CreateGpo(string domainName, string displayName)
     {
+        EditingGuard.EnsureEnabled(
+            "Create GPO");
         if (string.IsNullOrWhiteSpace(displayName))
         {
             throw new ArgumentException("GPO name cannot be empty.", nameof(displayName));
@@ -151,7 +154,17 @@ public sealed class GpmService
 
         dynamic gpm = CreateGpm();
         dynamic constants = gpm.GetConstants();
-        dynamic domain = gpm.GetDomain(domainName, string.Empty, constants.UseAnyDC);
+        dynamic domain = GetDomain(gpm, constants, domainName);
+
+        ChangePreviewGuard.Confirm(
+            new ChangePreviewRequest(
+                "Create GPO",
+                domainName,
+                "<not present>",
+                displayName.Trim(),
+                "A new Group Policy Object will be created.",
+                "Create"));
+
         dynamic gpo = domain.CreateGPO();
         gpo.DisplayName = displayName.Trim();
 
@@ -170,6 +183,8 @@ public sealed class GpmService
         string newDisplayName,
         bool copyAcl)
     {
+        EditingGuard.EnsureEnabled(
+            "Copy GPO");
         if (string.IsNullOrWhiteSpace(newDisplayName))
         {
             throw new ArgumentException("GPO name cannot be empty.", nameof(newDisplayName));
@@ -177,8 +192,19 @@ public sealed class GpmService
 
         dynamic gpm = CreateGpm();
         dynamic constants = gpm.GetConstants();
-        dynamic domain = gpm.GetDomain(domainName, string.Empty, constants.UseAnyDC);
+        dynamic domain = GetDomain(gpm, constants, domainName);
         dynamic source = domain.GetGPO(sourceGpoId.ToString("B"));
+
+        ChangePreviewGuard.Confirm(
+            new ChangePreviewRequest(
+                "Copy GPO",
+                domainName,
+                $"Source: {Convert.ToString((object?)source.DisplayName) ?? sourceGpoId.ToString("B")}",
+                $"New GPO: {newDisplayName.Trim()}",
+                copyAcl
+                    ? "The GPO settings and ACL will be copied."
+                    : "The GPO settings will be copied without processing the source ACL.",
+                "Copy"));
 
         var flags = copyAcl
             ? Convert.ToInt32((object?)constants.ProcessSecurity)
@@ -209,6 +235,8 @@ public sealed class GpmService
         GpoBackupInfo backup,
         string? migrationTablePath = null)
     {
+        EditingGuard.EnsureEnabled(
+            "Import GPO settings");
         if (!Directory.Exists(backup.BackupDirectory))
         {
             throw new DirectoryNotFoundException(
@@ -217,8 +245,19 @@ public sealed class GpmService
 
         dynamic gpm = CreateGpm();
         dynamic constants = gpm.GetConstants();
-        dynamic domain = gpm.GetDomain(domainName, string.Empty, constants.UseAnyDC);
+        dynamic domain = GetDomain(gpm, constants, domainName);
         dynamic target = domain.GetGPO(targetGpoId.ToString("B"));
+
+        ChangePreviewGuard.Confirm(
+            new ChangePreviewRequest(
+                "Import GPO settings",
+                Convert.ToString((object?)target.DisplayName) ?? targetGpoId.ToString("B"),
+                "Current GPO settings",
+                $"Backup: {backup.DisplayName} | {backup.BackupId:B}",
+                string.IsNullOrWhiteSpace(migrationTablePath)
+                    ? "No migration table will be used."
+                    : $"Migration table: {migrationTablePath}",
+                "Import"));
 
         dynamic backupDirectory = gpm.GetBackupDir(backup.BackupDirectory);
         dynamic backupObject = backupDirectory.GetBackup(backup.BackupId.ToString("B"));
@@ -250,6 +289,8 @@ public sealed class GpmService
 
     public void RenameGpo(string domainName, Guid gpoId, string newDisplayName)
     {
+        EditingGuard.EnsureEnabled(
+            "Rename GPO");
         if (string.IsNullOrWhiteSpace(newDisplayName))
         {
             throw new ArgumentException("GPO name cannot be empty.", nameof(newDisplayName));
@@ -257,35 +298,89 @@ public sealed class GpmService
 
         dynamic gpm = CreateGpm();
         dynamic constants = gpm.GetConstants();
-        dynamic domain = gpm.GetDomain(domainName, string.Empty, constants.UseAnyDC);
+        dynamic domain = GetDomain(gpm, constants, domainName);
         dynamic gpo = domain.GetGPO(gpoId.ToString("B"));
+
+        ChangePreviewGuard.Confirm(
+            new ChangePreviewRequest(
+                "Rename GPO",
+                gpoId.ToString("B"),
+                Convert.ToString((object?)gpo.DisplayName) ?? string.Empty,
+                newDisplayName.Trim(),
+                string.Empty,
+                "Rename"));
+
         gpo.DisplayName = newDisplayName.Trim();
     }
 
     public void DeleteGpo(string domainName, Guid gpoId)
     {
+        EditingGuard.EnsureEnabled(
+            "Delete GPO");
         dynamic gpm = CreateGpm();
         dynamic constants = gpm.GetConstants();
-        dynamic domain = gpm.GetDomain(domainName, string.Empty, constants.UseAnyDC);
+        dynamic domain = GetDomain(gpm, constants, domainName);
         dynamic gpo = domain.GetGPO(gpoId.ToString("B"));
+
+        ChangePreviewGuard.Confirm(
+            new ChangePreviewRequest(
+                "Delete GPO",
+                Convert.ToString((object?)gpo.DisplayName) ?? gpoId.ToString("B"),
+                gpoId.ToString("B"),
+                "<deleted>",
+                "This deletes the Group Policy Object.",
+                "Delete"));
+
         gpo.Delete();
     }
 
     public void SetComputerEnabled(string domainName, Guid gpoId, bool enabled)
     {
+        EditingGuard.EnsureEnabled(
+            "Change Computer Configuration scope");
         dynamic gpm = CreateGpm();
         dynamic constants = gpm.GetConstants();
-        dynamic domain = gpm.GetDomain(domainName, string.Empty, constants.UseAnyDC);
+        dynamic domain = GetDomain(gpm, constants, domainName);
         dynamic gpo = domain.GetGPO(gpoId.ToString("B"));
+
+        var current =
+            SafeBool(
+                () => gpo.IsComputerEnabled());
+
+        ChangePreviewGuard.Confirm(
+            new ChangePreviewRequest(
+                "Change Computer Configuration scope",
+                Convert.ToString((object?)gpo.DisplayName) ?? gpoId.ToString("B"),
+                current ? "Enabled" : "Disabled",
+                enabled ? "Enabled" : "Disabled",
+                string.Empty,
+                "Apply"));
+
         gpo.SetComputerEnabled(enabled);
     }
 
     public void SetUserEnabled(string domainName, Guid gpoId, bool enabled)
     {
+        EditingGuard.EnsureEnabled(
+            "Change User Configuration scope");
         dynamic gpm = CreateGpm();
         dynamic constants = gpm.GetConstants();
-        dynamic domain = gpm.GetDomain(domainName, string.Empty, constants.UseAnyDC);
+        dynamic domain = GetDomain(gpm, constants, domainName);
         dynamic gpo = domain.GetGPO(gpoId.ToString("B"));
+
+        var current =
+            SafeBool(
+                () => gpo.IsUserEnabled());
+
+        ChangePreviewGuard.Confirm(
+            new ChangePreviewRequest(
+                "Change User Configuration scope",
+                Convert.ToString((object?)gpo.DisplayName) ?? gpoId.ToString("B"),
+                current ? "Enabled" : "Disabled",
+                enabled ? "Enabled" : "Disabled",
+                string.Empty,
+                "Apply"));
+
         gpo.SetUserEnabled(enabled);
     }
 
@@ -323,7 +418,7 @@ public sealed class GpmService
     {
         dynamic gpm = CreateGpm();
         dynamic constants = gpm.GetConstants();
-        dynamic domain = gpm.GetDomain(domainName, string.Empty, constants.UseAnyDC);
+        dynamic domain = GetDomain(gpm, constants, domainName);
         dynamic gpo = domain.GetGPO(gpoId.ToString("B"));
         dynamic security = gpo.GetSecurityInfo();
 
@@ -413,7 +508,7 @@ public sealed class GpmService
     {
         using var rootDse =
             new DirectoryEntry(
-                "LDAP://RootDSE");
+                DomainConnectionState.BuildRootDsePath());
 
         var defaultNamingContext =
             Convert.ToString(
@@ -427,7 +522,8 @@ public sealed class GpmService
 
         using var gpoEntry =
             new DirectoryEntry(
-                $"LDAP://{gpoDn}");
+                DomainConnectionState.BuildLdapPath(
+                    gpoDn));
 
         gpoEntry.Options.SecurityMasks =
             SecurityMasks.Dacl;
@@ -638,7 +734,7 @@ public sealed class GpmService
         {
             using var rootDse =
                 new DirectoryEntry(
-                    "LDAP://RootDSE");
+                    DomainConnectionState.BuildRootDsePath());
 
             var defaultNamingContext =
                 Convert.ToString(
@@ -657,7 +753,8 @@ public sealed class GpmService
 
             using var gpoEntry =
                 new DirectoryEntry(
-                    $"LDAP://{gpoDn}");
+                    DomainConnectionState.BuildLdapPath(
+                        gpoDn));
 
             var displayName =
                 Convert.ToString(
@@ -777,6 +874,8 @@ public sealed class GpmService
         string trustee,
         GpoPermissionLevel level)
     {
+        EditingGuard.EnsureEnabled(
+            "Change GPO permissions");
         if (string.IsNullOrWhiteSpace(trustee))
         {
             throw new ArgumentException("Trustee cannot be empty.", nameof(trustee));
@@ -790,9 +889,18 @@ public sealed class GpmService
 
         dynamic gpm = CreateGpm();
         dynamic constants = gpm.GetConstants();
-        dynamic domain = gpm.GetDomain(domainName, string.Empty, constants.UseAnyDC);
+        dynamic domain = GetDomain(gpm, constants, domainName);
         dynamic gpo = domain.GetGPO(gpoId.ToString("B"));
         dynamic security = gpo.GetSecurityInfo();
+
+        ChangePreviewGuard.Confirm(
+            new ChangePreviewRequest(
+                "Add GPO permission",
+                Convert.ToString((object?)gpo.DisplayName) ?? gpoId.ToString("B"),
+                "<not present>",
+                $"{trustee.Trim()} | {level}",
+                string.Empty,
+                "Add"));
 
         var permissionCode = GetPermissionConstant(constants, level);
         dynamic newPermission = gpm.CreatePermission(trustee.Trim(), permissionCode, true);
@@ -806,6 +914,8 @@ public sealed class GpmService
         GpoPermissionInfo existing,
         GpoPermissionLevel newLevel)
     {
+        EditingGuard.EnsureEnabled(
+            "Change GPO permissions");
         if (existing.Inherited)
         {
             throw new InvalidOperationException(
@@ -820,7 +930,7 @@ public sealed class GpmService
 
         dynamic gpm = CreateGpm();
         dynamic constants = gpm.GetConstants();
-        dynamic domain = gpm.GetDomain(domainName, string.Empty, constants.UseAnyDC);
+        dynamic domain = GetDomain(gpm, constants, domainName);
         dynamic gpo = domain.GetGPO(gpoId.ToString("B"));
         dynamic security = gpo.GetSecurityInfo();
 
@@ -836,11 +946,20 @@ public sealed class GpmService
                 "The selected permission no longer exists. Refresh the permission list and try again.");
         }
 
-        security.Remove(current);
-
         var trustee = string.IsNullOrWhiteSpace(existing.TrusteeSid)
             ? existing.TrusteeDisplay
             : existing.TrusteeSid;
+
+        ChangePreviewGuard.Confirm(
+            new ChangePreviewRequest(
+                "Change GPO permission",
+                Convert.ToString((object?)gpo.DisplayName) ?? gpoId.ToString("B"),
+                $"{existing.TrusteeDisplay} | {existing.Level}",
+                $"{existing.TrusteeDisplay} | {newLevel}",
+                string.Empty,
+                "Apply"));
+
+        security.Remove(current);
 
         var permissionCode = GetPermissionConstant(constants, newLevel);
         dynamic newPermission = gpm.CreatePermission(trustee, permissionCode, true);
@@ -853,6 +972,8 @@ public sealed class GpmService
         Guid gpoId,
         GpoPermissionInfo existing)
     {
+        EditingGuard.EnsureEnabled(
+            "Change GPO permissions");
         if (existing.Inherited)
         {
             throw new InvalidOperationException(
@@ -861,7 +982,7 @@ public sealed class GpmService
 
         dynamic gpm = CreateGpm();
         dynamic constants = gpm.GetConstants();
-        dynamic domain = gpm.GetDomain(domainName, string.Empty, constants.UseAnyDC);
+        dynamic domain = GetDomain(gpm, constants, domainName);
         dynamic gpo = domain.GetGPO(gpoId.ToString("B"));
         dynamic security = gpo.GetSecurityInfo();
 
@@ -877,6 +998,15 @@ public sealed class GpmService
                 "The selected permission no longer exists. Refresh the permission list and try again.");
         }
 
+        ChangePreviewGuard.Confirm(
+            new ChangePreviewRequest(
+                "Remove GPO permission",
+                Convert.ToString((object?)gpo.DisplayName) ?? gpoId.ToString("B"),
+                $"{existing.TrusteeDisplay} | {existing.Level}",
+                "<removed>",
+                string.Empty,
+                "Remove"));
+
         security.Remove(current);
         gpo.SetSecurityInfo(security);
     }
@@ -885,7 +1015,7 @@ public sealed class GpmService
     {
         dynamic gpm = CreateGpm();
         dynamic constants = gpm.GetConstants();
-        dynamic domain = gpm.GetDomain(domainName, string.Empty, constants.UseAnyDC);
+        dynamic domain = GetDomain(gpm, constants, domainName);
         dynamic gpo = domain.GetGPO(gpoId.ToString("B"));
 
         var timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
@@ -920,10 +1050,41 @@ public sealed class GpmService
 
     public void SetWmiFilter(string domainName, Guid gpoId, WmiFilterInfo? filter)
     {
+        EditingGuard.EnsureEnabled(
+            "Assign WMI filter");
         dynamic gpm = CreateGpm();
         dynamic constants = gpm.GetConstants();
-        dynamic domain = gpm.GetDomain(domainName, string.Empty, constants.UseAnyDC);
+        dynamic domain = GetDomain(gpm, constants, domainName);
         dynamic gpo = domain.GetGPO(gpoId.ToString("B"));
+
+        var currentFilter =
+            string.Empty;
+
+        try
+        {
+            dynamic existingFilter =
+                gpo.GetWMIFilter();
+
+            currentFilter =
+                existingFilter is null
+                    ? "<none>"
+                    : Convert.ToString((object?)existingFilter.Name)
+                      ?? "<assigned>";
+        }
+        catch
+        {
+            currentFilter =
+                "<none>";
+        }
+
+        ChangePreviewGuard.Confirm(
+            new ChangePreviewRequest(
+                "Assign WMI filter",
+                Convert.ToString((object?)gpo.DisplayName) ?? gpoId.ToString("B"),
+                currentFilter,
+                filter?.Name ?? "<none>",
+                string.Empty,
+                "Apply"));
 
         if (filter is null)
         {
@@ -1028,6 +1189,27 @@ public sealed class GpmService
         }
 
         return value;
+    }
+
+    private static dynamic GetDomain(
+        dynamic gpm,
+        dynamic constants,
+        string domainName)
+    {
+        var server =
+            DomainConnectionState.GetServerFor(
+                domainName);
+
+        return string.IsNullOrWhiteSpace(
+                server)
+            ? gpm.GetDomain(
+                domainName,
+                string.Empty,
+                constants.UseAnyDC)
+            : gpm.GetDomain(
+                domainName,
+                server,
+                0);
     }
 
     private static dynamic CreateGpm()

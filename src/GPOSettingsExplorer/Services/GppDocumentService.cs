@@ -166,7 +166,7 @@ public sealed class GppDocumentService
                 "The Group Policy Preferences XML file no longer exists.",
                 document.XmlPath);
 
-        return File.ReadAllText(document.XmlPath);
+        return GppXmlCacheService.ReadText(document.XmlPath);
     }
 
     public GppDocumentInfo BuildTarget(
@@ -196,6 +196,8 @@ public sealed class GppDocumentService
         GppDocumentInfo document,
         string xml)
     {
+        EditingGuard.EnsureEnabled(
+            "Edit Group Policy Preferences");
         if (string.IsNullOrWhiteSpace(xml))
             throw new InvalidOperationException("XML cannot be empty.");
 
@@ -224,9 +226,28 @@ public sealed class GppDocumentService
             ? File.ReadAllBytes(path)
             : null;
 
+        var beforeXml =
+            File.Exists(path)
+                ? File.ReadAllText(path)
+                : "<none>";
+
+        ChangePreviewGuard.Confirm(
+            new ChangePreviewRequest(
+                $"Save {document.PreferenceType}",
+                $"{gpo.DisplayName} | {document.Scope} Configuration",
+                ChangePreviewGuard.NormalizeXmlForPreview(
+                    beforeXml),
+                ChangePreviewGuard.NormalizeXmlForPreview(
+                    parsed.ToString()),
+                $"SYSVOL path: {path}",
+                "Apply"));
+
         try
         {
             WriteXml(path, parsed);
+            GppXmlCacheService.Invalidate(
+                path);
+
             CommitExtension(
                 gpo,
                 domainDistinguishedName,
@@ -238,6 +259,9 @@ public sealed class GppDocumentService
         catch
         {
             RestoreFile(path, original);
+            GppXmlCacheService.Invalidate(
+                path);
+
             throw;
         }
     }
@@ -247,15 +271,30 @@ public sealed class GppDocumentService
         string domainDistinguishedName,
         GppDocumentInfo document)
     {
+        EditingGuard.EnsureEnabled(
+            "Delete Group Policy Preferences");
         var path = GetXmlPath(gpo, document.Scope, document.RelativePath);
         if (!File.Exists(path))
             return;
 
         var original = File.ReadAllBytes(path);
 
+        ChangePreviewGuard.Confirm(
+            new ChangePreviewRequest(
+                $"Delete {document.PreferenceType}",
+                $"{gpo.DisplayName} | {document.Scope} Configuration",
+                ChangePreviewGuard.NormalizeXmlForPreview(
+                    File.ReadAllText(path)),
+                "<deleted>",
+                $"SYSVOL path: {path}",
+                "Delete"));
+
         try
         {
             File.Delete(path);
+            GppXmlCacheService.Invalidate(
+                path);
+
             TryDeleteEmptyParents(path);
 
             CommitExtension(
@@ -299,7 +338,7 @@ public sealed class GppDocumentService
         GppDocumentTypeInfo type,
         string path)
     {
-        var document = XDocument.Load(path, LoadOptions.PreserveWhitespace);
+        var document = GppXmlCacheService.Load(path, LoadOptions.PreserveWhitespace);
         var file = new FileInfo(path);
 
         return new GppDocumentInfo
@@ -332,7 +371,10 @@ public sealed class GppDocumentService
             : "Machine";
 
         return Path.Combine(
-            $@"\\{gpo.DomainName}\SYSVOL\{gpo.DomainName}\Policies\{gpo.Id:B}",
+            DomainConnectionState.BuildSysvolRoot(
+                gpo.DomainName),
+            "Policies",
+            gpo.Id.ToString("B"),
             side,
             "Preferences",
             relativePath);
@@ -429,7 +471,8 @@ public sealed class GppDocumentService
         try
         {
             var ldapPath =
-                $"LDAP://CN={gpo.Id:B},CN=Policies,CN=System,{domainDistinguishedName}";
+                DomainConnectionState.BuildLdapPath(
+                    $"CN={gpo.Id:B},CN=Policies,CN=System,{domainDistinguishedName}");
 
             ThrowIfFailed(
                 policyObject.OpenDSGPO(

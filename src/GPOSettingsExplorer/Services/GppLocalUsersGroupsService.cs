@@ -69,7 +69,7 @@ public sealed class GppLocalUsersGroupsService
                 try
                 {
                     var document =
-                        XDocument.Load(
+                        GppXmlCacheService.Load(
                             target.XmlPath,
                             LoadOptions.PreserveWhitespace);
 
@@ -285,7 +285,7 @@ public sealed class GppLocalUsersGroupsService
                 try
                 {
                     var document =
-                        XDocument.Load(
+                        GppXmlCacheService.Load(
                             target.XmlPath,
                             LoadOptions.PreserveWhitespace);
 
@@ -810,7 +810,7 @@ public sealed class GppLocalUsersGroupsService
             return;
 
         var document =
-            XDocument.Load(
+            GppXmlCacheService.Load(
                 target.XmlPath,
                 LoadOptions.PreserveWhitespace);
 
@@ -862,7 +862,7 @@ public sealed class GppLocalUsersGroupsService
                 path))
         {
             var document =
-                XDocument.Load(
+                GppXmlCacheService.Load(
                     path,
                     LoadOptions.PreserveWhitespace);
 

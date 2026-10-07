@@ -160,6 +160,188 @@ public partial class MainWindow
         });
     }
 
+    private async void OpenAuditBackup_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        var backup =
+            await ResolveSelectedAuditBackupAsync();
+
+        if (backup is null)
+            return;
+
+        MainTabs.SelectedItem =
+            BackupsTab;
+
+        if (!_backupsInitialized)
+        {
+            BackupsTab_Loaded(
+                BackupsTab,
+                new RoutedEventArgs());
+        }
+
+        BackupsPathBox.Text =
+            StoragePaths.GpoBackups;
+
+        await LoadBackupsAsync();
+
+        var match =
+            _backups.FirstOrDefault(
+                item =>
+                    item.BackupId ==
+                    backup.BackupId)
+            ?? _backups.FirstOrDefault(
+                item =>
+                    item.BackupDirectory.Equals(
+                        backup.BackupDirectory,
+                        StringComparison.OrdinalIgnoreCase));
+
+        if (match is not null)
+        {
+            BackupsGrid.SelectedItem =
+                match;
+
+            BackupsGrid.ScrollIntoView(
+                match);
+        }
+
+        StatusText.Text =
+            $"Opened backup linked from audit: {backup.DisplayName}";
+    }
+
+    private async void RestoreAuditBackup_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        var backup =
+            await ResolveSelectedAuditBackupAsync();
+
+        if (backup is null)
+            return;
+
+        await RestoreGpoBackupAsync(
+            backup,
+            "Audit Log");
+    }
+
+    private async Task<GpoBackupInfo?> ResolveSelectedAuditBackupAsync()
+    {
+        if (AuditGrid.SelectedItem
+            is not AuditEntryInfo entry)
+        {
+            MessageBox.Show(
+                this,
+                "Select an audit entry first.",
+                "Audit Log",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+
+            return null;
+        }
+
+        var path =
+            ExtractBackupPath(
+                entry.Details);
+
+        if (string.IsNullOrWhiteSpace(
+                path))
+        {
+            MessageBox.Show(
+                this,
+                "The selected audit entry does not contain a linked GPO backup path.",
+                "Audit Log",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+
+            return null;
+        }
+
+        try
+        {
+            var backups =
+                await Task.Run(
+                    () =>
+                        _gpoBackupService.LoadBackups(
+                            path));
+
+            var backup =
+                backups.FirstOrDefault();
+
+            if (backup is null)
+            {
+                MessageBox.Show(
+                    this,
+                    $"No valid GPMC backup was found under:\n{path}",
+                    "Audit Log",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+            }
+
+            return backup;
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(
+                this,
+                ex.Message,
+                "Audit Backup",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+
+            return null;
+        }
+    }
+
+    private static string ExtractBackupPath(
+        string details)
+    {
+        if (string.IsNullOrWhiteSpace(
+                details))
+        {
+            return string.Empty;
+        }
+
+        var marker =
+            "Backup:";
+
+        var index =
+            details.IndexOf(
+                marker,
+                StringComparison.OrdinalIgnoreCase);
+
+        if (index < 0)
+        {
+            marker =
+                "Safety backup:";
+
+            index =
+                details.IndexOf(
+                    marker,
+                    StringComparison.OrdinalIgnoreCase);
+        }
+
+        if (index < 0)
+            return string.Empty;
+
+        var value =
+            details[
+                (index +
+                 marker.Length)..]
+            .Trim();
+
+        var separator =
+            value.IndexOf(
+                ';');
+
+        if (separator >= 0)
+        {
+            value =
+                value[..separator];
+        }
+
+        return value.Trim();
+    }
+
     private bool FilterAudit(object item)
     {
         if (item is not AuditEntryInfo entry)

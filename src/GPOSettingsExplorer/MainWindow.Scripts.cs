@@ -62,7 +62,8 @@ public partial class MainWindow
         if (!_gpoScriptsLoaded &&
             _gpos.Count > 0)
         {
-            await LoadGpoScriptsAsync();
+            await LoadGpoScriptsAsync(
+                forceRefresh: false);
         }
     }
 
@@ -128,7 +129,8 @@ public partial class MainWindow
         var selection =
             CaptureGpoScriptSelection();
 
-        await LoadGpoScriptsAsync();
+        await LoadGpoScriptsAsync(
+            forceRefresh: true);
 
         RestoreGpoScriptSelection(
             selection);
@@ -137,7 +139,8 @@ public partial class MainWindow
             showValidationMessages: false);
     }
 
-    private async Task LoadGpoScriptsAsync()
+    private async Task LoadGpoScriptsAsync(
+        bool forceRefresh = false)
     {
         if (_gpos.Count == 0)
         {
@@ -161,7 +164,9 @@ public partial class MainWindow
                 await Task.Run(() =>
                     _gpoScriptService.Load(
                         _gpos,
-                        progress));
+                        progress,
+                        CancellationToken.None,
+                        forceRefresh));
 
             ReplaceCollection(
                 _gpoScripts,
@@ -592,7 +597,8 @@ public partial class MainWindow
                 script.FileName,
                 $"GPO: {gpo.DisplayName}; Assignment: {script.Assignment}; Path: {script.FullPath}; Backup: {backupPath}");
 
-            await LoadGpoScriptsAsync();
+            await LoadGpoScriptsAsync(
+                forceRefresh: false);
 
             RestoreGpoScriptSelection(
                 selectionBeforeEdit);

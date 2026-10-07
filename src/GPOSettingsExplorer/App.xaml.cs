@@ -19,7 +19,61 @@ public partial class App : Application
             TaskScheduler_UnobservedTaskException;
 
         AdaptiveWindowManager.Register();
+        CommandLineOptions.Initialize(
+            e.Args);
+
         base.OnStartup(e);
+
+        if (UpdateInstaller.TryApply(
+                e.Args))
+        {
+            Shutdown();
+            return;
+        }
+
+        if (CommandLineOptions.Current.ConnectedSession)
+        {
+            DomainConnectionState.SetProfile(
+                DomainConnectionProfile.CurrentSession(
+                    CommandLineOptions.Current.DomainName,
+                    CommandLineOptions.Current.DomainController));
+
+            ShowMainWindow();
+            return;
+        }
+
+        var connection =
+            new ConnectionWindow();
+
+        var connected =
+            connection.ShowDialog() ==
+            true;
+
+        if (!connected ||
+            connection.RelaunchStarted)
+        {
+            Shutdown();
+            return;
+        }
+
+        ShowMainWindow();
+    }
+
+    private void ShowMainWindow()
+    {
+        EditingGuard.SetEnabled(
+            false);
+
+        var window =
+            new MainWindow();
+
+        MainWindow =
+            window;
+
+        window.Show();
+
+        ShutdownMode =
+            ShutdownMode.OnMainWindowClose;
     }
 
     private void App_DispatcherUnhandledException(
@@ -42,6 +96,9 @@ public partial class App : Application
 
         try
         {
+            System.Windows.Input.Mouse.OverrideCursor =
+                null;
+
             var message =
                 "An unexpected error was caught. The application will stay open.";
 

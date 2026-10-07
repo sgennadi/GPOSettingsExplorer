@@ -48,6 +48,9 @@ public static class CrashLogService
                 new UTF8Encoding(
                     encoderShouldEmitUTF8Identifier: false));
 
+            CleanupOldLogs(
+                directory);
+
             return path;
         }
         catch
@@ -64,5 +67,53 @@ public static class CrashLogService
             context,
             new InvalidOperationException(
                 details));
+    }
+
+    private static void CleanupOldLogs(
+        string directory)
+    {
+        try
+        {
+            var keepAfter =
+                DateTime.UtcNow.AddDays(
+                    -30);
+
+            var files =
+                Directory.EnumerateFiles(
+                        directory,
+                        "error-*.log",
+                        SearchOption.TopDirectoryOnly)
+                    .Select(
+                        path =>
+                            new FileInfo(
+                                path))
+                    .OrderByDescending(
+                        file =>
+                            file.LastWriteTimeUtc)
+                    .ToArray();
+
+            for (var index = 0;
+                 index < files.Length;
+                 index++)
+            {
+                if (index < 100 &&
+                    files[index].LastWriteTimeUtc >=
+                    keepAfter)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    files[index].Delete();
+                }
+                catch
+                {
+                }
+            }
+        }
+        catch
+        {
+        }
     }
 }

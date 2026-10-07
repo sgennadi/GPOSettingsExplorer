@@ -14,7 +14,7 @@ Download the latest portable build from:
 
 **[GitHub Releases](https://github.com/sgennadi/GPOSettingsExplorer/releases/latest)**
 
-Current release: **v0.2.10**
+Current release: **v0.3.0**
 
 Available packages:
 
@@ -41,6 +41,15 @@ The builds are self-contained. A separate .NET runtime installation is not requi
 - Manage delegation and permissions.
 - Automatic safety backups before supported write operations.
 - Audit logging for administrative changes.
+- Startup connection manager for domain/DC selection, current-session or alternate AD credentials, and connection testing.
+- Optional DPAPI-protected credential persistence for the current user or local machine.
+- Single-DC session pinning so LDAP, GPMC and SYSVOL operations stay on the same domain controller.
+- Safe mode starts the application read-only; administrators explicitly enable write operations for the session.
+- Before/after previews are shown for supported Group Policy changes before they are committed.
+- Global search can locate loaded GPOs, settings, scripts, WMI filters, GPP items, backups and audit entries from one box.
+- Diagnostics can test the connection, GPMC availability, SYSVOL/Central Store access and selected-GPO write access, and can create a support ZIP.
+- The Audit Log can jump to or restore an associated GPO backup.
+- Built-in update checking selects the correct x64 or ARM64 portable release and can stage an in-place portable update.
 
 ### Administrative Templates / ADMX
 
@@ -54,8 +63,8 @@ The builds are self-contained. A separate .NET runtime installation is not requi
 
 ### WMI filters
 
-- Browse WMI filters.
-- Create and edit WMI filters.
+- Browse WMI filters through LDAP on the connected domain controller.
+- Create, edit, clone, and delete WMI filters directly as Active Directory msWMI-Som objects on the pinned DC.
 - Edit WQL rules.
 - Assign or remove WMI filters from GPOs.
 - Test filter rules against computers.
@@ -96,9 +105,9 @@ Structured editors are available for:
 - Regional Options
 - Folder Options
 
-The application also includes generic GPP XML browsing/editing for scenarios where a structured editor is not available or raw XML access is required.
+The application also includes structured tree/attribute editing for every known GPP XML document, including Applications, Devices, Internet Settings, Network Options, and Start Menu and Taskbar. Raw XML remains available for advanced repair and unsupported schema details.
 
-Where supported, GPP editors include item-level targeting, clone/delete operations, raw XML handoff, validation, backups, and audit integration.
+GPP editors include a shared visual item-level targeting tree editor plus raw targeting XML, clone/delete operations, validation, backups, change previews, audit integration, and persistent XML caching to reduce repeated SYSVOL reads.
 
 ## Security notes
 
@@ -127,10 +136,12 @@ The application is published as a self-contained .NET 10 Windows application.
 1. Download the correct ZIP for your architecture from [Releases](https://github.com/sgennadi/GPOSettingsExplorer/releases/latest).
 2. Extract it to a local folder.
 3. Run `GPOSettingsExplorer.exe`.
-4. The application detects the current AD domain through LDAP/RootDSE.
-5. If GPMC is not installed, GPMC-dependent operations will not be available.
+4. On the connection screen, use the current Windows session or specify a domain, domain controller, and alternate AD credentials.
+5. Optionally remember alternate credentials with Windows DPAPI; plaintext passwords are never stored.
+6. After connecting, the application starts in Safe mode (read-only). Enable WRITE ENABLED only when changes are required.
+7. If GPMC is not installed, GPMC-dependent operations will not be available.
 
-No installer is required.
+No installer is required. The same portable build can be used on a domain-joined workstation, a domain controller, or a standalone/workgroup Windows computer that has network access to the target AD domain and the required RSAT/GPMC components.
 
 ## UI and HiDPI
 
@@ -203,11 +214,12 @@ GitHub Actions performs the following on `main`:
 1. Restore.
 2. Run `UiStyleLint`.
 3. Build Release configuration.
-4. Publish self-contained win-x64.
-5. Publish self-contained win-arm64.
-6. Create portable ZIP archives.
-7. Upload build artifacts.
-8. Create a GitHub Release for a new project version.
+4. Run the CoreTests regression suite.
+5. Publish self-contained win-x64.
+6. Publish self-contained win-arm64.
+7. Create portable ZIP archives.
+8. Upload build artifacts.
+9. Create a GitHub Release for a new project version.
 
 The release version is read from:
 
@@ -230,6 +242,7 @@ GPOSettingsExplorer/
 │  ├─ UiStyle.cs            Centralized programmatic UI style
 │  └─ app.manifest          Windows/Per-Monitor V2 configuration
 ├─ tools/UiStyleLint/       CI guard for mandatory UI/HiDPI rules
+├─ tools/CoreTests/         Regression tests for core platform behavior
 ├─ CHANGELOG.md
 ├─ UI_GUIDELINES.md
 └─ GPOSettingsExplorer.sln
@@ -237,7 +250,7 @@ GPOSettingsExplorer/
 
 ## Current status
 
-**v0.2.10** adds multi-GPO and multi-file script search scopes, automatic search refresh after script saves, Markdown-fence cleanup for edited scripts, and stronger exact Security Options navigation in the native Group Policy editor.
+**v0.3.0** adds the administration platform layer: connection/session management, alternate credentials, single-DC routing, Safe mode, change previews, global search, diagnostics/support bundles, visual item-level targeting, structured editing for every known GPP document, audit-linked restore, persistent GPP/script caches, automated regression tests, and architecture-aware self-update.
 
 See [CHANGELOG.md](CHANGELOG.md) for release details.
 

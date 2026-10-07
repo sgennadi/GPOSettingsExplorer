@@ -28,6 +28,8 @@ internal static class AdaptiveWindowManager
             return;
 
         UiStyle.ApplyWindowDefaults(window);
+        ItemLevelTargetingUi.Attach(
+            window);
 
         if (!OriginalWindowLimits.TryGetValue(
                 window,

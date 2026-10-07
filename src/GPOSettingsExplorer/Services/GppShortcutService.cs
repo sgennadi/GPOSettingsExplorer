@@ -40,7 +40,7 @@ public sealed class GppShortcutService
 
                 try
                 {
-                    var document = XDocument.Load(
+                    var document = GppXmlCacheService.Load(
                         target.XmlPath,
                         LoadOptions.PreserveWhitespace);
 
@@ -166,7 +166,7 @@ public sealed class GppShortcutService
 
         if (File.Exists(target.XmlPath))
         {
-            document = XDocument.Load(
+            document = GppXmlCacheService.Load(
                 target.XmlPath,
                 LoadOptions.PreserveWhitespace);
 
@@ -228,7 +228,7 @@ public sealed class GppShortcutService
         if (!File.Exists(target.XmlPath))
             return;
 
-        var document = XDocument.Load(
+        var document = GppXmlCacheService.Load(
             target.XmlPath,
             LoadOptions.PreserveWhitespace);
 

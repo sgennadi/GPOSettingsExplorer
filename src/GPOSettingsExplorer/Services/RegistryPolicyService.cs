@@ -63,6 +63,28 @@ public sealed class RegistryPolicyService
         AdmxPolicyDefinition definition,
         PolicyEditSession session)
     {
+        EditingGuard.EnsureEnabled(
+            "Edit Administrative Template policy");
+
+        var before =
+            Read(
+                gpo,
+                domainDistinguishedName,
+                definition,
+                "Not Configured");
+
+        ChangePreviewGuard.Confirm(
+            new ChangePreviewRequest(
+                $"Edit policy: {definition.DisplayName}",
+                $"{gpo.DisplayName} | {definition.Scope} Configuration",
+                PolicySessionSummary(
+                    before),
+                PolicySessionSummary(
+                    session),
+                BuildPolicyTargetSummary(
+                    definition),
+                "Apply"));
+
         using var policyObject =
             Open(
                 gpo,
@@ -108,7 +130,8 @@ public sealed class RegistryPolicyService
         string domainDistinguishedName)
     {
         var ldapPath =
-            $"LDAP://CN={gpo.Id:B},CN=Policies,CN=System,{domainDistinguishedName}";
+            DomainConnectionState.BuildLdapPath(
+                $"CN={gpo.Id:B},CN=Policies,CN=System,{domainDistinguishedName}");
 
         return new GroupPolicyObjectHandle(
             ldapPath);
@@ -137,6 +160,84 @@ public sealed class RegistryPolicyService
         return RegistryKey.FromHandle(
             safeHandle,
             RegistryView.Default);
+    }
+
+    private static string PolicySessionSummary(
+        PolicyEditSession session)
+    {
+        var values =
+            session.Values
+                .OrderBy(
+                    pair =>
+                        pair.Key,
+                    StringComparer.OrdinalIgnoreCase)
+                .Select(
+                    pair =>
+                        $"{pair.Key} = {FormatPolicyValue(pair.Value)}");
+
+        return
+            $"State: {session.State}\n" +
+            string.Join(
+                "\n",
+                values);
+    }
+
+    private static string FormatPolicyValue(
+        object? value)
+    {
+        if (value is null)
+            return "<null>";
+
+        if (value is IEnumerable<string> values)
+        {
+            return string.Join(
+                "; ",
+                values);
+        }
+
+        return Convert.ToString(
+                   value,
+                   System.Globalization.CultureInfo.InvariantCulture)
+               ?? string.Empty;
+    }
+
+    private static string BuildPolicyTargetSummary(
+        AdmxPolicyDefinition definition)
+    {
+        var targets =
+            new List<string>();
+
+        if (!string.IsNullOrWhiteSpace(
+                definition.Key))
+        {
+            targets.Add(
+                string.IsNullOrWhiteSpace(
+                    definition.ValueName)
+                    ? definition.Key
+                    : $"{definition.Key} \\ {definition.ValueName}");
+        }
+
+        foreach (var element in definition.Elements)
+        {
+            if (string.IsNullOrWhiteSpace(
+                    element.Key))
+            {
+                continue;
+            }
+
+            targets.Add(
+                string.IsNullOrWhiteSpace(
+                    element.ValueName)
+                    ? element.Key
+                    : $"{element.Key} \\ {element.ValueName}");
+        }
+
+        return
+            "Registry targets:\n" +
+            string.Join(
+                "\n",
+                targets.Distinct(
+                    StringComparer.OrdinalIgnoreCase));
     }
 
     private static PolicyEditState InferState(
