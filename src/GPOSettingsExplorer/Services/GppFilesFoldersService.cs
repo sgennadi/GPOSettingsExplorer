@@ -42,7 +42,7 @@ public sealed class GppFilesFoldersService
 
                 try
                 {
-                    var document = XDocument.Load(
+                    var document = GppXmlCacheService.Load(
                         target.XmlPath,
                         LoadOptions.PreserveWhitespace);
 
@@ -134,7 +134,7 @@ public sealed class GppFilesFoldersService
 
                 try
                 {
-                    var document = XDocument.Load(
+                    var document = GppXmlCacheService.Load(
                         target.XmlPath,
                         LoadOptions.PreserveWhitespace);
 
@@ -419,7 +419,7 @@ public sealed class GppFilesFoldersService
         if (!File.Exists(target.XmlPath))
             return;
 
-        var document = XDocument.Load(
+        var document = GppXmlCacheService.Load(
             target.XmlPath,
             LoadOptions.PreserveWhitespace);
 
@@ -461,7 +461,7 @@ public sealed class GppFilesFoldersService
     {
         if (File.Exists(path))
         {
-            var document = XDocument.Load(
+            var document = GppXmlCacheService.Load(
                 path,
                 LoadOptions.PreserveWhitespace);
 
