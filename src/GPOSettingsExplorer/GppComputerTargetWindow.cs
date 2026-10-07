@@ -19,7 +19,7 @@ public sealed class GppComputerTargetWindow : Window
         Title = title;
         Width = 720;
         Height = 220;
-        ResizeMode = ResizeMode.NoResize;
+        ResizeMode = ResizeMode.CanResizeWithGrip;
         WindowStartupLocation =
             WindowStartupLocation.CenterOwner;
 
