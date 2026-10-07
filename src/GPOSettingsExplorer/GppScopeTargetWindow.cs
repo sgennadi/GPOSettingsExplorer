@@ -22,12 +22,12 @@ public sealed class GppScopeTargetWindow : Window
         Title = title;
         Width = 740;
         Height = 260;
-        ResizeMode = ResizeMode.NoResize;
+        ResizeMode = ResizeMode.CanResizeWithGrip;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
 
         var root = new DockPanel { Margin = new Thickness(14) };
 
-        var footer = new StackPanel
+        var footer = new WrapPanel
         {
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Right
