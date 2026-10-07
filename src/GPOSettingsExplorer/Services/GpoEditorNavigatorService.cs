@@ -51,16 +51,14 @@ public sealed class GpoEditorNavigatorService
                 {
                     throw;
                 }
-                catch (COMException)
+                catch (Exception ex)
+                    when (!IsFatal(
+                        ex))
                 {
-                    return false;
-                }
-                catch (ElementNotAvailableException)
-                {
-                    return false;
-                }
-                catch (InvalidOperationException)
-                {
+                    CrashLogService.Write(
+                        $"Open exact GPO setting: {setting.SettingName}",
+                        ex);
+
                     return false;
                 }
             },
@@ -779,6 +777,12 @@ public sealed class GpoEditorNavigatorService
     private static extern bool SetCursorPos(
         int x,
         int y);
+
+    private static bool IsFatal(
+        Exception exception) =>
+        exception is OutOfMemoryException or
+                     StackOverflowException or
+                     AccessViolationException;
 
     [DllImport(
         "user32.dll")]
