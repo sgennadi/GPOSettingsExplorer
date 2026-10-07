@@ -17,7 +17,7 @@ public sealed class GpmService
     {
         dynamic gpm = CreateGpm();
         dynamic constants = gpm.GetConstants();
-        dynamic domain = gpm.GetDomain(domainName, string.Empty, constants.UseAnyDC);
+        dynamic domain = GetDomain(gpm, constants, domainName);
         dynamic criteria = gpm.CreateSearchCriteria();
         dynamic collection = domain.SearchGPOs(criteria);
 
@@ -69,7 +69,7 @@ public sealed class GpmService
     {
         dynamic gpm = CreateGpm();
         dynamic constants = gpm.GetConstants();
-        dynamic domain = gpm.GetDomain(domainName, string.Empty, constants.UseAnyDC);
+        dynamic domain = GetDomain(gpm, constants, domainName);
 
         var settings = new List<PolicySettingInfo>();
         var gpoList = gpos.ToList();
@@ -151,7 +151,7 @@ public sealed class GpmService
 
         dynamic gpm = CreateGpm();
         dynamic constants = gpm.GetConstants();
-        dynamic domain = gpm.GetDomain(domainName, string.Empty, constants.UseAnyDC);
+        dynamic domain = GetDomain(gpm, constants, domainName);
         dynamic gpo = domain.CreateGPO();
         gpo.DisplayName = displayName.Trim();
 
@@ -177,7 +177,7 @@ public sealed class GpmService
 
         dynamic gpm = CreateGpm();
         dynamic constants = gpm.GetConstants();
-        dynamic domain = gpm.GetDomain(domainName, string.Empty, constants.UseAnyDC);
+        dynamic domain = GetDomain(gpm, constants, domainName);
         dynamic source = domain.GetGPO(sourceGpoId.ToString("B"));
 
         var flags = copyAcl
@@ -217,7 +217,7 @@ public sealed class GpmService
 
         dynamic gpm = CreateGpm();
         dynamic constants = gpm.GetConstants();
-        dynamic domain = gpm.GetDomain(domainName, string.Empty, constants.UseAnyDC);
+        dynamic domain = GetDomain(gpm, constants, domainName);
         dynamic target = domain.GetGPO(targetGpoId.ToString("B"));
 
         dynamic backupDirectory = gpm.GetBackupDir(backup.BackupDirectory);
@@ -257,7 +257,7 @@ public sealed class GpmService
 
         dynamic gpm = CreateGpm();
         dynamic constants = gpm.GetConstants();
-        dynamic domain = gpm.GetDomain(domainName, string.Empty, constants.UseAnyDC);
+        dynamic domain = GetDomain(gpm, constants, domainName);
         dynamic gpo = domain.GetGPO(gpoId.ToString("B"));
         gpo.DisplayName = newDisplayName.Trim();
     }
@@ -266,7 +266,7 @@ public sealed class GpmService
     {
         dynamic gpm = CreateGpm();
         dynamic constants = gpm.GetConstants();
-        dynamic domain = gpm.GetDomain(domainName, string.Empty, constants.UseAnyDC);
+        dynamic domain = GetDomain(gpm, constants, domainName);
         dynamic gpo = domain.GetGPO(gpoId.ToString("B"));
         gpo.Delete();
     }
@@ -275,7 +275,7 @@ public sealed class GpmService
     {
         dynamic gpm = CreateGpm();
         dynamic constants = gpm.GetConstants();
-        dynamic domain = gpm.GetDomain(domainName, string.Empty, constants.UseAnyDC);
+        dynamic domain = GetDomain(gpm, constants, domainName);
         dynamic gpo = domain.GetGPO(gpoId.ToString("B"));
         gpo.SetComputerEnabled(enabled);
     }
@@ -284,7 +284,7 @@ public sealed class GpmService
     {
         dynamic gpm = CreateGpm();
         dynamic constants = gpm.GetConstants();
-        dynamic domain = gpm.GetDomain(domainName, string.Empty, constants.UseAnyDC);
+        dynamic domain = GetDomain(gpm, constants, domainName);
         dynamic gpo = domain.GetGPO(gpoId.ToString("B"));
         gpo.SetUserEnabled(enabled);
     }
@@ -323,7 +323,7 @@ public sealed class GpmService
     {
         dynamic gpm = CreateGpm();
         dynamic constants = gpm.GetConstants();
-        dynamic domain = gpm.GetDomain(domainName, string.Empty, constants.UseAnyDC);
+        dynamic domain = GetDomain(gpm, constants, domainName);
         dynamic gpo = domain.GetGPO(gpoId.ToString("B"));
         dynamic security = gpo.GetSecurityInfo();
 
@@ -790,7 +790,7 @@ public sealed class GpmService
 
         dynamic gpm = CreateGpm();
         dynamic constants = gpm.GetConstants();
-        dynamic domain = gpm.GetDomain(domainName, string.Empty, constants.UseAnyDC);
+        dynamic domain = GetDomain(gpm, constants, domainName);
         dynamic gpo = domain.GetGPO(gpoId.ToString("B"));
         dynamic security = gpo.GetSecurityInfo();
 
@@ -820,7 +820,7 @@ public sealed class GpmService
 
         dynamic gpm = CreateGpm();
         dynamic constants = gpm.GetConstants();
-        dynamic domain = gpm.GetDomain(domainName, string.Empty, constants.UseAnyDC);
+        dynamic domain = GetDomain(gpm, constants, domainName);
         dynamic gpo = domain.GetGPO(gpoId.ToString("B"));
         dynamic security = gpo.GetSecurityInfo();
 
@@ -861,7 +861,7 @@ public sealed class GpmService
 
         dynamic gpm = CreateGpm();
         dynamic constants = gpm.GetConstants();
-        dynamic domain = gpm.GetDomain(domainName, string.Empty, constants.UseAnyDC);
+        dynamic domain = GetDomain(gpm, constants, domainName);
         dynamic gpo = domain.GetGPO(gpoId.ToString("B"));
         dynamic security = gpo.GetSecurityInfo();
 
@@ -885,7 +885,7 @@ public sealed class GpmService
     {
         dynamic gpm = CreateGpm();
         dynamic constants = gpm.GetConstants();
-        dynamic domain = gpm.GetDomain(domainName, string.Empty, constants.UseAnyDC);
+        dynamic domain = GetDomain(gpm, constants, domainName);
         dynamic gpo = domain.GetGPO(gpoId.ToString("B"));
 
         var timestamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
@@ -922,7 +922,7 @@ public sealed class GpmService
     {
         dynamic gpm = CreateGpm();
         dynamic constants = gpm.GetConstants();
-        dynamic domain = gpm.GetDomain(domainName, string.Empty, constants.UseAnyDC);
+        dynamic domain = GetDomain(gpm, constants, domainName);
         dynamic gpo = domain.GetGPO(gpoId.ToString("B"));
 
         if (filter is null)
@@ -1028,6 +1028,27 @@ public sealed class GpmService
         }
 
         return value;
+    }
+
+    private static dynamic GetDomain(
+        dynamic gpm,
+        dynamic constants,
+        string domainName)
+    {
+        var server =
+            DomainConnectionState.GetServerFor(
+                domainName);
+
+        return string.IsNullOrWhiteSpace(
+                server)
+            ? gpm.GetDomain(
+                domainName,
+                string.Empty,
+                constants.UseAnyDC)
+            : gpm.GetDomain(
+                domainName,
+                server,
+                0);
     }
 
     private static dynamic CreateGpm()
