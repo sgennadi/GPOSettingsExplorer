@@ -117,8 +117,8 @@
                 </DockPanel>
             </TabItem>
 
-            <TabItem Header="GPO Scripts"
-                     Loaded="GpoScriptsTab_Loaded">
+            <TabItem x:Name="GpoScriptsTab"
+                     Header="GPO Scripts">
                 <Grid Margin="6">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>
