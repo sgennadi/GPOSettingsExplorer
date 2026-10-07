@@ -26,6 +26,24 @@ public static class StoragePaths
         }
     }
 
+    public static string Cache
+    {
+        get
+        {
+            // Cache should survive replacing/extracting a newer portable build,
+            // so keep it in the user's local application data rather than next
+            // to the executable.
+            var path = Path.Combine(
+                Environment.GetFolderPath(
+                    Environment.SpecialFolder.LocalApplicationData),
+                "GPOSettingsExplorer",
+                "Cache");
+
+            Directory.CreateDirectory(path);
+            return path;
+        }
+    }
+
     public static string GpoBackups
     {
         get
