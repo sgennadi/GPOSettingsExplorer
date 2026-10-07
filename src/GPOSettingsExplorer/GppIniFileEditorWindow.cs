@@ -45,11 +45,10 @@ public sealed class GppIniFileEditorWindow : Window
             Margin = new Thickness(12)
         };
 
-        var footer = new StackPanel
+        var footer = new WrapPanel
         {
             Orientation = Orientation.Horizontal,
-            HorizontalAlignment =
-                HorizontalAlignment.Right
+            HorizontalAlignment = HorizontalAlignment.Right
         };
         DockPanel.SetDock(
             footer,
@@ -113,7 +112,7 @@ public sealed class GppIniFileEditorWindow : Window
                     item.Description,
                 AcceptsReturn =
                     true,
-                Height =
+                MinHeight =
                     56
             };
 
@@ -167,7 +166,7 @@ public sealed class GppIniFileEditorWindow : Window
                     item.Value,
                 AcceptsReturn =
                     true,
-                Height =
+                MinHeight =
                     80
             };
 
