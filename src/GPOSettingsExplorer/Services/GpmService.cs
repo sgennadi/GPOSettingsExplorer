@@ -943,8 +943,6 @@ public sealed class GpmService
                 "The selected permission no longer exists. Refresh the permission list and try again.");
         }
 
-        security.Remove(current);
-
         var trustee = string.IsNullOrWhiteSpace(existing.TrusteeSid)
             ? existing.TrusteeDisplay
             : existing.TrusteeSid;
@@ -957,6 +955,8 @@ public sealed class GpmService
                 $"{existing.TrusteeDisplay} | {newLevel}",
                 string.Empty,
                 "Apply"));
+
+        security.Remove(current);
 
         var permissionCode = GetPermissionConstant(constants, newLevel);
         dynamic newPermission = gpm.CreatePermission(trustee, permissionCode, true);
