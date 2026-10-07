@@ -1,3 +1,4 @@
+using GPOSettingsExplorer.Models;
 using System.Collections;
 using System.Collections.ObjectModel;
 using System.Reflection;
@@ -112,6 +113,52 @@ public sealed class GlobalSearchService
     {
         var type =
             item.GetType();
+
+        if (item is GppDocumentInfo gppDocument)
+        {
+            var metadata =
+                $"{gppDocument.SearchText} {gppDocument.XmlPath}";
+
+            try
+            {
+                return metadata +
+                       " " +
+                       GppXmlCacheService.ReadText(
+                           gppDocument.XmlPath);
+            }
+            catch
+            {
+                return metadata;
+            }
+        }
+
+        if (item is GpoScriptInfo script)
+        {
+            var metadata =
+                $"{script.GpoName} {script.Scope} {script.EventName} {script.FileName} " +
+                $"{script.Parameters} {script.FullPath}";
+
+            if (!script.Exists)
+            {
+                return metadata;
+            }
+
+            try
+            {
+                var document =
+                    new GpoScriptService()
+                        .ReadDocument(
+                            script.FullPath);
+
+                return metadata +
+                       " " +
+                       document.Text;
+            }
+            catch
+            {
+                return metadata;
+            }
+        }
 
         var searchText =
             type.GetProperty(
