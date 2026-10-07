@@ -33,11 +33,15 @@ public partial class MainWindow
         }
     }
 
-    private async void SecurityTab_Selected(
+    private async void MainTabs_SelectionChanged(
         object sender,
-        RoutedEventArgs e)
+        System.Windows.Controls.SelectionChangedEventArgs e)
     {
-        if (_domainContext is null ||
+        if (!ReferenceEquals(
+                e.OriginalSource,
+                MainTabs) ||
+            !SecurityTab.IsSelected ||
+            _domainContext is null ||
             _gpos.Count == 0)
         {
             return;
