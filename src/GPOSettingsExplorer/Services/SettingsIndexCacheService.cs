@@ -5,7 +5,7 @@ namespace GPOSettingsExplorer.Services;
 
 public sealed class SettingsIndexCacheService
 {
-    private const int SchemaVersion = 2;
+    public const int CurrentSchemaVersion = 2;
 
     private static readonly JsonSerializerOptions JsonOptions =
         new()
@@ -39,7 +39,7 @@ public sealed class SettingsIndexCacheService
                     JsonOptions);
 
             if (snapshot is null ||
-                snapshot.SchemaVersion != SchemaVersion ||
+                snapshot.SchemaVersion != CurrentSchemaVersion ||
                 !snapshot.DomainName.Equals(
                     domainName,
                     StringComparison.OrdinalIgnoreCase))
@@ -82,7 +82,7 @@ public sealed class SettingsIndexCacheService
             new SettingsIndexCacheSnapshot
             {
                 SchemaVersion =
-                    SchemaVersion,
+                    CurrentSchemaVersion,
                 DomainName =
                     domainName,
                 GeneratedUtc =
@@ -280,7 +280,7 @@ public sealed class SettingsIndexCacheService
         return new SettingsIndexCacheSnapshot
         {
             SchemaVersion =
-                SchemaVersion,
+                CurrentSchemaVersion,
             DomainName =
                 domainName,
             GeneratedUtc =
@@ -362,7 +362,7 @@ public sealed class SettingsIndexCacheSnapshot
     {
         return new SettingsIndexCacheSnapshot
         {
-            SchemaVersion = SchemaVersion,
+            SchemaVersion = SettingsIndexCacheService.CurrentSchemaVersion,
             DomainName = domainName,
             GeneratedUtc = DateTime.MinValue
         };
