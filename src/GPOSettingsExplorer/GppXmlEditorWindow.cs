@@ -117,8 +117,8 @@ public sealed class GppXmlEditorWindow : Window
             Text = xml,
             AcceptsReturn = true,
             AcceptsTab = true,
-            FontFamily = new System.Windows.Media.FontFamily("Consolas"),
-            FontSize = 13,
+            FontFamily = UiStyle.MonospaceFontFamily,
+            FontSize = UiStyle.MonospaceFontSize,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             TextWrapping = TextWrapping.NoWrap
