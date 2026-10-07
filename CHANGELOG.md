@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- No unreleased changes yet.
+
+## 0.2.0 - 2026-10-07
+
 - Completed the application-wide UiStyle/HiDPI cleanup pass: centralized typography, adaptive dialog button bars, resizable compact dialogs, flexible multiline fields, WMI editor layout cleanup, per-monitor DPI reflow, and overflow-safe compact dialogs for 100/125/150/175/200% Windows scaling.
 
 - Added structured GPP Folder Options editing for Vista-and-later user shell/view settings, with legacy/file-association visibility, item-level targeting, backups, audit, clone/delete, and raw XML handoff.

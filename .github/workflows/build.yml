@@ -61,9 +61,26 @@ jobs:
             artifacts/GPOSettingsExplorer-win-x64-portable.zip
             artifacts/GPOSettingsExplorer-win-arm64-portable.zip
 
+      - name: Resolve release version
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: cmd
+        run: |
+          setlocal EnableDelayedExpansion
+          for /f "tokens=*" %%L in ('findstr /C:"<Version>" src\GPOSettingsExplorer\GPOSettingsExplorer.csproj') do set "VERSION_LINE=%%L"
+          set "VERSION_LINE=!VERSION_LINE:<Version>=!"
+          set "VERSION_LINE=!VERSION_LINE:</Version>=!"
+          set "VERSION_LINE=!VERSION_LINE: =!"
+          echo RELEASE_TAG=v!VERSION_LINE!>>"%GITHUB_ENV%"
+
       - name: Create GitHub release
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: cmd
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "%GITHUB_REF_NAME%" artifacts\GPOSettingsExplorer-win-x64-portable.zip artifacts\GPOSettingsExplorer-win-arm64-portable.zip --generate-notes --title "%GITHUB_REF_NAME%"
+        run: |
+          gh release view "%RELEASE_TAG%" >nul 2>nul
+          if errorlevel 1 (
+            gh release create "%RELEASE_TAG%" artifacts\GPOSettingsExplorer-win-x64-portable.zip artifacts\GPOSettingsExplorer-win-arm64-portable.zip --target "%GITHUB_SHA%" --generate-notes --title "%RELEASE_TAG%"
+          ) else (
+            echo Release %RELEASE_TAG% already exists. Skipping release creation.
+          )
