@@ -32,7 +32,7 @@ public sealed class PolicyEditorWindow : Window
 
         var root = new DockPanel { Margin = new Thickness(14) };
 
-        var footer = new StackPanel
+        var footer = new WrapPanel
         {
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Right
