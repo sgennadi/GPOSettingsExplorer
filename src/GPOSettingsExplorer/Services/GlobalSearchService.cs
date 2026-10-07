@@ -13,21 +13,11 @@ public sealed record GlobalSearchResult(
 
 public sealed class GlobalSearchService
 {
-    public IReadOnlyList<GlobalSearchResult> Search(
-        object owner,
-        string query)
+    public IReadOnlyList<object> CaptureItems(
+        object owner)
     {
-        if (string.IsNullOrWhiteSpace(
-                query))
-        {
-            return Array.Empty<GlobalSearchResult>();
-        }
-
-        var normalized =
-            query.Trim();
-
-        var result =
-            new List<GlobalSearchResult>();
+        var items =
+            new List<object>();
 
         var fields =
             owner.GetType()
@@ -61,28 +51,61 @@ public sealed class GlobalSearchService
                     continue;
                 }
 
-                var searchText =
-                    BuildSearchText(
-                        item);
-
-                if (!searchText.Contains(
-                        normalized,
-                        StringComparison.CurrentCultureIgnoreCase))
-                {
-                    continue;
-                }
-
-                result.Add(
-                    new GlobalSearchResult(
-                        FriendlyCategory(
-                            item.GetType()),
-                        BuildTitle(
-                            item),
-                        Truncate(
-                            searchText,
-                            700),
-                        item));
+                items.Add(
+                    item);
             }
+        }
+
+        return items;
+    }
+
+    public IReadOnlyList<GlobalSearchResult> Search(
+        object owner,
+        string query) =>
+        Search(
+            CaptureItems(
+                owner),
+            query);
+
+    public IReadOnlyList<GlobalSearchResult> Search(
+        IReadOnlyList<object> items,
+        string query)
+    {
+        if (string.IsNullOrWhiteSpace(
+                query))
+        {
+            return Array.Empty<GlobalSearchResult>();
+        }
+
+        var normalized =
+            query.Trim();
+
+        var result =
+            new List<GlobalSearchResult>();
+
+        foreach (var item in items)
+        {
+            var searchText =
+                BuildSearchText(
+                    item);
+
+            if (!searchText.Contains(
+                    normalized,
+                    StringComparison.CurrentCultureIgnoreCase))
+            {
+                continue;
+            }
+
+            result.Add(
+                new GlobalSearchResult(
+                    FriendlyCategory(
+                        item.GetType()),
+                    BuildTitle(
+                        item),
+                    BuildMatchDetails(
+                        searchText,
+                        normalized),
+                    item));
         }
 
         return result
@@ -100,6 +123,67 @@ public sealed class GlobalSearchService
             .Take(
                 2000)
             .ToArray();
+    }
+
+    private static string BuildMatchDetails(
+        string text,
+        string query)
+    {
+        const int radius =
+            280;
+
+        var index =
+            text.IndexOf(
+                query,
+                StringComparison.CurrentCultureIgnoreCase);
+
+        if (index < 0)
+        {
+            return Truncate(
+                text,
+                700);
+        }
+
+        var start =
+            Math.Max(
+                0,
+                index -
+                radius);
+
+        var length =
+            Math.Min(
+                text.Length -
+                start,
+                700);
+
+        var snippet =
+            text.Substring(
+                    start,
+                    length)
+                .Replace(
+                    "\r",
+                    " ",
+                    StringComparison.Ordinal)
+                .Replace(
+                    "\n",
+                    " ",
+                    StringComparison.Ordinal);
+
+        if (start > 0)
+        {
+            snippet =
+                "... " +
+                snippet;
+        }
+
+        if (start + length <
+            text.Length)
+        {
+            snippet +=
+                " ...";
+        }
+
+        return snippet;
     }
 
     private static bool IsObservableCollection(
