@@ -47,6 +47,7 @@ public partial class MainWindow : Window
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
+        UpdateWriteModeUi();
         await RefreshAllAsync();
     }
 
@@ -62,6 +63,10 @@ public partial class MainWindow : Window
         try
         {
             _domainContext = _domainContextService.Detect();
+
+            DomainConnectionState.SetContext(
+                _domainContext);
+
             DomainText.Text = _domainContext.DomainName;
             ServerText.Text = _domainContext.ConnectedServer;
 
