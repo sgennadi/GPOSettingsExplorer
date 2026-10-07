@@ -71,12 +71,10 @@ public sealed class GppScheduledTaskEditorWindow : Window
             Margin = new Thickness(12)
         };
 
-        var footer = new StackPanel
+        var footer = new WrapPanel
         {
-            Orientation =
-                Orientation.Horizontal,
-            HorizontalAlignment =
-                HorizontalAlignment.Right
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right
         };
         DockPanel.SetDock(
             footer,
@@ -145,7 +143,7 @@ public sealed class GppScheduledTaskEditorWindow : Window
                     item.Description,
                 AcceptsReturn =
                     true,
-                Height =
+                MinHeight =
                     56
             };
 
@@ -243,7 +241,7 @@ public sealed class GppScheduledTaskEditorWindow : Window
                     item.TaskDescription,
                 AcceptsReturn =
                     true,
-                Height =
+                MinHeight =
                     70
             };
 
