@@ -580,7 +580,7 @@ public sealed class GppScheduledTaskEditorWindow : Window
             };
 
         var advancedButtons =
-            new StackPanel
+            new WrapPanel
             {
                 Orientation =
                     Orientation.Horizontal
