@@ -83,7 +83,7 @@ public partial class MainWindow
                         true,
                         "Backing up GPO before Security Settings change...");
 
-                    var backupPath =
+                    var securityBackupPath =
                         await Task.Run(() =>
                             _gpmService.BackupGpo(
                                 _domainContext.DomainName,
@@ -104,7 +104,7 @@ public partial class MainWindow
                         "Edit Security Setting",
                         "GPO",
                         gpo.DisplayName,
-                        $"Setting: {setting.SettingName}; Scope: {setting.Scope}; Backup: {backupPath}",
+                        $"Setting: {setting.SettingName}; Scope: {setting.Scope}; Backup: {securityBackupPath}",
                         before: setting.Value,
                         after: selectedBoolean.ToString());
 
@@ -112,7 +112,7 @@ public partial class MainWindow
                         gpo);
 
                     StatusText.Text =
-                        $"Saved {setting.SettingName} = {selectedBoolean}. Backup: {backupPath}";
+                        $"Saved {setting.SettingName} = {selectedBoolean}. Backup: {securityBackupPath}";
                 }
                 else
                 {
