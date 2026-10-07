@@ -209,27 +209,21 @@
                               Grid.Row="3"
                               MouseDoubleClick="GpoScriptSearchResultsGrid_MouseDoubleClick">
                         <DataGrid.Columns>
-                            <DataGridTextColumn Header="GPO"
-                                                Binding="{Binding GpoName}"
-                                                Width="1.4*"/>
-                            <DataGridTextColumn Header="Scope"
-                                                Binding="{Binding Scope}"
-                                                Width="80"/>
-                            <DataGridTextColumn Header="Event"
-                                                Binding="{Binding EventName}"
-                                                Width="90"/>
                             <DataGridTextColumn Header="File"
                                                 Binding="{Binding FileName}"
-                                                Width="1.1*"/>
+                                                Width="1.2*"/>
                             <DataGridTextColumn Header="Line"
                                                 Binding="{Binding LineNumber}"
                                                 Width="65"/>
                             <DataGridTextColumn Header="Match"
                                                 Binding="{Binding LineText}"
-                                                Width="2.5*"/>
-                            <DataGridTextColumn Header="Path"
-                                                Binding="{Binding FullPath}"
-                                                Width="2*"/>
+                                                Width="3*"/>
+                            <DataGridTextColumn Header="Copies"
+                                                Binding="{Binding CopyCount}"
+                                                Width="70"/>
+                            <DataGridTextColumn Header="GPO refs"
+                                                Binding="{Binding GpoReferenceCount}"
+                                                Width="80"/>
                         </DataGrid.Columns>
                     </DataGrid>
                 </Grid>
