@@ -43,7 +43,7 @@ public sealed class GppEnvironmentEditorWindow : Window
             Margin = new Thickness(12)
         };
 
-        var footer = new StackPanel
+        var footer = new WrapPanel
         {
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Right
@@ -128,7 +128,7 @@ public sealed class GppEnvironmentEditorWindow : Window
         {
             Text = item.Description,
             AcceptsReturn = true,
-            Height = 62
+            MinHeight = 62
         };
 
         _actionCombo = new ComboBox
@@ -158,7 +158,7 @@ public sealed class GppEnvironmentEditorWindow : Window
         {
             Text = item.Value,
             AcceptsReturn = true,
-            Height = 100,
+            MinHeight = 100,
             VerticalScrollBarVisibility =
                 ScrollBarVisibility.Auto
         };
