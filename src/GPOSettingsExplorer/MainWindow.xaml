@@ -59,7 +59,8 @@
                 <Button Content="Diagnostics"
                         Click="Diagnostics_Click"/>
 
-                <Button Content="Check updates"
+                <Button x:Name="UpdateButton"
+                        Content="Check updates"
                         Click="CheckUpdates_Click"/>
 
                 <Button Content="Refresh all"
