@@ -107,7 +107,7 @@ public static class AlternateCredentialLauncher
         string input,
         string defaultDomain,
         out string user,
-        out string domain)
+        out string? domain)
     {
         var value =
             input.Trim();
@@ -137,7 +137,19 @@ public static class AlternateCredentialLauncher
                 value;
 
             domain =
-                string.Empty;
+                null;
+
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(
+                defaultDomain))
+        {
+            user =
+                $"{value}@{defaultDomain}";
+
+            domain =
+                null;
 
             return;
         }
@@ -146,7 +158,7 @@ public static class AlternateCredentialLauncher
             value;
 
         domain =
-            defaultDomain;
+            null;
     }
 
     private static void AppendArgument(
@@ -218,7 +230,7 @@ public static class AlternateCredentialLauncher
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool CreateProcessWithLogonW(
         string userName,
-        string domain,
+        string? domain,
         string password,
         int logonFlags,
         string applicationName,
