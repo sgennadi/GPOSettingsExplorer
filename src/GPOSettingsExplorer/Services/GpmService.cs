@@ -112,7 +112,8 @@ public sealed class GpmService
         string domainDistinguishedName)
     {
         var objectPath =
-            $"LDAP://CN={gpo.Id:B},CN=Policies,CN=System,{domainDistinguishedName}";
+            DomainConnectionState.BuildLdapPath(
+                $"CN={gpo.Id:B},CN=Policies,CN=System,{domainDistinguishedName}");
 
         var arguments =
             $"gpme.msc /gpobject:\"{objectPath}\"";
@@ -507,7 +508,7 @@ public sealed class GpmService
     {
         using var rootDse =
             new DirectoryEntry(
-                "LDAP://RootDSE");
+                DomainConnectionState.BuildRootDsePath());
 
         var defaultNamingContext =
             Convert.ToString(
