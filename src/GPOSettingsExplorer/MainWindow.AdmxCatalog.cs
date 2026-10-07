@@ -160,7 +160,7 @@ public partial class MainWindow
 
         try
         {
-            var session = await Task.Run(() =>
+            var session = await StaTask.Run(() =>
                 _registryPolicyService.Read(
                     gpo,
                     _domainContext.DomainDistinguishedName,
@@ -189,7 +189,7 @@ public partial class MainWindow
 
             StatusText.Text = "Writing policy setting...";
 
-            await Task.Run(() =>
+            await StaTask.Run(() =>
                 _registryPolicyService.Apply(
                     gpo,
                     _domainContext.DomainDistinguishedName,
