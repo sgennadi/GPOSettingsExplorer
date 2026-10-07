@@ -79,7 +79,8 @@ public sealed class GpoEditorNavigatorService
                 "mmc.exe");
 
         var objectPath =
-            $"LDAP://CN={gpo.Id:B},CN=Policies,CN=System,{domainDistinguishedName}";
+            DomainConnectionState.BuildLdapPath(
+                $"CN={gpo.Id:B},CN=Policies,CN=System,{domainDistinguishedName}");
 
         return Process.Start(
                    new ProcessStartInfo
