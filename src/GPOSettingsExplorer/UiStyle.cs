@@ -31,5 +31,14 @@ internal static class UiStyle
         TextOptions.SetTextRenderingMode(
             window,
             TextRenderingMode.ClearType);
+
+        // Fixed-size dialogs are the most common source of clipped controls
+        // when the system font or per-monitor DPI changes. Keep the initial
+        // dimensions, but always let the user and Windows expand the window.
+        if (window.ResizeMode == ResizeMode.NoResize)
+        {
+            window.ResizeMode =
+                ResizeMode.CanResizeWithGrip;
+        }
     }
 }
