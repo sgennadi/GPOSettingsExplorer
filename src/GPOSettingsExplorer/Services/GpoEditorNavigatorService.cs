@@ -153,15 +153,7 @@ public sealed class GpoEditorNavigatorService
             return true;
         }
 
-        if (row.TryGetCurrentPattern(
-                LegacyIAccessiblePattern.Pattern,
-                out var legacyObject) &&
-            legacyObject is LegacyIAccessiblePattern legacy)
-        {
-            try
-            {
-                legacy.DoDefaultAction();
-                return true;
+        return true;
             }
             catch
             {
