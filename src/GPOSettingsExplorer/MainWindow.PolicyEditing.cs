@@ -10,12 +10,15 @@ namespace GPOSettingsExplorer;
 public partial class MainWindow
 {
     private readonly AdmxCatalogService _admxCatalogService = new();
+    private readonly AdmxCatalogCacheService _admxCatalogCacheService = new();
     private readonly RegistryPolicyService _registryPolicyService = new();
     private readonly SecurityTemplateService _securityTemplateService = new();
     private readonly GpoEditorNavigatorService _gpoEditorNavigatorService = new();
     private readonly AuditService _auditService = new();
 
     private IReadOnlyList<AdmxPolicyDefinition>? _admxPolicies;
+    private readonly SemaphoreSlim _admxCatalogGate = new(1, 1);
+    private bool _admxCatalogLoadedFromCache;
 
     private async void EditSetting_Click(object sender, RoutedEventArgs e)
     {
@@ -214,18 +217,184 @@ public partial class MainWindow
         }
     }
 
-    private async Task EnsureAdmxCatalogAsync()
+    private async Task EnsureAdmxCatalogAsync(
+        bool forceRefresh = false)
     {
-        if (_domainContext is null || _admxPolicies is not null)
+        if (_domainContext is null)
         {
             return;
         }
 
-        _admxPolicies = await Task.Run(() =>
-            _admxCatalogService.Load(_domainContext.DomainName));
+        if (!forceRefresh &&
+            _admxPolicies is not null)
+        {
+            return;
+        }
+
+        await _admxCatalogGate.WaitAsync();
+
+        AdmxCatalogCacheSnapshot? cachedSnapshot = null;
+        var scheduleBackgroundValidation = false;
+
+        try
+        {
+            if (!forceRefresh &&
+                _admxPolicies is not null)
+            {
+                return;
+            }
+
+            if (!forceRefresh)
+            {
+                cachedSnapshot =
+                    await Task.Run(() =>
+                        _admxCatalogCacheService.Load(
+                            _domainContext.DomainName));
+
+                if (cachedSnapshot is not null &&
+                    cachedSnapshot.Policies.Count > 0)
+                {
+                    _admxPolicies =
+                        cachedSnapshot.Policies;
+
+                    _admxCatalogService.UseCachedStoreState(
+                        cachedSnapshot.SourcePath,
+                        cachedSnapshot.Language);
+
+                    _admxCatalogLoadedFromCache =
+                        true;
+
+                    HeaderStatusText.Text =
+                        $"ADMX: {_admxPolicies.Count:N0} policies (cached) from {cachedSnapshot.SourcePath}";
+
+                    scheduleBackgroundValidation =
+                        true;
+
+                    return;
+                }
+            }
+
+            await RefreshAdmxCatalogCacheAsync(
+                forceRefresh: true);
+        }
+        finally
+        {
+            _admxCatalogGate.Release();
+
+            if (scheduleBackgroundValidation &&
+                cachedSnapshot is not null)
+            {
+                _ = ValidateCachedAdmxCatalogAsync(
+                    cachedSnapshot);
+            }
+        }
+    }
+
+    private async Task ValidateCachedAdmxCatalogAsync(
+        AdmxCatalogCacheSnapshot cachedSnapshot)
+    {
+        if (_domainContext is null)
+        {
+            return;
+        }
+
+        if (!await _admxCatalogGate.WaitAsync(0))
+        {
+            return;
+        }
+
+        try
+        {
+            AdmxStoreState currentState;
+
+            try
+            {
+                currentState =
+                    await Task.Run(() =>
+                        _admxCatalogService.GetStoreState(
+                            _domainContext.DomainName));
+            }
+            catch (Exception ex)
+            {
+                StatusText.Text =
+                    $"Cached ADMX catalog shown - background validation failed: {ex.Message}";
+
+                return;
+            }
+
+            if (currentState.Fingerprint.Equals(
+                    cachedSnapshot.Fingerprint,
+                    StringComparison.OrdinalIgnoreCase) &&
+                currentState.SourcePath.Equals(
+                    cachedSnapshot.SourcePath,
+                    StringComparison.OrdinalIgnoreCase) &&
+                currentState.Language.Equals(
+                    cachedSnapshot.Language,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                StatusText.Text =
+                    "ADMX catalog cache is up to date";
+
+                return;
+            }
+
+            StatusText.Text =
+                "Central Store changed - refreshing ADMX cache...";
+
+            await RefreshAdmxCatalogCacheAsync(
+                forceRefresh: true);
+
+            if (AdmxCatalogTab.IsSelected)
+            {
+                ApplyAdmxFilter();
+            }
+
+            StatusText.Text =
+                "ADMX catalog cache refreshed";
+        }
+        catch (Exception ex)
+        {
+            StatusText.Text =
+                $"Cached ADMX catalog shown - background refresh failed: {ex.Message}";
+        }
+        finally
+        {
+            _admxCatalogGate.Release();
+        }
+    }
+
+    private async Task RefreshAdmxCatalogCacheAsync(
+        bool forceRefresh)
+    {
+        if (_domainContext is null)
+        {
+            return;
+        }
+
+        var storeState =
+            await Task.Run(() =>
+                _admxCatalogService.GetStoreState(
+                    _domainContext.DomainName));
+
+        var policies =
+            await Task.Run(() =>
+                _admxCatalogService.Load(
+                    storeState));
+
+        _admxPolicies =
+            policies;
+
+        _admxCatalogLoadedFromCache =
+            false;
+
+        await Task.Run(() =>
+            _admxCatalogCacheService.Save(
+                _domainContext.DomainName,
+                storeState,
+                policies));
 
         HeaderStatusText.Text =
-            $"ADMX: {_admxPolicies.Count:N0} policies from {_admxCatalogService.LastSourcePath}";
+            $"ADMX: {policies.Count:N0} policies from {storeState.SourcePath}";
     }
 
     private async Task RefreshSingleGpoSettingsAsync(GpoInfo gpo)
