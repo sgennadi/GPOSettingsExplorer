@@ -54,6 +54,13 @@ public partial class MainWindow
             return;
         }
 
+        if (AdmxCatalogTab.IsSelected)
+        {
+            await EnsureAdmxCatalogAsync();
+            ApplyAdmxFilter();
+            return;
+        }
+
         if (!SecurityTab.IsSelected)
         {
             return;
