@@ -70,15 +70,18 @@ public sealed class SettingValueWindow : Window
                 var exact =
                     await openExactGpoEditor();
 
-                if (!exact)
+                if (exact)
                 {
-                    MessageBox.Show(
-                        this,
-                        "The GPO editor was opened, but MMC could not automatically select the exact setting on this Windows build. The GPO remains open for manual navigation.",
-                        "GPO Editor Navigation",
-                        MessageBoxButton.OK,
-                        MessageBoxImage.Information);
+                    Close();
+                    return;
                 }
+
+                MessageBox.Show(
+                    this,
+                    "The GPO editor was opened, but MMC could not automatically select the exact setting on this Windows build. The GPO remains open for manual navigation.",
+                    "GPO Editor Navigation",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
             }
             catch (Exception ex)
             {
