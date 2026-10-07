@@ -108,6 +108,18 @@ public sealed class SecurityTemplateService
                 "\r\n",
                 lines);
 
+        ChangePreviewGuard.Confirm(
+            new ChangePreviewRequest(
+                $"Edit Security Option: {setting.SettingName}",
+                gpo.DisplayName,
+                text.Replace(
+                    "\n",
+                    Environment.NewLine,
+                    StringComparison.Ordinal),
+                updated,
+                $"Registry target: {target}\nNew value: {value}",
+                "Apply"));
+
         var tempPath =
             templatePath +
             ".gposes-" +
@@ -173,7 +185,8 @@ public sealed class SecurityTemplateService
 
         using var entry =
             new DirectoryEntry(
-                $"LDAP://{distinguishedName}");
+                DomainConnectionState.BuildLdapPath(
+                    distinguishedName));
 
         var path =
             Convert.ToString(
@@ -185,8 +198,11 @@ public sealed class SecurityTemplateService
             return path;
         }
 
-        return
-            $@"\\{gpo.DomainName}\SYSVOL\{gpo.DomainName}\Policies\{gpo.Id.ToString("B").ToUpperInvariant()}";
+        return Path.Combine(
+            DomainConnectionState.BuildSysvolRoot(
+                gpo.DomainName),
+            "Policies",
+            gpo.Id.ToString("B").ToUpperInvariant());
     }
 
     private static string BuildRegistryTarget(
@@ -471,7 +487,8 @@ public sealed class SecurityTemplateService
                         slot: 4);
 
                 var ldapPath =
-                    $"LDAP://CN={gpo.Id:B},CN=Policies,CN=System,{domainDistinguishedName}";
+                    DomainConnectionState.BuildLdapPath(
+                        $"CN={gpo.Id:B},CN=Policies,CN=System,{domainDistinguishedName}");
 
                 ThrowIfFailed(
                     open(
