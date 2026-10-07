@@ -62,10 +62,21 @@ public sealed class GpoBackupService
 
         dynamic gpm = CreateGpm();
         dynamic constants = gpm.GetConstants();
-        dynamic domain = gpm.GetDomain(
-            currentDomainName,
-            string.Empty,
-            constants.UseAnyDC);
+        var server =
+            DomainConnectionState.GetServerFor(
+                currentDomainName);
+
+        dynamic domain =
+            string.IsNullOrWhiteSpace(
+                server)
+                ? gpm.GetDomain(
+                    currentDomainName,
+                    string.Empty,
+                    constants.UseAnyDC)
+                : gpm.GetDomain(
+                    currentDomainName,
+                    server,
+                    0);
 
         dynamic backupDirectory = gpm.GetBackupDir(backup.BackupDirectory);
         dynamic backupObject = backupDirectory.GetBackup(backup.BackupId.ToString("B"));
