@@ -150,14 +150,6 @@ public sealed class GpoEditorNavigatorService
             invokeObject is InvokePattern invoke)
         {
             invoke.Invoke();
-            return true;
-        }
-
-        return true;
-            }
-            catch
-            {
-            }
         }
 
         return true;
@@ -237,7 +229,9 @@ public sealed class GpoEditorNavigatorService
                 if (item.Current.Name.Equals(
                         name,
                         StringComparison.CurrentCultureIgnoreCase))
+                {
                     return item;
+                }
             }
 
             Thread.Sleep(150);
@@ -274,7 +268,9 @@ public sealed class GpoEditorNavigatorService
                     name.StartsWith(
                         settingName,
                         StringComparison.CurrentCultureIgnoreCase))
+                {
                     return row;
+                }
             }
 
             Thread.Sleep(200);
@@ -290,11 +286,15 @@ public sealed class GpoEditorNavigatorService
                 ExpandCollapsePattern.Pattern,
                 out var value) ||
             value is not ExpandCollapsePattern pattern)
+        {
             return;
+        }
 
         if (pattern.Current.ExpandCollapseState ==
             ExpandCollapseState.Collapsed)
+        {
             pattern.Expand();
+        }
     }
 
     private static void Select(
