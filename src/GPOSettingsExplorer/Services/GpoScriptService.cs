@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using GPOSettingsExplorer.Models;
@@ -71,64 +72,152 @@ public sealed class GpoScriptService
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(query))
+        {
             return Array.Empty<GpoScriptSearchResult>();
+        }
 
         var needle =
             query.Trim();
 
-        var result =
-            new List<GpoScriptSearchResult>();
+        var physicalFiles =
+            scripts
+                .Where(script =>
+                    script.Exists &&
+                    IsSupportedScriptFile(
+                        script.FullPath))
+                .GroupBy(
+                    script => script.FullPath,
+                    StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.ToArray())
+                .ToArray();
 
-        foreach (var script in scripts
-                     .GroupBy(
-                         item => item.FullPath,
-                         StringComparer.OrdinalIgnoreCase)
-                     .Select(group => group.First()))
+        var contentGroups =
+            new Dictionary<string, List<GpoScriptInfo>>(
+                StringComparer.OrdinalIgnoreCase);
+
+        var documents =
+            new Dictionary<string, string>(
+                StringComparer.OrdinalIgnoreCase);
+
+        foreach (var pathGroup in physicalFiles)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var metadataMatches =
-                script.FileName.Contains(
-                    needle,
-                    StringComparison.CurrentCultureIgnoreCase) ||
-                script.Parameters.Contains(
-                    needle,
-                    StringComparison.CurrentCultureIgnoreCase) ||
-                script.FullPath.Contains(
-                    needle,
-                    StringComparison.CurrentCultureIgnoreCase);
+            var representative =
+                pathGroup[0];
 
-            if (metadataMatches)
+            byte[] bytes;
+
+            try
             {
-                result.Add(
-                    new GpoScriptSearchResult
-                    {
-                        Script = script,
-                        LineNumber = 0,
-                        LineText =
-                            BuildMetadataMatchText(
-                                script,
-                                needle)
-                    });
+                bytes =
+                    File.ReadAllBytes(
+                        representative.FullPath);
             }
-
-            if (!script.Exists ||
-                !IsSupportedScriptFile(
-                    script.FullPath))
+            catch
             {
                 continue;
             }
 
-            string text;
+            var hash =
+                Convert.ToHexString(
+                    SHA256.HashData(
+                        bytes));
 
-            try
+            if (!contentGroups.TryGetValue(
+                    hash,
+                    out var copies))
             {
-                text =
-                    ReadDocument(
-                        script.FullPath)
-                    .Text;
+                copies =
+                    new List<GpoScriptInfo>();
+
+                contentGroups[hash] =
+                    copies;
             }
-            catch
+
+            copies.AddRange(
+                pathGroup);
+
+            if (!documents.ContainsKey(
+                    hash))
+            {
+                try
+                {
+                    documents[hash] =
+                        ReadDocument(
+                            representative.FullPath)
+                        .Text;
+                }
+                catch
+                {
+                    documents[hash] =
+                        string.Empty;
+                }
+            }
+        }
+
+        var result =
+            new List<GpoScriptSearchResult>();
+
+        foreach (var pair in contentGroups)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var copies =
+                pair.Value
+                    .OrderBy(
+                        item => item.GpoName,
+                        StringComparer.CurrentCultureIgnoreCase)
+                    .ThenBy(
+                        item => item.Scope,
+                        StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(
+                        item => item.EventName,
+                        StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+
+            var representative =
+                copies[0];
+
+            var metadataMatch =
+                copies.FirstOrDefault(script =>
+                    script.FileName.Contains(
+                        needle,
+                        StringComparison.CurrentCultureIgnoreCase) ||
+                    script.Parameters.Contains(
+                        needle,
+                        StringComparison.CurrentCultureIgnoreCase) ||
+                    script.FullPath.Contains(
+                        needle,
+                        StringComparison.CurrentCultureIgnoreCase));
+
+            if (metadataMatch is not null)
+            {
+                result.Add(
+                    new GpoScriptSearchResult
+                    {
+                        Scripts =
+                            copies,
+                        Identity =
+                            pair.Key,
+                        LineNumber =
+                            0,
+                        LineText =
+                            BuildMetadataMatchText(
+                                metadataMatch,
+                                needle)
+                    });
+            }
+
+            var text =
+                documents.TryGetValue(
+                    pair.Key,
+                    out var cachedText)
+                    ? cachedText
+                    : string.Empty;
+
+            if (string.IsNullOrEmpty(
+                    text))
             {
                 continue;
             }
@@ -159,7 +248,10 @@ public sealed class GpoScriptService
                 result.Add(
                     new GpoScriptSearchResult
                     {
-                        Script = script,
+                        Scripts =
+                            copies,
+                        Identity =
+                            pair.Key,
                         LineNumber =
                             lineIndex + 1,
                         LineText =
@@ -168,15 +260,52 @@ public sealed class GpoScriptService
             }
         }
 
+        // Missing script references cannot be content-hashed, but their
+        // metadata is still useful for searches such as ".vbs".
+        foreach (var script in scripts.Where(item =>
+                     !item.Exists))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (!script.FileName.Contains(
+                    needle,
+                    StringComparison.CurrentCultureIgnoreCase) &&
+                !script.Parameters.Contains(
+                    needle,
+                    StringComparison.CurrentCultureIgnoreCase) &&
+                !script.FullPath.Contains(
+                    needle,
+                    StringComparison.CurrentCultureIgnoreCase))
+            {
+                continue;
+            }
+
+            result.Add(
+                new GpoScriptSearchResult
+                {
+                    Scripts =
+                        new[] { script },
+                    Identity =
+                        "MISSING|" +
+                        script.FullPath,
+                    LineNumber =
+                        0,
+                    LineText =
+                        BuildMetadataMatchText(
+                            script,
+                            needle)
+                });
+        }
+
         return result
             .OrderBy(
-                item => item.GpoName,
-                StringComparer.CurrentCultureIgnoreCase)
-            .ThenBy(
                 item => item.FileName,
                 StringComparer.CurrentCultureIgnoreCase)
             .ThenBy(
                 item => item.LineNumber)
+            .ThenBy(
+                item => item.LineText,
+                StringComparer.CurrentCultureIgnoreCase)
             .ToArray();
     }
 
