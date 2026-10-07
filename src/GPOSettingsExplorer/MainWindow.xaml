@@ -57,7 +57,8 @@
             </StatusBarItem>
         </StatusBar>
 
-        <TabControl x:Name="MainTabs">
+        <TabControl x:Name="MainTabs"
+                    SelectionChanged="MainTabs_SelectionChanged">
             <TabItem Header="GPOs">
                 <DockPanel Margin="6">
                     <WrapPanel DockPanel.Dock="Top">
@@ -1212,8 +1213,7 @@
             </TabItem>
 
             <TabItem x:Name="SecurityTab"
-                     Header="Security &amp; Delegation"
-                     Selected="SecurityTab_Selected">
+                     Header="Security &amp; Delegation">
                 <DockPanel Margin="6">
                     <WrapPanel DockPanel.Dock="Top">
                         <TextBlock Text="GPO:" VerticalAlignment="Center"/>
