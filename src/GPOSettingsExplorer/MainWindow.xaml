@@ -1295,6 +1295,7 @@
                                   Width="170"
                                   SelectionChanged="GppXmlFilter_SelectionChanged"/>
                         <Button Content="Load all" Click="LoadGppXml_Click"/>
+                        <Button Content="Structured edit" Click="StructuredEditGppXml_Click"/>
                         <Button Content="Edit XML" Click="EditGppXml_Click"/>
                         <Button Content="Import / Replace..." Click="ImportGppXml_Click"/>
                         <Button Content="Export XML" Click="ExportGppXml_Click"/>
