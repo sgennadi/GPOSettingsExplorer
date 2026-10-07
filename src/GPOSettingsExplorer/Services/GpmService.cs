@@ -890,6 +890,15 @@ public sealed class GpmService
         dynamic gpo = domain.GetGPO(gpoId.ToString("B"));
         dynamic security = gpo.GetSecurityInfo();
 
+        ChangePreviewGuard.Confirm(
+            new ChangePreviewRequest(
+                "Add GPO permission",
+                Convert.ToString((object?)gpo.DisplayName) ?? gpoId.ToString("B"),
+                "<not present>",
+                $"{trustee.Trim()} | {level}",
+                string.Empty,
+                "Add"));
+
         var permissionCode = GetPermissionConstant(constants, level);
         dynamic newPermission = gpm.CreatePermission(trustee.Trim(), permissionCode, true);
         security.Add(newPermission);
@@ -940,6 +949,15 @@ public sealed class GpmService
             ? existing.TrusteeDisplay
             : existing.TrusteeSid;
 
+        ChangePreviewGuard.Confirm(
+            new ChangePreviewRequest(
+                "Change GPO permission",
+                Convert.ToString((object?)gpo.DisplayName) ?? gpoId.ToString("B"),
+                $"{existing.TrusteeDisplay} | {existing.Level}",
+                $"{existing.TrusteeDisplay} | {newLevel}",
+                string.Empty,
+                "Apply"));
+
         var permissionCode = GetPermissionConstant(constants, newLevel);
         dynamic newPermission = gpm.CreatePermission(trustee, permissionCode, true);
         security.Add(newPermission);
@@ -976,6 +994,15 @@ public sealed class GpmService
             throw new InvalidOperationException(
                 "The selected permission no longer exists. Refresh the permission list and try again.");
         }
+
+        ChangePreviewGuard.Confirm(
+            new ChangePreviewRequest(
+                "Remove GPO permission",
+                Convert.ToString((object?)gpo.DisplayName) ?? gpoId.ToString("B"),
+                $"{existing.TrusteeDisplay} | {existing.Level}",
+                "<removed>",
+                string.Empty,
+                "Remove"));
 
         security.Remove(current);
         gpo.SetSecurityInfo(security);
@@ -1026,6 +1053,35 @@ public sealed class GpmService
         dynamic constants = gpm.GetConstants();
         dynamic domain = GetDomain(gpm, constants, domainName);
         dynamic gpo = domain.GetGPO(gpoId.ToString("B"));
+
+        var currentFilter =
+            string.Empty;
+
+        try
+        {
+            dynamic existingFilter =
+                gpo.GetWMIFilter();
+
+            currentFilter =
+                existingFilter is null
+                    ? "<none>"
+                    : Convert.ToString((object?)existingFilter.Name)
+                      ?? "<assigned>";
+        }
+        catch
+        {
+            currentFilter =
+                "<none>";
+        }
+
+        ChangePreviewGuard.Confirm(
+            new ChangePreviewRequest(
+                "Assign WMI filter",
+                Convert.ToString((object?)gpo.DisplayName) ?? gpoId.ToString("B"),
+                currentFilter,
+                filter?.Name ?? "<none>",
+                string.Empty,
+                "Apply"));
 
         if (filter is null)
         {
