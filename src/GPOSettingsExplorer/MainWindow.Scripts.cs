@@ -158,11 +158,64 @@ public partial class MainWindow
         MouseButtonEventArgs e)
     {
         if (GpoScriptSearchResultsGrid.SelectedItem is not GpoScriptSearchResult result)
+        {
             return;
+        }
+
+        var script =
+            SelectScriptCopyForEditing(
+                result);
+
+        if (script is null)
+        {
+            return;
+        }
 
         await EditGpoScriptAsync(
-            result.Script,
+            script,
             result.LineNumber);
+    }
+
+    private GpoScriptInfo? SelectScriptCopyForEditing(
+        GpoScriptSearchResult result)
+    {
+        var copies =
+            result.Scripts
+                .GroupBy(
+                    item => item.FullPath,
+                    StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.First())
+                .OrderBy(
+                    item => item.GpoName,
+                    StringComparer.CurrentCultureIgnoreCase)
+                .ThenBy(
+                    item => item.Scope,
+                    StringComparer.OrdinalIgnoreCase)
+                .ThenBy(
+                    item => item.EventName,
+                    StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+
+        if (copies.Length == 0)
+        {
+            return null;
+        }
+
+        if (copies.Length == 1)
+        {
+            return copies[0];
+        }
+
+        var picker =
+            new GpoScriptCopyPickerWindow(
+                copies)
+            {
+                Owner = this
+            };
+
+        return picker.ShowDialog() == true
+            ? picker.SelectedScript
+            : null;
     }
 
     private async Task EditGpoScriptAsync(
@@ -314,11 +367,18 @@ public partial class MainWindow
                 _gpoScriptSearchResults,
                 results);
 
+            var physicalCopies =
+                results
+                    .SelectMany(item => item.Scripts)
+                    .Select(item => item.FullPath)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Count();
+
             GpoScriptSearchCountText.Text =
-                $"{results.Count:N0} matches";
+                $"{results.Count:N0} unique matches | {physicalCopies:N0} copies";
 
             StatusText.Text =
-                $"Found {results.Count:N0} script matches for '{query}'";
+                $"Found {results.Count:N0} unique script matches for '{query}'";
         }
         catch (OperationCanceledException)
         {
