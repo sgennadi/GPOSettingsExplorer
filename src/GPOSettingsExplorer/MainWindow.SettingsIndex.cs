@@ -122,6 +122,42 @@ public partial class MainWindow
                 return;
             }
 
+            if (changedGpos.Count == 0 &&
+                removedCount > 0)
+            {
+                var cleaned =
+                    _settingsIndexCacheService.Merge(
+                        domainName,
+                        snapshot,
+                        currentGpos,
+                        Array.Empty<GpoInfo>(),
+                        Array.Empty<PolicySettingInfo>());
+
+                await Task.Run(
+                    () => _settingsIndexCacheService.SaveSnapshot(
+                        cleaned),
+                    cancellationToken);
+
+                _settingsIndexCache =
+                    cleaned;
+
+                ReplaceCollection(
+                    _settings,
+                    _settingsIndexCacheService.GetCurrentSettings(
+                        cleaned,
+                        currentGpos));
+
+                _settingsView.Refresh();
+
+                SettingsCountText.Text =
+                    $"{_settings.Count:N0} configured settings";
+
+                StatusText.Text =
+                    $"Removed {removedCount:N0} deleted GPO(s) from settings cache";
+
+                return;
+            }
+
             showBusyProgress =
                 true;
 
@@ -204,17 +240,26 @@ public partial class MainWindow
         }
         catch (Exception ex)
         {
-            StatusText.Text =
-                "Settings indexing failed";
+            if (!forceRebuild &&
+                _settings.Count > 0)
+            {
+                StatusText.Text =
+                    $"Cached settings shown - background update failed: {ex.Message}";
+            }
+            else
+            {
+                StatusText.Text =
+                    "Settings indexing failed";
 
-            MessageBox.Show(
-                this,
-                ex.Message,
-                forceRebuild
-                    ? "Rebuild Settings Index"
-                    : "Update Settings Index",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+                MessageBox.Show(
+                    this,
+                    ex.Message,
+                    forceRebuild
+                        ? "Rebuild Settings Index"
+                        : "Update Settings Index",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
         }
         finally
         {
