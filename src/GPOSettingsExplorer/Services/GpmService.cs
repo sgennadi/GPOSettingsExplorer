@@ -522,7 +522,8 @@ public sealed class GpmService
 
         using var gpoEntry =
             new DirectoryEntry(
-                $"LDAP://{gpoDn}");
+                DomainConnectionState.BuildLdapPath(
+                    gpoDn));
 
         gpoEntry.Options.SecurityMasks =
             SecurityMasks.Dacl;
@@ -733,7 +734,7 @@ public sealed class GpmService
         {
             using var rootDse =
                 new DirectoryEntry(
-                    "LDAP://RootDSE");
+                    DomainConnectionState.BuildRootDsePath());
 
             var defaultNamingContext =
                 Convert.ToString(
@@ -752,7 +753,8 @@ public sealed class GpmService
 
             using var gpoEntry =
                 new DirectoryEntry(
-                    $"LDAP://{gpoDn}");
+                    DomainConnectionState.BuildLdapPath(
+                        gpoDn));
 
             var displayName =
                 Convert.ToString(
