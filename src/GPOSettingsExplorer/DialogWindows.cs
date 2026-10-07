@@ -16,12 +16,12 @@ public sealed class InputDialog : Window
         Title = title;
         Width = 520;
         Height = 175;
-        ResizeMode = ResizeMode.NoResize;
+        ResizeMode = ResizeMode.CanResizeWithGrip;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
 
         var root = new DockPanel { Margin = new Thickness(12) };
 
-        var buttons = new StackPanel
+        var buttons = new WrapPanel
         {
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Right
@@ -59,12 +59,12 @@ public sealed class WmiFilterPickerWindow : Window
         Title = "Assign WMI Filter";
         Width = 650;
         Height = 190;
-        ResizeMode = ResizeMode.NoResize;
+        ResizeMode = ResizeMode.CanResizeWithGrip;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
 
         var root = new DockPanel { Margin = new Thickness(12) };
 
-        var buttons = new StackPanel
+        var buttons = new WrapPanel
         {
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Right
@@ -99,7 +99,7 @@ public sealed class WmiFilterPickerWindow : Window
         {
             DisplayMemberPath = nameof(WmiFilterInfo.Name),
             ItemsSource = filters.ToArray(),
-            MinWidth = 570
+            MinWidth = 240
         };
 
         var current = filters.FirstOrDefault(f =>
