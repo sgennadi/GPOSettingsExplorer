@@ -482,6 +482,8 @@ public sealed class RegistryPolicyService
     private sealed class GroupPolicyObjectHandle : IDisposable
     {
         private const uint ClsCtxInprocServer = 0x1;
+        private const uint CoInitApartmentThreaded = 0x2;
+        private const int RpcEChangedMode = unchecked((int)0x80010106);
 
         private static readonly Guid ClsidGroupPolicyObject =
             new("EA502722-A23D-11D1-A7D3-0000F87571E3");
@@ -490,10 +492,26 @@ public sealed class RegistryPolicyService
             new("EA502723-A23D-11D1-A7D3-0000F87571E3");
 
         private IntPtr _instance;
+        private bool _uninitializeCom;
 
         public GroupPolicyObjectHandle(
             string ldapPath)
         {
+            var initializeResult =
+                CoInitializeEx(
+                    IntPtr.Zero,
+                    CoInitApartmentThreaded);
+
+            if (initializeResult >= 0)
+            {
+                _uninitializeCom = true;
+            }
+            else if (initializeResult != RpcEChangedMode)
+            {
+                ThrowIfFailed(
+                    initializeResult);
+            }
+
             var clsid =
                 ClsidGroupPolicyObject;
 
@@ -599,16 +617,21 @@ public sealed class RegistryPolicyService
 
         public void Dispose()
         {
-            if (_instance == IntPtr.Zero)
+            if (_instance != IntPtr.Zero)
             {
-                return;
+                Marshal.Release(
+                    _instance);
+
+                _instance =
+                    IntPtr.Zero;
             }
 
-            Marshal.Release(
-                _instance);
-
-            _instance =
-                IntPtr.Zero;
+            if (_uninitializeCom)
+            {
+                CoUninitialize();
+                _uninitializeCom =
+                    false;
+            }
         }
     }
 
@@ -638,6 +661,16 @@ public sealed class RegistryPolicyService
         bool add,
         ref Guid extensionGuid,
         ref Guid snapInGuid);
+
+    [DllImport(
+        "ole32.dll")]
+    private static extern int CoInitializeEx(
+        IntPtr reserved,
+        uint coInit);
+
+    [DllImport(
+        "ole32.dll")]
+    private static extern void CoUninitialize();
 
     [DllImport(
         "ole32.dll")]
