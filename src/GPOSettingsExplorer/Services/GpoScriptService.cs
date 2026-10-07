@@ -349,6 +349,8 @@ public sealed class GpoScriptService
         GpoScriptInfo script,
         GpoScriptDocument document)
     {
+        EditingGuard.EnsureEnabled(
+            "Edit GPO script");
         if (!script.Exists ||
             !IsSupportedScriptFile(script.FullPath))
         {
