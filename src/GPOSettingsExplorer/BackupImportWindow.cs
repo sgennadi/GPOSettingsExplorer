@@ -138,7 +138,13 @@ public sealed class BackupImportWindow : Window
         });
 
         root.Children.Add(footer);
-        root.Children.Add(panel);
+        root.Children.Add(
+            new ScrollViewer
+            {
+                Content = panel,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled
+            });
         Content = root;
 
         UpdateTargetMode();
