@@ -51,11 +51,10 @@ public sealed class GppNetworkShareEditorWindow : Window
             Margin = new Thickness(12)
         };
 
-        var footer = new StackPanel
+        var footer = new WrapPanel
         {
             Orientation = Orientation.Horizontal,
-            HorizontalAlignment =
-                HorizontalAlignment.Right
+            HorizontalAlignment = HorizontalAlignment.Right
         };
         DockPanel.SetDock(
             footer,
@@ -121,7 +120,7 @@ public sealed class GppNetworkShareEditorWindow : Window
             {
                 Text = item.Description,
                 AcceptsReturn = true,
-                Height = 56
+                MinHeight = 56
             };
 
         _actionCombo =
@@ -161,7 +160,7 @@ public sealed class GppNetworkShareEditorWindow : Window
             {
                 Text = item.Comment,
                 AcceptsReturn = true,
-                Height = 56
+                MinHeight = 56
             };
 
         AddRow(
