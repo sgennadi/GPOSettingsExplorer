@@ -4,6 +4,12 @@
 
 - No unreleased changes yet.
 
+## 0.2.2 - 2026-10-07
+
+- Fixed unsolicited "Load GPO Security" errors during startup: Security & Delegation permissions are now loaded only when that tab is selected.
+- Hardened GPMC permission enumeration so an unresolvable/deleted trustee no longer aborts the complete permission list.
+- Added an Active Directory ACL fallback for GPO security when GPMC GetSecurityInfo fails, including SID-to-account resolution and simplified Apply/Read/Edit/Full Control mapping.
+
 ## 0.2.1 - 2026-10-07
 
 - Fixed startup failure "Provider is not capable of the attempted operation" when the local root\\policy WMI provider cannot enumerate Group Policy WMI filters.

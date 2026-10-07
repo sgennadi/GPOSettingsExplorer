@@ -1,6 +1,9 @@
 using System.IO;
 using System.Diagnostics;
+using System.DirectoryServices;
 using System.Runtime.InteropServices;
+using System.Security.AccessControl;
+using System.Security.Principal;
 using System.Xml.Linq;
 using GPOSettingsExplorer.Models;
 
@@ -257,43 +260,331 @@ public sealed class GpmService
 
     public IReadOnlyList<GpoPermissionInfo> LoadPermissions(string domainName, Guid gpoId)
     {
+        try
+        {
+            return LoadPermissionsWithGpm(
+                domainName,
+                gpoId);
+        }
+        catch (COMException)
+        {
+            return LoadPermissionsFromDirectory(
+                gpoId);
+        }
+    }
+
+    private static IReadOnlyList<GpoPermissionInfo> LoadPermissionsWithGpm(
+        string domainName,
+        Guid gpoId)
+    {
         dynamic gpm = CreateGpm();
         dynamic constants = gpm.GetConstants();
         dynamic domain = gpm.GetDomain(domainName, string.Empty, constants.UseAnyDC);
         dynamic gpo = domain.GetGPO(gpoId.ToString("B"));
         dynamic security = gpo.GetSecurityInfo();
 
-        var gpoName = Convert.ToString((object?)gpo.DisplayName) ?? gpoId.ToString("B");
-        var result = new List<GpoPermissionInfo>();
-        var count = Convert.ToInt32((object?)security.Count);
+        var gpoName =
+            SafeString(() => gpo.DisplayName);
 
-        for (var i = 1; i <= count; i++)
+        if (string.IsNullOrWhiteSpace(gpoName))
         {
-            dynamic permission = security.Item(i);
-            dynamic trustee = permission.Trustee;
-
-            var rawPermission = Convert.ToInt32((object?)permission.Permission);
-            result.Add(new GpoPermissionInfo
-            {
-                GpoId = gpoId,
-                GpoName = gpoName,
-                TrusteeName = Convert.ToString((object?)trustee.TrusteeName) ?? string.Empty,
-                TrusteeDomain = Convert.ToString((object?)trustee.TrusteeDomain) ?? string.Empty,
-                TrusteeSid = Convert.ToString((object?)trustee.TrusteeSid) ?? string.Empty,
-                TrusteeDsPath = Convert.ToString((object?)trustee.TrusteeDSPath) ?? string.Empty,
-                TrusteeType = SafeInt(() => trustee.TrusteeType),
-                Level = MapPermissionLevel(rawPermission),
-                RawPermission = rawPermission,
-                Denied = SafeBool(() => permission.Denied),
-                Inherited = SafeBool(() => permission.Inherited),
-                Inheritable = SafeBool(() => permission.Inheritable)
-            });
+            gpoName =
+                gpoId.ToString("B");
         }
 
-        return result
-            .OrderBy(p => p.Category, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(p => p.TrusteeDisplay, StringComparer.CurrentCultureIgnoreCase)
-            .ThenBy(p => p.RawPermission)
+        var result =
+            new List<GpoPermissionInfo>();
+
+        var count =
+            Convert.ToInt32(
+                (object?)security.Count);
+
+        for (var i = 1;
+             i <= count;
+             i++)
+        {
+            try
+            {
+                dynamic permission =
+                    security.Item(i);
+
+                dynamic trustee =
+                    permission.Trustee;
+
+                var rawPermission =
+                    SafeInt(() => permission.Permission);
+
+                var trusteeSid =
+                    SafeString(() => trustee.TrusteeSid);
+
+                var trusteeName =
+                    SafeString(() => trustee.TrusteeName);
+
+                var trusteeDomain =
+                    SafeString(() => trustee.TrusteeDomain);
+
+                if (string.IsNullOrWhiteSpace(trusteeName) &&
+                    !string.IsNullOrWhiteSpace(trusteeSid))
+                {
+                    trusteeName =
+                        trusteeSid;
+                }
+
+                result.Add(
+                    new GpoPermissionInfo
+                    {
+                        GpoId = gpoId,
+                        GpoName = gpoName,
+                        TrusteeName = trusteeName,
+                        TrusteeDomain = trusteeDomain,
+                        TrusteeSid = trusteeSid,
+                        TrusteeDsPath =
+                            SafeString(() => trustee.TrusteeDSPath),
+                        TrusteeType =
+                            SafeInt(() => trustee.TrusteeType),
+                        Level =
+                            MapPermissionLevel(rawPermission),
+                        RawPermission = rawPermission,
+                        Denied =
+                            SafeBool(() => permission.Denied),
+                        Inherited =
+                            SafeBool(() => permission.Inherited),
+                        Inheritable =
+                            SafeBool(() => permission.Inheritable)
+                    });
+            }
+            catch (COMException)
+            {
+                // A deleted or otherwise unresolvable trustee must not make
+                // the complete GPO security page unusable.
+            }
+        }
+
+        return SortPermissions(
+            result);
+    }
+
+    private static IReadOnlyList<GpoPermissionInfo> LoadPermissionsFromDirectory(
+        Guid gpoId)
+    {
+        using var rootDse =
+            new DirectoryEntry(
+                "LDAP://RootDSE");
+
+        var defaultNamingContext =
+            Convert.ToString(
+                rootDse.Properties[
+                    "defaultNamingContext"].Value)
+            ?? throw new InvalidOperationException(
+                "The Active Directory default naming context is unavailable.");
+
+        var gpoDn =
+            $"CN={gpoId.ToString("B").ToUpperInvariant()},CN=Policies,CN=System,{defaultNamingContext}";
+
+        using var gpoEntry =
+            new DirectoryEntry(
+                $"LDAP://{gpoDn}");
+
+        gpoEntry.Options.SecurityMasks =
+            SecurityMasks.Dacl;
+
+        var displayName =
+            Convert.ToString(
+                gpoEntry.Properties[
+                    "displayName"].Value)
+            ?? gpoId.ToString("B");
+
+        var security =
+            gpoEntry.ObjectSecurity;
+
+        var rules =
+            security
+                .GetAccessRules(
+                    includeExplicit: true,
+                    includeInherited: true,
+                    targetType: typeof(SecurityIdentifier))
+                .OfType<ActiveDirectoryAccessRule>()
+                .ToArray();
+
+        var result =
+            new List<GpoPermissionInfo>();
+
+        foreach (var group in rules
+                     .GroupBy(rule => new
+                     {
+                         Sid =
+                             ((SecurityIdentifier)rule.IdentityReference).Value,
+                         rule.AccessControlType
+                     }))
+        {
+            var groupedRules =
+                group.ToArray();
+
+            var level =
+                MapDirectoryPermissionLevel(
+                    groupedRules);
+
+            if (level is null)
+            {
+                continue;
+            }
+
+            var sid =
+                new SecurityIdentifier(
+                    group.Key.Sid);
+
+            var account =
+                ResolveAccountName(
+                    sid);
+
+            var separator =
+                account.IndexOf(
+                    '\\');
+
+            var trusteeDomain =
+                separator > 0
+                    ? account[..separator]
+                    : string.Empty;
+
+            var trusteeName =
+                separator > 0
+                    ? account[(separator + 1)..]
+                    : account;
+
+            var rawPermission =
+                PermissionCodeForLevel(
+                    level.Value);
+
+            result.Add(
+                new GpoPermissionInfo
+                {
+                    GpoId = gpoId,
+                    GpoName = displayName,
+                    TrusteeName = trusteeName,
+                    TrusteeDomain = trusteeDomain,
+                    TrusteeSid = sid.Value,
+                    TrusteeDsPath = string.Empty,
+                    TrusteeType = 0,
+                    Level = level.Value,
+                    RawPermission = rawPermission,
+                    Denied =
+                        group.Key.AccessControlType ==
+                        AccessControlType.Deny,
+                    Inherited =
+                        groupedRules.All(rule =>
+                            rule.IsInherited),
+                    Inheritable =
+                        groupedRules.Any(rule =>
+                            rule.InheritanceType !=
+                            ActiveDirectorySecurityInheritance.None)
+                });
+        }
+
+        return SortPermissions(
+            result);
+    }
+
+    private static GpoPermissionLevel? MapDirectoryPermissionLevel(
+        IReadOnlyCollection<ActiveDirectoryAccessRule> rules)
+    {
+        var rights =
+            rules.Aggregate(
+                ActiveDirectoryRights.None,
+                (current, rule) =>
+                    current |
+                    rule.ActiveDirectoryRights);
+
+        if ((rights &
+             ActiveDirectoryRights.GenericAll) != 0 ||
+            (rights &
+             (ActiveDirectoryRights.WriteDacl |
+              ActiveDirectoryRights.WriteOwner |
+              ActiveDirectoryRights.Delete)) != 0)
+        {
+            return GpoPermissionLevel.FullControl;
+        }
+
+        if ((rights &
+             (ActiveDirectoryRights.GenericWrite |
+              ActiveDirectoryRights.WriteProperty |
+              ActiveDirectoryRights.CreateChild |
+              ActiveDirectoryRights.DeleteChild |
+              ActiveDirectoryRights.Self)) != 0)
+        {
+            return GpoPermissionLevel.Edit;
+        }
+
+        var applyGroupPolicyGuid =
+            new Guid(
+                "edacfd8f-ffb3-11d1-b41d-00a0c968f939");
+
+        if (rules.Any(rule =>
+                (rule.ActiveDirectoryRights &
+                 ActiveDirectoryRights.ExtendedRight) != 0 &&
+                (rule.ObjectType == applyGroupPolicyGuid ||
+                 rule.ObjectType == Guid.Empty)))
+        {
+            return GpoPermissionLevel.Apply;
+        }
+
+        if ((rights &
+             (ActiveDirectoryRights.GenericRead |
+              ActiveDirectoryRights.ReadProperty |
+              ActiveDirectoryRights.ReadControl |
+              ActiveDirectoryRights.ListChildren |
+              ActiveDirectoryRights.ListObject)) != 0)
+        {
+            return GpoPermissionLevel.Read;
+        }
+
+        return null;
+    }
+
+    private static int PermissionCodeForLevel(
+        GpoPermissionLevel level)
+    {
+        return level switch
+        {
+            GpoPermissionLevel.Apply => 0x10000,
+            GpoPermissionLevel.Read => 0x10100,
+            GpoPermissionLevel.Edit => 0x10101,
+            GpoPermissionLevel.FullControl => 0x10102,
+            _ => 0
+        };
+    }
+
+    private static string ResolveAccountName(
+        SecurityIdentifier sid)
+    {
+        try
+        {
+            return sid
+                .Translate(
+                    typeof(NTAccount))
+                .Value;
+        }
+        catch (IdentityNotMappedException)
+        {
+            return sid.Value;
+        }
+        catch (SystemException)
+        {
+            return sid.Value;
+        }
+    }
+
+    private static IReadOnlyList<GpoPermissionInfo> SortPermissions(
+        IEnumerable<GpoPermissionInfo> permissions)
+    {
+        return permissions
+            .OrderBy(
+                permission => permission.Category,
+                StringComparer.OrdinalIgnoreCase)
+            .ThenBy(
+                permission => permission.TrusteeDisplay,
+                StringComparer.CurrentCultureIgnoreCase)
+            .ThenBy(
+                permission => permission.RawPermission)
             .ToArray();
     }
 
@@ -964,6 +1255,20 @@ public sealed class GpmService
         catch
         {
             return null;
+        }
+    }
+
+    private static string SafeString(Func<object> getter)
+    {
+        try
+        {
+            return Convert.ToString(
+                       getter())
+                   ?? string.Empty;
+        }
+        catch (COMException)
+        {
+            return string.Empty;
         }
     }
 

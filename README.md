@@ -14,7 +14,7 @@ Download the latest portable build from:
 
 **[GitHub Releases](https://github.com/sgennadi/GPOSettingsExplorer/releases/latest)**
 
-Current release: **v0.2.1**
+Current release: **v0.2.2**
 
 Available packages:
 
@@ -220,7 +220,7 @@ GPOSettingsExplorer/
 
 ## Current status
 
-**v0.2.1** includes the application-wide UI/HiDPI cleanup plus resilient LDAP-based WMI filter discovery, together with the current GPO, ADMX, WMI, backup, security, link-management, and structured GPP editing functionality.
+**v0.2.2** includes the application-wide UI/HiDPI cleanup, resilient LDAP-based WMI filter discovery, and hardened GPO Security & Delegation loading with an Active Directory ACL fallback.
 
 See [CHANGELOG.md](CHANGELOG.md) for release details.
 

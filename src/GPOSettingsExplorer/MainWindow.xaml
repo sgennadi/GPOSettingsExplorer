@@ -1211,7 +1211,9 @@
                 </DockPanel>
             </TabItem>
 
-            <TabItem Header="Security &amp; Delegation">
+            <TabItem x:Name="SecurityTab"
+                     Header="Security &amp; Delegation"
+                     Selected="SecurityTab_Selected">
                 <DockPanel Margin="6">
                     <WrapPanel DockPanel.Dock="Top">
                         <TextBlock Text="GPO:" VerticalAlignment="Center"/>

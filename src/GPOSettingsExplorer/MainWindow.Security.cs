@@ -26,10 +26,30 @@ public partial class MainWindow
         object sender,
         System.Windows.Controls.SelectionChangedEventArgs e)
     {
-        if (SecurityGpoCombo.SelectedItem is GpoInfo)
+        if (SecurityTab.IsSelected &&
+            SecurityGpoCombo.SelectedItem is GpoInfo)
         {
             await LoadPermissionsAsync();
         }
+    }
+
+    private async void SecurityTab_Selected(
+        object sender,
+        RoutedEventArgs e)
+    {
+        if (_domainContext is null ||
+            _gpos.Count == 0)
+        {
+            return;
+        }
+
+        if (SecurityGpoCombo.SelectedItem is null)
+        {
+            SecurityGpoCombo.SelectedIndex = 0;
+            return;
+        }
+
+        await LoadPermissionsAsync();
     }
 
     private async void RefreshSecurity_Click(object sender, RoutedEventArgs e)
