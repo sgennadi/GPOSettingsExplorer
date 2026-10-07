@@ -14,7 +14,7 @@ Download the latest portable build from:
 
 **[GitHub Releases](https://github.com/sgennadi/GPOSettingsExplorer/releases/latest)**
 
-Current release: **v0.2.3**
+Current release: **v0.2.4**
 
 Available packages:
 
@@ -220,7 +220,7 @@ GPOSettingsExplorer/
 
 ## Current status
 
-**v0.2.3** adds direct navigation from All Settings to the selected policy value, stronger ADMX mapping by registry target, normalized Security Settings values, and the existing UI/HiDPI, WMI, security, backup, link, and GPP management features.
+**v0.2.4** adds compact editable Boolean Security Options, automatic backup/audit for direct True/False changes, native MMC navigation to the selected GPO setting when supported, and native IGroupPolicyObject based Administrative Template editing.
 
 See [CHANGELOG.md](CHANGELOG.md) for release details.
 

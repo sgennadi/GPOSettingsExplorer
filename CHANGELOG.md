@@ -4,6 +4,14 @@
 
 - No unreleased changes yet.
 
+## 0.2.4 - 2026-10-07
+
+- Reworked the non-ADMX Setting Value dialog into a compact Windows-style editor.
+- Boolean Security Options reported as True/False can now be changed directly from All Settings with automatic GPO backup, audit logging, Security Template update, and Group Policy revision save.
+- "Open exact setting in GPO editor..." now launches the selected GPO through MMC automation, navigates to the matching policy category, selects the exact result row, and opens its property sheet when the local MMC snap-in exposes the required automation objects.
+- If exact MMC navigation is unavailable on a Windows build, the GPO editor remains available and the application reports that automatic row selection was not possible.
+- Administrative Template direct editing now uses native IGroupPolicyObject activation instead of the fragile runtime COM cast.
+
 ## 0.2.3 - 2026-10-07
 
 - Fixed direct Administrative Template editing failure "Specified cast is not valid" by using the registered Group Policy COM coclass directly.
