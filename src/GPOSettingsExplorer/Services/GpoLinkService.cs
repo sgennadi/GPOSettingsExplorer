@@ -20,7 +20,9 @@ public sealed class GpoLinkService
     {
         var targets = new List<GpoLinkTarget>();
 
-        using (var domain = new DirectoryEntry($"LDAP://{domainDistinguishedName}"))
+        using (var domain = new DirectoryEntry(
+                DomainConnectionState.BuildLdapPath(
+                    domainDistinguishedName)))
         {
             domain.RefreshCache(new[] { "distinguishedName", "name", "gPOptions" });
 
@@ -64,7 +66,9 @@ public sealed class GpoLinkService
         if (!string.IsNullOrWhiteSpace(configurationNamingContext))
         {
             var sitesDn = $"CN=Sites,{configurationNamingContext}";
-            using var sites = new DirectoryEntry($"LDAP://{sitesDn}");
+            using var sites = new DirectoryEntry(
+                DomainConnectionState.BuildLdapPath(
+                    sitesDn));
             using var searcher = new DirectorySearcher(sites)
             {
                 Filter = "(objectClass=site)",
@@ -108,7 +112,9 @@ public sealed class GpoLinkService
 
         foreach (var target in targets)
         {
-            using var entry = new DirectoryEntry($"LDAP://{target.DistinguishedName}");
+            using var entry = new DirectoryEntry(
+                DomainConnectionState.BuildLdapPath(
+                    target.DistinguishedName));
             entry.RefreshCache(new[] { "gPLink" });
 
             var raw = Convert.ToString(entry.Properties["gPLink"].Value) ?? string.Empty;
@@ -153,7 +159,9 @@ public sealed class GpoLinkService
     {
         EditingGuard.EnsureEnabled(
             "Change GPO link");
-        using var entry = new DirectoryEntry($"LDAP://{targetDn}");
+        using var entry = new DirectoryEntry(
+                DomainConnectionState.BuildLdapPath(
+                    targetDn));
         entry.RefreshCache(new[] { "gPLink" });
 
         var raw = Convert.ToString(entry.Properties["gPLink"].Value) ?? string.Empty;
@@ -175,7 +183,9 @@ public sealed class GpoLinkService
     {
         EditingGuard.EnsureEnabled(
             "Remove GPO link");
-        using var entry = new DirectoryEntry($"LDAP://{targetDn}");
+        using var entry = new DirectoryEntry(
+                DomainConnectionState.BuildLdapPath(
+                    targetDn));
         entry.RefreshCache(new[] { "gPLink" });
 
         var raw = Convert.ToString(entry.Properties["gPLink"].Value) ?? string.Empty;
@@ -189,7 +199,9 @@ public sealed class GpoLinkService
     {
         EditingGuard.EnsureEnabled(
             "Change block inheritance");
-        using var entry = new DirectoryEntry($"LDAP://{targetDn}");
+        using var entry = new DirectoryEntry(
+                DomainConnectionState.BuildLdapPath(
+                    targetDn));
         entry.Properties["gPOptions"].Value = block ? 1 : 0;
         entry.CommitChanges();
     }
