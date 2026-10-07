@@ -1090,8 +1090,27 @@ public sealed class GpmService
         var extensionType = GetExtensionType(extension);
         var rows = new List<PolicySettingInfo>();
 
+        if (extensionType.Equals(
+                "SecuritySettings",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            rows.AddRange(
+                ParseSecurityOptions(
+                    extension,
+                    scopeName,
+                    gpo));
+        }
+
         var candidates = extension
             .Descendants()
+            .Where(e =>
+                !e.Name.LocalName.Equals(
+                    "SecurityOptions",
+                    StringComparison.OrdinalIgnoreCase) &&
+                !e.Ancestors().Any(a =>
+                    a.Name.LocalName.Equals(
+                        "SecurityOptions",
+                        StringComparison.OrdinalIgnoreCase)))
             .Where(e => !e.Ancestors().Any(a => a.Name.LocalName == "Policy"))
             .Where(e => !e.DescendantsAndSelf().Any(a => a.Name.LocalName == "Policy"))
             .Where(IsGenericSettingCandidate)
@@ -1168,6 +1187,165 @@ public sealed class GpmService
         }
 
         return rows;
+    }
+
+    private static IEnumerable<PolicySettingInfo> ParseSecurityOptions(
+        XElement extension,
+        string scopeName,
+        GpoInfo gpo)
+    {
+        foreach (var option in extension
+                     .Descendants()
+                     .Where(element =>
+                         element.Name.LocalName.Equals(
+                             "SecurityOptions",
+                             StringComparison.OrdinalIgnoreCase)))
+        {
+            var keyName =
+                FindNamedValue(
+                    option,
+                    "KeyName");
+
+            var display =
+                option.Descendants()
+                    .FirstOrDefault(element =>
+                        element.Name.LocalName.Equals(
+                            "Display",
+                            StringComparison.OrdinalIgnoreCase));
+
+            var displayName =
+                display?.Descendants()
+                    .FirstOrDefault(element =>
+                        element.Name.LocalName.Equals(
+                            "Name",
+                            StringComparison.OrdinalIgnoreCase))
+                    ?.Value.Trim()
+                ?? string.Empty;
+
+            var displayValue =
+                FirstNonEmpty(
+                    display?.Descendants()
+                        .FirstOrDefault(element =>
+                            element.Name.LocalName.Equals(
+                                "DisplayString",
+                                StringComparison.OrdinalIgnoreCase))
+                        ?.Value.Trim()
+                        ?? string.Empty,
+                    display?.Descendants()
+                        .FirstOrDefault(element =>
+                            element.Name.LocalName.Equals(
+                                "DisplayBoolean",
+                                StringComparison.OrdinalIgnoreCase))
+                        ?.Value.Trim()
+                        ?? string.Empty,
+                    display?.Descendants()
+                        .FirstOrDefault(element =>
+                            element.Name.LocalName.Equals(
+                                "DisplayNumber",
+                                StringComparison.OrdinalIgnoreCase))
+                        ?.Value.Trim()
+                        ?? string.Empty,
+                    FindNamedValue(
+                        option,
+                        "SettingNumber"));
+
+            var units =
+                display?.Descendants()
+                    .FirstOrDefault(element =>
+                        element.Name.LocalName.Equals(
+                            "Units",
+                            StringComparison.OrdinalIgnoreCase))
+                    ?.Value.Trim()
+                ?? string.Empty;
+
+            if (!string.IsNullOrWhiteSpace(units) &&
+                !string.IsNullOrWhiteSpace(displayValue))
+            {
+                displayValue =
+                    $"{displayValue} {units}";
+            }
+
+            SplitSecurityRegistryTarget(
+                keyName,
+                out var registryKey,
+                out var registryValue);
+
+            yield return new PolicySettingInfo
+            {
+                GpoId = gpo.Id,
+                GpoName = gpo.DisplayName,
+                Scope = scopeName,
+                Extension = "SecuritySettings",
+                Category =
+                    "Security Settings > Local Policies > Security Options",
+                SettingName =
+                    FirstNonEmpty(
+                        displayName,
+                        registryValue,
+                        keyName,
+                        "Security option"),
+                State = "Configured",
+                Value = displayValue,
+                RegistryKey = registryKey,
+                RegistryValue = registryValue
+            };
+        }
+    }
+
+    private static void SplitSecurityRegistryTarget(
+        string keyName,
+        out string registryKey,
+        out string registryValue)
+    {
+        registryKey =
+            string.Empty;
+        registryValue =
+            string.Empty;
+
+        if (string.IsNullOrWhiteSpace(keyName))
+        {
+            return;
+        }
+
+        var normalized =
+            keyName.Trim();
+
+        foreach (var prefix in new[]
+                 {
+                     "MACHINE\\",
+                     "USER\\"
+                 })
+        {
+            if (!normalized.StartsWith(
+                    prefix,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            normalized =
+                normalized[prefix.Length..];
+
+            break;
+        }
+
+        var separator =
+            normalized.LastIndexOf('\\');
+
+        if (separator <= 0 ||
+            separator >= normalized.Length - 1)
+        {
+            registryKey =
+                normalized;
+
+            return;
+        }
+
+        registryKey =
+            normalized[..separator];
+
+        registryValue =
+            normalized[(separator + 1)..];
     }
 
     private static bool IsGenericSettingCandidate(XElement element)
