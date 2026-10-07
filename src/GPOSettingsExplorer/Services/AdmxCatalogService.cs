@@ -41,17 +41,150 @@ public sealed class AdmxCatalogService
         IEnumerable<AdmxPolicyDefinition> policies,
         PolicySettingInfo setting)
     {
-        var exact = policies.FirstOrDefault(p =>
-            string.Equals(p.Scope, setting.Scope, StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(p.DisplayName, setting.SettingName, StringComparison.CurrentCultureIgnoreCase));
+        var policyArray =
+            policies.ToArray();
+
+        var exact =
+            policyArray.FirstOrDefault(policy =>
+                ScopeMatches(
+                    policy.Scope,
+                    setting.Scope) &&
+                string.Equals(
+                    policy.DisplayName,
+                    setting.SettingName,
+                    StringComparison.CurrentCultureIgnoreCase));
 
         if (exact is not null)
         {
             return exact;
         }
 
-        return policies.FirstOrDefault(p =>
-            string.Equals(p.DisplayName, setting.SettingName, StringComparison.CurrentCultureIgnoreCase));
+        var settingKey =
+            NormalizeRegistryPath(
+                setting.RegistryKey);
+
+        var settingValue =
+            NormalizeRegistryValueName(
+                setting.RegistryValue);
+
+        if (!string.IsNullOrWhiteSpace(settingKey) &&
+            !string.IsNullOrWhiteSpace(settingValue))
+        {
+            var byRegistry =
+                policyArray.FirstOrDefault(policy =>
+                    ScopeMatches(
+                        policy.Scope,
+                        setting.Scope) &&
+                    RegistryTargets(policy).Any(target =>
+                        NormalizeRegistryPath(target.Key)
+                            .Equals(
+                                settingKey,
+                                StringComparison.OrdinalIgnoreCase) &&
+                        NormalizeRegistryValueName(target.ValueName)
+                            .Equals(
+                                settingValue,
+                                StringComparison.OrdinalIgnoreCase)));
+
+            if (byRegistry is not null)
+            {
+                return byRegistry;
+            }
+        }
+
+        return policyArray.FirstOrDefault(policy =>
+            ScopeMatches(
+                policy.Scope,
+                setting.Scope) &&
+            string.Equals(
+                policy.DisplayName,
+                setting.SettingName,
+                StringComparison.CurrentCultureIgnoreCase));
+    }
+
+    private static bool ScopeMatches(
+        string policyScope,
+        string settingScope)
+    {
+        return policyScope.Equals(
+                   "Both",
+                   StringComparison.OrdinalIgnoreCase) ||
+               policyScope.Equals(
+                   settingScope,
+                   StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static IEnumerable<(string Key, string ValueName)> RegistryTargets(
+        AdmxPolicyDefinition policy)
+    {
+        if (!string.IsNullOrWhiteSpace(policy.Key) &&
+            !string.IsNullOrWhiteSpace(policy.ValueName))
+        {
+            yield return (
+                policy.Key,
+                policy.ValueName);
+        }
+
+        foreach (var element in policy.Elements)
+        {
+            if (!string.IsNullOrWhiteSpace(element.Key) &&
+                !string.IsNullOrWhiteSpace(element.ValueName))
+            {
+                yield return (
+                    element.Key,
+                    element.ValueName);
+            }
+        }
+    }
+
+    private static string NormalizeRegistryPath(
+        string value)
+    {
+        var text =
+            (value ?? string.Empty)
+            .Trim()
+            .Replace(
+                '/',
+                '\\');
+
+        foreach (var prefix in new[]
+                 {
+                     "HKEY_LOCAL_MACHINE\\",
+                     "HKLM\\",
+                     "MACHINE\\",
+                     "HKEY_CURRENT_USER\\",
+                     "HKCU\\",
+                     "USER\\"
+                 })
+        {
+            if (!text.StartsWith(
+                    prefix,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            text =
+                text[prefix.Length..];
+
+            break;
+        }
+
+        return text.Trim('\\');
+    }
+
+    private static string NormalizeRegistryValueName(
+        string value)
+    {
+        var text =
+            (value ?? string.Empty)
+            .Trim();
+
+        var equals =
+            text.IndexOf('=');
+
+        return equals >= 0
+            ? text[(equals + 1)..].Trim()
+            : text;
     }
 
     private static string ResolvePolicyDefinitionsStore(string domainName)
