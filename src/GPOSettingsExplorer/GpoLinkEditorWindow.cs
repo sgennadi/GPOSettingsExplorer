@@ -27,12 +27,12 @@ public sealed class GpoLinkEditorWindow : Window
         Title = existing is null ? "New GPO Link" : "Edit GPO Link";
         Width = 760;
         Height = 340;
-        ResizeMode = ResizeMode.NoResize;
+        ResizeMode = ResizeMode.CanResizeWithGrip;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
 
         var root = new DockPanel { Margin = new Thickness(14) };
 
-        var buttons = new StackPanel
+        var buttons = new WrapPanel
         {
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Right
@@ -92,7 +92,7 @@ public sealed class GpoLinkEditorWindow : Window
         AddRow(grid, 0, "GPO:", _gpoCombo);
         AddRow(grid, 1, "Target:", _targetCombo);
 
-        var options = new StackPanel { Orientation = Orientation.Horizontal };
+        var options = new WrapPanel { Orientation = Orientation.Horizontal };
         options.Children.Add(_enabledCheck);
         options.Children.Add(_enforcedCheck);
         AddRow(grid, 2, "Link options:", options);
