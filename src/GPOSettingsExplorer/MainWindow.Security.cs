@@ -40,9 +40,21 @@ public partial class MainWindow
         if (!ReferenceEquals(
                 e.OriginalSource,
                 MainTabs) ||
-            !SecurityTab.IsSelected ||
             _domainContext is null ||
             _gpos.Count == 0)
+        {
+            return;
+        }
+
+        if (AllSettingsTab.IsSelected)
+        {
+            await EnsureSettingsIndexAsync(
+                forceRebuild: false);
+
+            return;
+        }
+
+        if (!SecurityTab.IsSelected)
         {
             return;
         }
