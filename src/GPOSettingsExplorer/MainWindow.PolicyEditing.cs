@@ -11,6 +11,7 @@ public partial class MainWindow
 {
     private readonly AdmxCatalogService _admxCatalogService = new();
     private readonly RegistryPolicyService _registryPolicyService = new();
+    private readonly SecurityTemplateService _securityTemplateService = new();
     private readonly AuditService _auditService = new();
 
     private IReadOnlyList<AdmxPolicyDefinition>? _admxPolicies;
@@ -54,18 +55,70 @@ public partial class MainWindow
             {
                 SetBusy(false);
 
-                new SettingValueWindow(
-                    gpo,
-                    setting,
-                    () => _gpmService.OpenEditor(
-                        gpo,
-                        _domainContext.DomainDistinguishedName))
-                {
-                    Owner = this
-                }.ShowDialog();
+                var canEditBoolean =
+                    _securityTemplateService.CanEditBoolean(
+                        setting);
 
-                StatusText.Text =
-                    $"Showing value for {setting.SettingName}";
+                var valueWindow =
+                    new SettingValueWindow(
+                        gpo,
+                        setting,
+                        canEditBoolean,
+                        () => _gpmService.OpenEditor(
+                            gpo,
+                            _domainContext.DomainDistinguishedName))
+                    {
+                        Owner = this
+                    };
+
+                if (valueWindow.ShowDialog() == true &&
+                    canEditBoolean &&
+                    valueWindow.SelectedBooleanValue is bool selectedBoolean &&
+                    bool.TryParse(
+                        setting.Value,
+                        out var originalBoolean) &&
+                    selectedBoolean != originalBoolean)
+                {
+                    SetBusy(
+                        true,
+                        "Backing up GPO before Security Settings change...");
+
+                    var backupPath =
+                        await Task.Run(() =>
+                            _gpmService.BackupGpo(
+                                _domainContext.DomainName,
+                                gpo.Id,
+                                $"Automatic backup before editing '{setting.SettingName}'"));
+
+                    StatusText.Text =
+                        $"Writing {setting.SettingName}...";
+
+                    await Task.Run(() =>
+                        _securityTemplateService.ApplyBoolean(
+                            gpo,
+                            _domainContext.DomainDistinguishedName,
+                            setting,
+                            selectedBoolean));
+
+                    _auditService.Write(
+                        "Edit Security Setting",
+                        "GPO",
+                        gpo.DisplayName,
+                        $"Setting: {setting.SettingName}; Scope: {setting.Scope}; Backup: {backupPath}",
+                        before: setting.Value,
+                        after: selectedBoolean.ToString());
+
+                    await RefreshSingleGpoSettingsAsync(
+                        gpo);
+
+                    StatusText.Text =
+                        $"Saved {setting.SettingName} = {selectedBoolean}. Backup: {backupPath}";
+                }
+                else
+                {
+                    StatusText.Text =
+                        $"Showing value for {setting.SettingName}";
+                }
 
                 return;
             }
