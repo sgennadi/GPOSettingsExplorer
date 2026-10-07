@@ -14,7 +14,7 @@ Download the latest portable build from:
 
 **[GitHub Releases](https://github.com/sgennadi/GPOSettingsExplorer/releases/latest)**
 
-Current release: **v0.2.7**
+Current release: **v0.2.8**
 
 Available packages:
 
@@ -233,7 +233,7 @@ GPOSettingsExplorer/
 
 ## Current status
 
-**v0.2.7** adds persistent ADMX caching, a GPO Scripts browser/editor with all-file or selected-file content search, safer script saves with automatic backup/rollback, and fixes for MMC working-directory and Group Policy COM apartment errors seen on Windows Server/GPMC systems.
+**v0.2.8** includes the ADMX cache, GPO Scripts browser/editor and all-file/selected-file search introduced in v0.2.7, with reliable first-selection loading of the GPO Scripts tab. It also includes the MMC working-directory and Group Policy COM apartment fixes.
 
 See [CHANGELOG.md](CHANGELOG.md) for release details.
 

@@ -4,6 +4,10 @@
 
 - No unreleased changes yet.
 
+## 0.2.8 - 2026-10-07
+
+- GPO Scripts now initializes and scans automatically on the first actual selection of the tab, avoiding the WPF TabItem Loaded timing case where the tab could initialize before the domain GPO list was available.
+
 ## 0.2.7 - 2026-10-07
 
 - Added persistent ADMX Catalog caching under %LOCALAPPDATA%\GPOSettingsExplorer\Cache. Cached Administrative Templates load immediately and the Central Store is validated in the background using an ADMX/ADML file fingerprint; full XML parsing runs only when PolicyDefinitions actually changes.
