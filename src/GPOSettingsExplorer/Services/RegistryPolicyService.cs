@@ -33,21 +33,25 @@ public sealed class RegistryPolicyService
                     : PolicyEditState.NotConfigured
         };
 
-        var policyObject = Open(gpo, domainDistinguishedName);
+        using var policyObject =
+            Open(
+                gpo,
+                domainDistinguishedName);
 
-        try
+        using (var root =
+               OpenRegistryRoot(
+                   policyObject,
+                   definition.Scope))
         {
-            using var root = OpenRegistryRoot(policyObject, definition.Scope);
             session.State = InferState(root, definition, session.State);
 
             foreach (var element in definition.Elements)
             {
-                session.Values[element.Id] = ReadElement(root, element);
+                session.Values[element.Id] =
+                    ReadElement(
+                        root,
+                        element);
             }
-        }
-        finally
-        {
-            Marshal.FinalReleaseComObject(policyObject);
         }
 
         return session;
@@ -59,11 +63,16 @@ public sealed class RegistryPolicyService
         AdmxPolicyDefinition definition,
         PolicyEditSession session)
     {
-        var policyObject = Open(gpo, domainDistinguishedName);
+        using var policyObject =
+            Open(
+                gpo,
+                domainDistinguishedName);
 
-        try
+        using (var root =
+               OpenRegistryRoot(
+                   policyObject,
+                   definition.Scope))
         {
-            using var root = OpenRegistryRoot(policyObject, definition.Scope);
 
             switch (session.State)
             {
@@ -86,80 +95,48 @@ public sealed class RegistryPolicyService
             var extensionGuid = RegistryExtensionGuid;
             var snapInGuid = GpeSnapInGuid;
 
-            ThrowIfFailed(policyObject.Save(
+            policyObject.Save(
                 machine,
-                true,
+                add: true,
                 ref extensionGuid,
-                ref snapInGuid));
-        }
-        finally
-        {
-            Marshal.FinalReleaseComObject(policyObject);
+                ref snapInGuid);
         }
     }
 
-    private static IGroupPolicyObject Open(
+    private static GroupPolicyObjectHandle Open(
         GpoInfo gpo,
         string domainDistinguishedName)
     {
-        object rawInstance;
-
-        try
-        {
-            // Instantiate the registered Group Policy COM coclass directly.
-            // Using Activator.CreateInstance(Type.GetTypeFromCLSID(...)) can
-            // return a generic RCW which then fails with
-            // "Specified cast is not valid" on some Windows/GPMC builds.
-            rawInstance =
-                new GroupPolicyObjectCom();
-        }
-        catch (Exception ex)
-        {
-            throw new InvalidOperationException(
-                "Unable to create the Windows Group Policy COM object.",
-                ex);
-        }
-
-        if (rawInstance is not IGroupPolicyObject instance)
-        {
-            if (Marshal.IsComObject(rawInstance))
-            {
-                Marshal.FinalReleaseComObject(rawInstance);
-            }
-
-            throw new InvalidOperationException(
-                "The Windows Group Policy COM object does not expose IGroupPolicyObject on this computer.");
-        }
-
         var ldapPath =
             $"LDAP://CN={gpo.Id:B},CN=Policies,CN=System,{domainDistinguishedName}";
 
-        try
-        {
-            ThrowIfFailed(
-                instance.OpenDSGPO(
-                    ldapPath,
-                    GpoOpenLoadRegistry));
-
-            return instance;
-        }
-        catch
-        {
-            Marshal.FinalReleaseComObject(instance);
-            throw;
-        }
+        return new GroupPolicyObjectHandle(
+            ldapPath);
     }
 
-    private static RegistryKey OpenRegistryRoot(IGroupPolicyObject policyObject, string scope)
+    private static RegistryKey OpenRegistryRoot(
+        GroupPolicyObjectHandle policyObject,
+        string scope)
     {
-        var section = scope.Equals("User", StringComparison.OrdinalIgnoreCase)
-            ? GpoSectionUser
-            : GpoSectionMachine;
+        var section =
+            scope.Equals(
+                "User",
+                StringComparison.OrdinalIgnoreCase)
+                ? GpoSectionUser
+                : GpoSectionMachine;
 
-        ThrowIfFailed(policyObject.GetRegistryKey(section, out var rawHandle));
+        var rawHandle =
+            policyObject.GetRegistryKey(
+                section);
 
-        var safeHandle = new SafeRegistryHandle(rawHandle, ownsHandle: true);
-        return RegistryKey.FromHandle(safeHandle, RegistryView.Default);
+        var safeHandle =
+            new SafeRegistryHandle(
+                rawHandle,
+                ownsHandle: true);
+
+        return RegistryKey.FromHandle(
+            safeHandle,
+            RegistryView.Default);
     }
 
     private static PolicyEditState InferState(
@@ -502,95 +479,173 @@ public sealed class RegistryPolicyService
         }
     }
 
-    [ComImport]
-    [Guid("EA502722-A23D-11D1-A7D3-0000F87571E3")]
-    private sealed class GroupPolicyObjectCom
+    private sealed class GroupPolicyObjectHandle : IDisposable
     {
-    }
+        private const uint ClsCtxInprocServer = 0x1;
 
-    [ComImport]
-    [Guid("EA502723-A23D-11D1-A7D3-0000F87571E3")]
-    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IGroupPolicyObject
-    {
-        [PreserveSig]
-        int New(
-            [MarshalAs(UnmanagedType.LPWStr)] string domainName,
-            [MarshalAs(UnmanagedType.LPWStr)] string displayName,
-            uint flags);
+        private static readonly Guid ClsidGroupPolicyObject =
+            new("EA502722-A23D-11D1-A7D3-0000F87571E3");
 
-        [PreserveSig]
-        int OpenDSGPO(
-            [MarshalAs(UnmanagedType.LPWStr)] string path,
-            uint flags);
+        private static readonly Guid IidGroupPolicyObject =
+            new("EA502723-A23D-11D1-A7D3-0000F87571E3");
 
-        [PreserveSig]
-        int OpenLocalMachineGPO(uint flags);
+        private IntPtr _instance;
 
-        [PreserveSig]
-        int OpenRemoteMachineGPO(
-            [MarshalAs(UnmanagedType.LPWStr)] string computerName,
-            uint flags);
+        public GroupPolicyObjectHandle(
+            string ldapPath)
+        {
+            var clsid =
+                ClsidGroupPolicyObject;
 
-        [PreserveSig]
-        int Save(
-            [MarshalAs(UnmanagedType.Bool)] bool machine,
-            [MarshalAs(UnmanagedType.Bool)] bool add,
+            var iid =
+                IidGroupPolicyObject;
+
+            var result =
+                CoCreateInstance(
+                    ref clsid,
+                    IntPtr.Zero,
+                    ClsCtxInprocServer,
+                    ref iid,
+                    out _instance);
+
+            ThrowIfFailed(
+                result);
+
+            try
+            {
+                var open =
+                    GetMethod<OpenDsgpoDelegate>(
+                        slot: 4);
+
+                ThrowIfFailed(
+                    open(
+                        _instance,
+                        ldapPath,
+                        GpoOpenLoadRegistry));
+            }
+            catch
+            {
+                Dispose();
+                throw;
+            }
+        }
+
+        public IntPtr GetRegistryKey(
+            uint section)
+        {
+            var method =
+                GetMethod<GetRegistryKeyDelegate>(
+                    slot: 15);
+
+            ThrowIfFailed(
+                method(
+                    _instance,
+                    section,
+                    out var key));
+
+            if (key == IntPtr.Zero)
+            {
+                throw new InvalidOperationException(
+                    "The Group Policy API returned an empty registry handle.");
+            }
+
+            return key;
+        }
+
+        public void Save(
+            bool machine,
+            bool add,
             ref Guid extensionGuid,
-            ref Guid snapInGuid);
+            ref Guid snapInGuid)
+        {
+            var method =
+                GetMethod<SaveDelegate>(
+                    slot: 7);
 
-        [PreserveSig]
-        int Delete();
+            ThrowIfFailed(
+                method(
+                    _instance,
+                    machine,
+                    add,
+                    ref extensionGuid,
+                    ref snapInGuid));
+        }
 
-        [PreserveSig]
-        int GetName(
-            [MarshalAs(UnmanagedType.LPWStr)] StringBuilder name,
-            int maxLength);
+        private T GetMethod<T>(
+            int slot)
+            where T : Delegate
+        {
+            if (_instance == IntPtr.Zero)
+            {
+                throw new ObjectDisposedException(
+                    nameof(GroupPolicyObjectHandle));
+            }
 
-        [PreserveSig]
-        int GetDisplayName(
-            [MarshalAs(UnmanagedType.LPWStr)] StringBuilder name,
-            int maxLength);
+            var vtable =
+                Marshal.ReadIntPtr(
+                    _instance);
 
-        [PreserveSig]
-        int SetDisplayName(
-            [MarshalAs(UnmanagedType.LPWStr)] string name);
+            var address =
+                Marshal.ReadIntPtr(
+                    vtable,
+                    checked(
+                        slot *
+                        IntPtr.Size));
 
-        [PreserveSig]
-        int GetPath(
-            [MarshalAs(UnmanagedType.LPWStr)] StringBuilder path,
-            int maxPath);
+            return Marshal
+                .GetDelegateForFunctionPointer<T>(
+                    address);
+        }
 
-        [PreserveSig]
-        int GetDSPath(
-            uint section,
-            [MarshalAs(UnmanagedType.LPWStr)] StringBuilder path,
-            int maxPath);
+        public void Dispose()
+        {
+            if (_instance == IntPtr.Zero)
+            {
+                return;
+            }
 
-        [PreserveSig]
-        int GetFileSysPath(
-            uint section,
-            [MarshalAs(UnmanagedType.LPWStr)] StringBuilder path,
-            int maxPath);
+            Marshal.Release(
+                _instance);
 
-        [PreserveSig]
-        int GetRegistryKey(uint section, out IntPtr key);
-
-        [PreserveSig]
-        int GetOptions(out uint options);
-
-        [PreserveSig]
-        int SetOptions(uint options, uint mask);
-
-        [PreserveSig]
-        int GetType(out uint gpoType);
-
-        [PreserveSig]
-        int GetMachineName(
-            [MarshalAs(UnmanagedType.LPWStr)] StringBuilder name,
-            int maxLength);
-
-        [PreserveSig]
-        int GetPropertySheetPages(out IntPtr pages, out uint pageCount);
+            _instance =
+                IntPtr.Zero;
+        }
     }
+
+    [UnmanagedFunctionPointer(
+        CallingConvention.StdCall,
+        CharSet = CharSet.Unicode)]
+    private delegate int OpenDsgpoDelegate(
+        IntPtr instance,
+        [MarshalAs(UnmanagedType.LPWStr)]
+        string path,
+        uint flags);
+
+    [UnmanagedFunctionPointer(
+        CallingConvention.StdCall)]
+    private delegate int GetRegistryKeyDelegate(
+        IntPtr instance,
+        uint section,
+        out IntPtr key);
+
+    [UnmanagedFunctionPointer(
+        CallingConvention.StdCall)]
+    private delegate int SaveDelegate(
+        IntPtr instance,
+        [MarshalAs(UnmanagedType.Bool)]
+        bool machine,
+        [MarshalAs(UnmanagedType.Bool)]
+        bool add,
+        ref Guid extensionGuid,
+        ref Guid snapInGuid);
+
+    [DllImport(
+        "ole32.dll")]
+    private static extern int CoCreateInstance(
+        ref Guid clsid,
+        IntPtr outer,
+        uint context,
+        ref Guid iid,
+        out IntPtr instance);
+
 }
