@@ -14,7 +14,7 @@ Download the latest portable build from:
 
 **[GitHub Releases](https://github.com/sgennadi/GPOSettingsExplorer/releases/latest)**
 
-Current release: **v0.2.5**
+Current release: **v0.2.6**
 
 Available packages:
 
@@ -220,7 +220,7 @@ GPOSettingsExplorer/
 
 ## Current status
 
-**v0.2.5** adds a persistent incremental All Settings cache: cached results appear immediately, only new/modified GPOs are re-indexed by GUID + ModificationTime, deleted GPOs are removed automatically, and the cache survives portable application updates under %LOCALAPPDATA%.
+**v0.2.6** includes the persistent incremental All Settings cache from v0.2.5, plus resilient background refresh behavior that keeps cached results available when an incremental update fails.
 
 See [CHANGELOG.md](CHANGELOG.md) for release details.
 

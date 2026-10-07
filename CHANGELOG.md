@@ -4,6 +4,11 @@
 
 - No unreleased changes yet.
 
+## 0.2.6 - 2026-10-07
+
+- Background All Settings refresh failures now keep the previously cached index visible instead of interrupting normal use.
+- Deleted GPOs are removed from the settings cache without running unnecessary report generation.
+
 ## 0.2.5 - 2026-10-07
 
 - All Settings now automatically loads a persistent cached settings index when the tab is opened.
