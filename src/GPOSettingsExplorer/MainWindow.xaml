@@ -90,7 +90,8 @@
                 </DockPanel>
             </TabItem>
 
-            <TabItem Header="All Settings">
+            <TabItem x:Name="AllSettingsTab"
+                     Header="All Settings">
                 <DockPanel Margin="6">
                     <WrapPanel DockPanel.Dock="Top">
                         <TextBlock Text="Search all configured settings:" VerticalAlignment="Center"/>
