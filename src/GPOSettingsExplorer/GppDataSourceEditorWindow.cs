@@ -163,7 +163,7 @@ public sealed class GppDataSourceEditorWindow : Window
 
         var attributesPanel = new DockPanel { Margin = new Thickness(10) };
 
-        var attributesButtons = new StackPanel
+        var attributesButtons = new WrapPanel
         {
             Orientation = Orientation.Horizontal
         };
