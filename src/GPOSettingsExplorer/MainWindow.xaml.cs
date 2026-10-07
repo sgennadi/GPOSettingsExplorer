@@ -144,6 +144,11 @@ public partial class MainWindow : Window
             {
                 StatusText.Text = "Ready";
             }
+            else if (AllSettingsTab.IsSelected)
+            {
+                _ = EnsureSettingsIndexAsync(
+                    forceRebuild: false);
+            }
         }
         catch (Exception ex)
         {
@@ -157,55 +162,21 @@ public partial class MainWindow : Window
         }
     }
 
-    private async void BuildSettingsIndex_Click(object sender, RoutedEventArgs e)
+    private async void BuildSettingsIndex_Click(
+        object sender,
+        RoutedEventArgs e)
     {
-        if (_domainContext is null || _gpos.Count == 0)
+        if (_domainContext is null ||
+            _gpos.Count == 0)
         {
             return;
         }
 
-        _indexCancellation?.Cancel();
-        _indexCancellation = new CancellationTokenSource();
+        MainTabs.SelectedItem =
+            AllSettingsTab;
 
-        SetBusy(true, "Building settings index...");
-        SettingsCountText.Text = "Indexing...";
-
-        try
-        {
-            var progress = new Progress<string>(message =>
-            {
-                StatusText.Text = message;
-                HeaderStatusText.Text = message;
-            });
-
-            var result = await Task.Run(() =>
-                _gpmService.BuildSettingsIndex(
-                    _domainContext.DomainName,
-                    _gpos,
-                    progress,
-                    _indexCancellation.Token));
-
-            ReplaceCollection(_settings, result);
-            SettingsCountText.Text = $"{_settings.Count:N0} configured settings";
-            HeaderStatusText.Text =
-                $"{_gpos.Count:N0} GPOs | {_settings.Count:N0} settings | {_wmiFilters.Count:N0} WMI filters";
-            StatusText.Text = "Settings index complete";
-            MainTabs.SelectedIndex = 1;
-        }
-        catch (OperationCanceledException)
-        {
-            StatusText.Text = "Settings indexing canceled";
-        }
-        catch (Exception ex)
-        {
-            StatusText.Text = "Settings indexing failed";
-            MessageBox.Show(this, ex.Message, "Build Settings Index",
-                MessageBoxButton.OK, MessageBoxImage.Error);
-        }
-        finally
-        {
-            SetBusy(false);
-        }
+        await EnsureSettingsIndexAsync(
+            forceRebuild: true);
     }
 
     private void OpenGpoEditor_Click(object sender, RoutedEventArgs e)
