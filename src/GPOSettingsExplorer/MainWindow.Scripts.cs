@@ -63,7 +63,7 @@ public partial class MainWindow
             _gpos.Count > 0)
         {
             await LoadGpoScriptsAsync(
-            forceRefresh: true);
+                forceRefresh: false);
         }
     }
 
@@ -129,7 +129,8 @@ public partial class MainWindow
         var selection =
             CaptureGpoScriptSelection();
 
-        await LoadGpoScriptsAsync();
+        await LoadGpoScriptsAsync(
+            forceRefresh: true);
 
         RestoreGpoScriptSelection(
             selection);
