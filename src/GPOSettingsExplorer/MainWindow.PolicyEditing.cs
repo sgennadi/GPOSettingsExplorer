@@ -255,6 +255,8 @@ public partial class MainWindow
 
         _settingsView.Refresh();
         SettingsCountText.Text = $"{_settings.Count:N0} configured settings";
+
+        await PersistCurrentSettingsCacheAsync();
     }
 
     private async void BackupSelectedGpo_Click(object sender, RoutedEventArgs e)
