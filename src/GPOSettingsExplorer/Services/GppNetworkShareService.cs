@@ -59,7 +59,7 @@ public sealed class GppNetworkShareService
             try
             {
                 var document =
-                    XDocument.Load(
+                    GppXmlCacheService.Load(
                         target.XmlPath,
                         LoadOptions.PreserveWhitespace);
 
@@ -282,7 +282,7 @@ public sealed class GppNetworkShareService
                 target.XmlPath))
         {
             document =
-                XDocument.Load(
+                GppXmlCacheService.Load(
                     target.XmlPath,
                     LoadOptions.PreserveWhitespace);
 
@@ -365,7 +365,7 @@ public sealed class GppNetworkShareService
             return;
 
         var document =
-            XDocument.Load(
+            GppXmlCacheService.Load(
                 target.XmlPath,
                 LoadOptions.PreserveWhitespace);
 
