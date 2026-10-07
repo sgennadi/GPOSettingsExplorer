@@ -19,16 +19,15 @@ public partial class MainWindow
     private bool _gpoScriptsLoaded;
     private CancellationTokenSource? _gpoScriptSearchCancellation;
 
-    private async void GpoScriptsTab_Loaded(
-        object sender,
-        RoutedEventArgs e)
+    private async Task EnsureGpoScriptsLoadedAsync()
     {
         if (!_gpoScriptsInitialized)
         {
             _gpoScriptsInitialized = true;
 
             _gpoScriptsView =
-                CollectionViewSource.GetDefaultView(_gpoScripts);
+                CollectionViewSource.GetDefaultView(
+                    _gpoScripts);
 
             _gpoScriptsView.Filter =
                 FilterGpoScript;
