@@ -1109,7 +1109,81 @@ public sealed class GpmService
             }
         }
 
-        return settings;
+        var securityTargets =
+            settings
+                .Where(item =>
+                    item.Extension.Equals(
+                        "SecuritySettings",
+                        StringComparison.OrdinalIgnoreCase) &&
+                    !string.IsNullOrWhiteSpace(
+                        item.RegistryKey) &&
+                    !string.IsNullOrWhiteSpace(
+                        item.RegistryValue))
+                .ToArray();
+
+        return settings
+            .Where(item =>
+                !item.Extension.Equals(
+                    "RegistrySettings",
+                    StringComparison.OrdinalIgnoreCase) ||
+                !securityTargets.Any(security =>
+                    SameRegistryTarget(
+                        security,
+                        item)))
+            .ToArray();
+    }
+
+    private static bool SameRegistryTarget(
+        PolicySettingInfo left,
+        PolicySettingInfo right)
+    {
+        return NormalizeRegistryTargetPath(
+                   left.RegistryKey)
+               .Equals(
+                   NormalizeRegistryTargetPath(
+                       right.RegistryKey),
+                   StringComparison.OrdinalIgnoreCase) &&
+               left.RegistryValue
+                   .Trim()
+                   .Equals(
+                       right.RegistryValue.Trim(),
+                       StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizeRegistryTargetPath(
+        string value)
+    {
+        var normalized =
+            (value ?? string.Empty)
+            .Trim()
+            .Replace(
+                '/',
+                '\\');
+
+        foreach (var prefix in new[]
+                 {
+                     "HKEY_LOCAL_MACHINE\\",
+                     "HKLM\\",
+                     "MACHINE\\",
+                     "HKEY_CURRENT_USER\\",
+                     "HKCU\\",
+                     "USER\\"
+                 })
+        {
+            if (!normalized.StartsWith(
+                    prefix,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            normalized =
+                normalized[prefix.Length..];
+
+            break;
+        }
+
+        return normalized.Trim('\\');
     }
 
     private static IEnumerable<PolicySettingInfo> ParseGenericExtensionSettings(
