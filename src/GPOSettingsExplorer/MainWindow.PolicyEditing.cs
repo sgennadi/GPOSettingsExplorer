@@ -63,11 +63,16 @@ public partial class MainWindow
                     _securityTemplateService.CanEditBoolean(
                         setting);
 
+                var exactNavigationAvailable =
+                    _gpoEditorNavigatorService.CanNavigateExactly(
+                        setting);
+
                 var valueWindow =
                     new SettingValueWindow(
                         gpo,
                         setting,
                         canEditBoolean,
+                        exactNavigationAvailable,
                         () => _gpoEditorNavigatorService.OpenAtSettingAsync(
                             gpo,
                             _domainContext.DomainDistinguishedName,
