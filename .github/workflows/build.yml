@@ -39,6 +39,10 @@ jobs:
         shell: cmd
         run: dotnet build GPOSettingsExplorer.sln -c Release --no-restore
 
+      - name: Core regression tests
+        shell: cmd
+        run: dotnet run --project tools\CoreTests\CoreTests.csproj -c Release --no-build
+
       - name: Publish win-x64
         shell: cmd
         run: dotnet publish src\GPOSettingsExplorer\GPOSettingsExplorer.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true -o artifacts\win-x64
