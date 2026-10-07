@@ -39,7 +39,7 @@ public sealed class GppRegistryEditorWindow : Window
 
         var root = new DockPanel { Margin = new Thickness(12) };
 
-        var footer = new StackPanel
+        var footer = new WrapPanel
         {
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Right
@@ -52,7 +52,7 @@ public sealed class GppRegistryEditorWindow : Window
         footer.Children.Add(cancel);
         footer.Children.Add(save);
 
-        var header = new StackPanel
+        var header = new WrapPanel
         {
             Orientation = Orientation.Horizontal,
             Margin = new Thickness(4, 0, 4, 8)
@@ -159,7 +159,7 @@ public sealed class GppRegistryEditorWindow : Window
         AddRow(basicGrid, 6, "Value:", _valueBox);
         AddRow(basicGrid, 7, "Description:", _descriptionBox);
 
-        var valueOptions = new StackPanel { Orientation = Orientation.Horizontal };
+        var valueOptions = new WrapPanel { Orientation = Orientation.Horizontal };
         valueOptions.Children.Add(_defaultValueCheck);
         valueOptions.Children.Add(_displayDecimalCheck);
         AddRow(basicGrid, 8, "Value options:", valueOptions);
