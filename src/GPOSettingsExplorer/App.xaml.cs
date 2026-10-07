@@ -71,6 +71,9 @@ public partial class App : Application
             window;
 
         window.Show();
+
+        ShutdownMode =
+            ShutdownMode.OnMainWindowClose;
     }
 
     private void App_DispatcherUnhandledException(
