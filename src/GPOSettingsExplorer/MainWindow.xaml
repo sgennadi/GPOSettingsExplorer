@@ -117,6 +117,124 @@
                 </DockPanel>
             </TabItem>
 
+            <TabItem Header="GPO Scripts"
+                     Loaded="GpoScriptsTab_Loaded">
+                <Grid Margin="6">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+
+                    <WrapPanel Grid.Row="0">
+                        <TextBlock Text="Filter files:" VerticalAlignment="Center"/>
+                        <TextBox x:Name="GpoScriptsFilterBox"
+                                 Width="300"
+                                 TextChanged="GpoScriptsFilterBox_TextChanged"/>
+                        <Button Content="Refresh"
+                                Click="RefreshGpoScripts_Click"/>
+                        <Button Content="Edit"
+                                Click="EditGpoScript_Click"/>
+                        <Button Content="Copy path"
+                                Click="CopyGpoScriptPath_Click"/>
+                        <TextBlock x:Name="GpoScriptsCountText"
+                                   Margin="14,0,0,0"
+                                   VerticalAlignment="Center"
+                                   Foreground="DimGray"/>
+                    </WrapPanel>
+
+                    <DataGrid x:Name="GpoScriptsGrid"
+                              Grid.Row="1"
+                              MouseDoubleClick="GpoScriptsGrid_MouseDoubleClick">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="GPO"
+                                                Binding="{Binding GpoName}"
+                                                Width="1.5*"/>
+                            <DataGridTextColumn Header="Scope"
+                                                Binding="{Binding Scope}"
+                                                Width="85"/>
+                            <DataGridTextColumn Header="Event"
+                                                Binding="{Binding EventName}"
+                                                Width="95"/>
+                            <DataGridTextColumn Header="Order"
+                                                Binding="{Binding OrderText}"
+                                                Width="60"/>
+                            <DataGridTextColumn Header="File"
+                                                Binding="{Binding FileName}"
+                                                Width="1.1*"/>
+                            <DataGridTextColumn Header="Type"
+                                                Binding="{Binding Type}"
+                                                Width="70"/>
+                            <DataGridTextColumn Header="Parameters"
+                                                Binding="{Binding Parameters}"
+                                                Width="1.2*"/>
+                            <DataGridCheckBoxColumn Header="Referenced"
+                                                    Binding="{Binding Referenced}"
+                                                    Width="85"/>
+                            <DataGridCheckBoxColumn Header="Exists"
+                                                    Binding="{Binding Exists}"
+                                                    Width="65"/>
+                            <DataGridTextColumn Header="Modified"
+                                                Binding="{Binding Modified, StringFormat={}{0:yyyy-MM-dd HH:mm}}"
+                                                Width="145"/>
+                            <DataGridTextColumn Header="Path"
+                                                Binding="{Binding FullPath}"
+                                                Width="2*"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+
+                    <Border Grid.Row="2"
+                            Margin="0,6,0,4"
+                            BorderBrush="{DynamicResource {x:Static SystemColors.ControlDarkBrushKey}}"
+                            BorderThickness="0,1,0,0"
+                            Padding="0,6,0,0">
+                        <WrapPanel>
+                            <TextBlock Text="Search file contents:"
+                                       VerticalAlignment="Center"/>
+                            <TextBox x:Name="GpoScriptContentSearchBox"
+                                     Width="300"/>
+                            <ComboBox x:Name="GpoScriptSearchScopeCombo"
+                                      Width="120"/>
+                            <Button Content="Find"
+                                    Click="SearchGpoScriptContent_Click"/>
+                            <TextBlock x:Name="GpoScriptSearchCountText"
+                                       Margin="14,0,0,0"
+                                       VerticalAlignment="Center"
+                                       Foreground="DimGray"/>
+                        </WrapPanel>
+                    </Border>
+
+                    <DataGrid x:Name="GpoScriptSearchResultsGrid"
+                              Grid.Row="3"
+                              MouseDoubleClick="GpoScriptSearchResultsGrid_MouseDoubleClick">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="GPO"
+                                                Binding="{Binding GpoName}"
+                                                Width="1.4*"/>
+                            <DataGridTextColumn Header="Scope"
+                                                Binding="{Binding Scope}"
+                                                Width="80"/>
+                            <DataGridTextColumn Header="Event"
+                                                Binding="{Binding EventName}"
+                                                Width="90"/>
+                            <DataGridTextColumn Header="File"
+                                                Binding="{Binding FileName}"
+                                                Width="1.1*"/>
+                            <DataGridTextColumn Header="Line"
+                                                Binding="{Binding LineNumber}"
+                                                Width="65"/>
+                            <DataGridTextColumn Header="Match"
+                                                Binding="{Binding LineText}"
+                                                Width="2.5*"/>
+                            <DataGridTextColumn Header="Path"
+                                                Binding="{Binding FullPath}"
+                                                Width="2*"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </TabItem>
+
             <TabItem Header="ADMX Catalog">
                 <DockPanel Margin="6">
                     <WrapPanel DockPanel.Dock="Top">
