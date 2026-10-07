@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using GPOSettingsExplorer.Models;
+using GPOSettingsExplorer.Services;
 
 namespace GPOSettingsExplorer;
 
@@ -67,7 +68,14 @@ public sealed class SettingValueWindow : Window
 
         open.Click += async (_, _) =>
         {
-            open.IsEnabled = false;
+            var originalContent =
+                open.Content;
+
+            open.IsEnabled =
+                false;
+
+            open.Content =
+                "Opening...";
 
             try
             {
@@ -83,23 +91,45 @@ public sealed class SettingValueWindow : Window
 
                 MessageBox.Show(
                     this,
-                    "The GPO editor was opened, but MMC could not automatically select the exact Security Option on this Windows build. The GPO remains open for manual navigation.",
+                    "The selected GPO was opened. MMC did not expose the exact Security Option row reliably, so the editor remains open for manual navigation.",
                     "GPO Editor Navigation",
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
             }
             catch (Exception ex)
             {
+                var log =
+                    CrashLogService.Write(
+                        $"Open GPO editor: {setting.SettingName}",
+                        ex);
+
+                var message =
+                    ex.Message;
+
+                if (!string.IsNullOrWhiteSpace(
+                        log))
+                {
+                    message +=
+                        $"\n\nDiagnostic log:\n{log}";
+                }
+
                 MessageBox.Show(
                     this,
-                    ex.Message,
+                    message,
                     "Open GPO Editor",
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);
             }
             finally
             {
-                open.IsEnabled = true;
+                if (IsLoaded)
+                {
+                    open.Content =
+                        originalContent;
+
+                    open.IsEnabled =
+                        true;
+                }
             }
         };
 

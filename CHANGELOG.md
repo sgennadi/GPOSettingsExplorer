@@ -4,6 +4,14 @@
 
 - No unreleased changes yet.
 
+## 0.2.11 - 2026-10-07
+
+- Hardened GPP INI Files loading so overlapping scans, cancellation, tab initialization failures, or unexpected read errors no longer terminate the application.
+- INI Files errors are now written to %LOCALAPPDATA%\GPOSettingsExplorer\Logs and the UI remains open with a recoverable error message.
+- Added application-level logging for unhandled UI/task exceptions so field failures have a diagnostic file instead of disappearing with the process.
+- Exact Security Options navigation now treats unexpected MMC/UI Automation failures as recoverable and leaves the standard GPO editor open as a fallback.
+- The Setting Value window shows an explicit Opening... state and logs editor-launch failures for troubleshooting.
+
 ## 0.2.10 - 2026-10-07
 
 - GPO Scripts now supports multi-select search scoping by both policies and files. Use Select GPOs... to choose one or more GPOs and Ctrl/Shift in the script grid to choose one or more files; when both are selected, search uses their intersection.
