@@ -21,11 +21,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Reference Include="UIAutomationClient" />
-    <Reference Include="UIAutomationTypes" />
-  </ItemGroup>
-
-  <ItemGroup>
     <PackageReference Include="System.DirectoryServices" Version="10.0.0" />
     <PackageReference Include="System.Management" Version="10.0.0" />
   </ItemGroup>
