@@ -41,7 +41,7 @@ public sealed class GppDriveEditorWindow : Window
 
         var root = new DockPanel { Margin = new Thickness(12) };
 
-        var footer = new StackPanel
+        var footer = new WrapPanel
         {
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Right
