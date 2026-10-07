@@ -121,7 +121,7 @@ public sealed class GppRegistryService
 
         try
         {
-            var document = XDocument.Load(path, LoadOptions.PreserveWhitespace);
+            var document = GppXmlCacheService.Load(path, LoadOptions.PreserveWhitespace);
             var elements = document
                 .Descendants()
                 .Where(element => element.Name.LocalName == "Registry")
@@ -164,7 +164,7 @@ public sealed class GppRegistryService
         if (!File.Exists(path))
             return Array.Empty<GppRegistryItemInfo>();
 
-        var document = XDocument.Load(path, LoadOptions.PreserveWhitespace);
+        var document = GppXmlCacheService.Load(path, LoadOptions.PreserveWhitespace);
         var result = new List<GppRegistryItemInfo>();
         var ordinal = 0;
 
@@ -243,7 +243,7 @@ public sealed class GppRegistryService
     private static XDocument LoadOrCreateDocument(string path)
     {
         if (File.Exists(path))
-            return XDocument.Load(path, LoadOptions.PreserveWhitespace);
+            return GppXmlCacheService.Load(path, LoadOptions.PreserveWhitespace);
 
         return new XDocument(
             new XDeclaration("1.0", "utf-8", null),
