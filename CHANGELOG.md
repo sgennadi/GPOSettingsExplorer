@@ -4,6 +4,14 @@
 
 - No unreleased changes yet.
 
+## 0.2.3 - 2026-10-07
+
+- Fixed direct Administrative Template editing failure "Specified cast is not valid" by using the registered Group Policy COM coclass directly.
+- All Settings now maps Administrative Templates by registry key/value in addition to display name and scope.
+- Policy Editor automatically scrolls to and focuses the selected setting value (or the policy state when no separate value field exists).
+- Non-ADMX rows open a focused Setting Value window instead of the "Direct editor unavailable" prompt.
+- Security Settings report rows now expose the actual Security Option name, displayed value, registry key, and registry value name.
+
 ## 0.2.2 - 2026-10-07
 
 - Fixed unsolicited "Load GPO Security" errors during startup: Security & Delegation permissions are now loaded only when that tab is selected.
