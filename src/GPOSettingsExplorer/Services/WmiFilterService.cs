@@ -77,6 +77,8 @@ public sealed class WmiFilterService
 
     public WmiFilterInfo Save(string domainName, WmiFilterInfo filter)
     {
+        EditingGuard.EnsureEnabled(
+            "Edit WMI filter");
         Validate(filter);
 
         var scope = CreatePolicyScope();
@@ -125,6 +127,8 @@ public sealed class WmiFilterService
 
     public WmiFilterInfo Clone(string domainName, WmiFilterInfo source, string newName)
     {
+        EditingGuard.EnsureEnabled(
+            "Clone WMI filter");
         var clone = source.Clone();
         clone.Id = string.Empty;
         clone.Name = newName;
@@ -136,6 +140,8 @@ public sealed class WmiFilterService
 
     public void Delete(string domainName, string id)
     {
+        EditingGuard.EnsureEnabled(
+            "Delete WMI filter");
         var scope = CreatePolicyScope();
         using var target = GetFilterObject(scope, domainName, id);
         target.Delete();
