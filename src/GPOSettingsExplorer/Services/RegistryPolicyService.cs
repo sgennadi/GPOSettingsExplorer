@@ -98,16 +98,56 @@ public sealed class RegistryPolicyService
         }
     }
 
-    private static IGroupPolicyObject Open(GpoInfo gpo, string domainDistinguishedName)
+    private static IGroupPolicyObject Open(
+        GpoInfo gpo,
+        string domainDistinguishedName)
     {
-        var comType = Type.GetTypeFromCLSID(new Guid("EA502722-A23D-11D1-A7D3-0000F87571E3"))
-            ?? throw new InvalidOperationException("Windows Group Policy API is unavailable.");
-        var rawInstance = Activator.CreateInstance(comType)
-            ?? throw new InvalidOperationException("Unable to create the Windows Group Policy object.");
-        var instance = (IGroupPolicyObject)rawInstance;
-        var ldapPath = $"LDAP://CN={gpo.Id:B},CN=Policies,CN=System,{domainDistinguishedName}";
-        ThrowIfFailed(instance.OpenDSGPO(ldapPath, GpoOpenLoadRegistry));
-        return instance;
+        object rawInstance;
+
+        try
+        {
+            // Instantiate the registered Group Policy COM coclass directly.
+            // Using Activator.CreateInstance(Type.GetTypeFromCLSID(...)) can
+            // return a generic RCW which then fails with
+            // "Specified cast is not valid" on some Windows/GPMC builds.
+            rawInstance =
+                new GroupPolicyObjectCom();
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException(
+                "Unable to create the Windows Group Policy COM object.",
+                ex);
+        }
+
+        if (rawInstance is not IGroupPolicyObject instance)
+        {
+            if (Marshal.IsComObject(rawInstance))
+            {
+                Marshal.FinalReleaseComObject(rawInstance);
+            }
+
+            throw new InvalidOperationException(
+                "The Windows Group Policy COM object does not expose IGroupPolicyObject on this computer.");
+        }
+
+        var ldapPath =
+            $"LDAP://CN={gpo.Id:B},CN=Policies,CN=System,{domainDistinguishedName}";
+
+        try
+        {
+            ThrowIfFailed(
+                instance.OpenDSGPO(
+                    ldapPath,
+                    GpoOpenLoadRegistry));
+
+            return instance;
+        }
+        catch
+        {
+            Marshal.FinalReleaseComObject(instance);
+            throw;
+        }
     }
 
     private static RegistryKey OpenRegistryRoot(IGroupPolicyObject policyObject, string scope)
