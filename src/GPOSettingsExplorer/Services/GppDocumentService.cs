@@ -166,7 +166,7 @@ public sealed class GppDocumentService
                 "The Group Policy Preferences XML file no longer exists.",
                 document.XmlPath);
 
-        return File.ReadAllText(document.XmlPath);
+        return GppXmlCacheService.ReadText(document.XmlPath);
     }
 
     public GppDocumentInfo BuildTarget(
@@ -245,6 +245,9 @@ public sealed class GppDocumentService
         try
         {
             WriteXml(path, parsed);
+            GppXmlCacheService.Invalidate(
+                path);
+
             CommitExtension(
                 gpo,
                 domainDistinguishedName,
@@ -256,6 +259,9 @@ public sealed class GppDocumentService
         catch
         {
             RestoreFile(path, original);
+            GppXmlCacheService.Invalidate(
+                path);
+
             throw;
         }
     }
@@ -286,6 +292,9 @@ public sealed class GppDocumentService
         try
         {
             File.Delete(path);
+            GppXmlCacheService.Invalidate(
+                path);
+
             TryDeleteEmptyParents(path);
 
             CommitExtension(
@@ -329,7 +338,7 @@ public sealed class GppDocumentService
         GppDocumentTypeInfo type,
         string path)
     {
-        var document = XDocument.Load(path, LoadOptions.PreserveWhitespace);
+        var document = GppXmlCacheService.Load(path, LoadOptions.PreserveWhitespace);
         var file = new FileInfo(path);
 
         return new GppDocumentInfo
