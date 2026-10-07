@@ -243,7 +243,6 @@ public sealed class SettingValueWindow : Window
                     AcceptsReturn = true,
                     TextWrapping = TextWrapping.Wrap,
                     MinHeight = 80,
-                    MaxHeight = 140,
                     VerticalScrollBarVisibility =
                         ScrollBarVisibility.Auto,
                     Margin =
