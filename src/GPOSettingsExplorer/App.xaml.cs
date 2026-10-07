@@ -19,7 +19,51 @@ public partial class App : Application
             TaskScheduler_UnobservedTaskException;
 
         AdaptiveWindowManager.Register();
+        CommandLineOptions.Initialize(
+            e.Args);
+
         base.OnStartup(e);
+
+        if (CommandLineOptions.Current.ConnectedSession)
+        {
+            DomainConnectionState.SetProfile(
+                DomainConnectionProfile.CurrentSession(
+                    CommandLineOptions.Current.DomainName,
+                    CommandLineOptions.Current.DomainController));
+
+            ShowMainWindow();
+            return;
+        }
+
+        var connection =
+            new ConnectionWindow();
+
+        var connected =
+            connection.ShowDialog() ==
+            true;
+
+        if (!connected ||
+            connection.RelaunchStarted)
+        {
+            Shutdown();
+            return;
+        }
+
+        ShowMainWindow();
+    }
+
+    private void ShowMainWindow()
+    {
+        EditingGuard.SetEnabled(
+            false);
+
+        var window =
+            new MainWindow();
+
+        MainWindow =
+            window;
+
+        window.Show();
     }
 
     private void App_DispatcherUnhandledException(
