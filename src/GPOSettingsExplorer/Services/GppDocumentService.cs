@@ -226,6 +226,22 @@ public sealed class GppDocumentService
             ? File.ReadAllBytes(path)
             : null;
 
+        var beforeXml =
+            File.Exists(path)
+                ? File.ReadAllText(path)
+                : "<none>";
+
+        ChangePreviewGuard.Confirm(
+            new ChangePreviewRequest(
+                $"Save {document.PreferenceType}",
+                $"{gpo.DisplayName} | {document.Scope} Configuration",
+                ChangePreviewGuard.NormalizeXmlForPreview(
+                    beforeXml),
+                ChangePreviewGuard.NormalizeXmlForPreview(
+                    parsed.ToString()),
+                $"SYSVOL path: {path}",
+                "Apply"));
+
         try
         {
             WriteXml(path, parsed);
@@ -256,6 +272,16 @@ public sealed class GppDocumentService
             return;
 
         var original = File.ReadAllBytes(path);
+
+        ChangePreviewGuard.Confirm(
+            new ChangePreviewRequest(
+                $"Delete {document.PreferenceType}",
+                $"{gpo.DisplayName} | {document.Scope} Configuration",
+                ChangePreviewGuard.NormalizeXmlForPreview(
+                    File.ReadAllText(path)),
+                "<deleted>",
+                $"SYSVOL path: {path}",
+                "Delete"));
 
         try
         {
