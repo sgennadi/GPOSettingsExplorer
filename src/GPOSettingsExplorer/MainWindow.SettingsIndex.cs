@@ -1,3 +1,4 @@
+using System.Windows;
 using GPOSettingsExplorer.Models;
 using GPOSettingsExplorer.Services;
 
@@ -125,7 +126,7 @@ public partial class MainWindow
                 true;
 
             BusyProgress.Visibility =
-                Visibility.Visible;
+                System.Windows.Visibility.Visible;
 
             var cachedCount =
                 _settings.Count;
@@ -220,7 +221,7 @@ public partial class MainWindow
             if (showBusyProgress)
             {
                 BusyProgress.Visibility =
-                    Visibility.Collapsed;
+                    System.Windows.Visibility.Collapsed;
             }
 
             _settingsIndexGate.Release();
