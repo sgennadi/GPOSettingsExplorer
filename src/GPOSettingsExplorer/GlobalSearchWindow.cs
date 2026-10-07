@@ -80,12 +80,15 @@ public sealed class GlobalSearchWindow : Window
             };
 
         _searchBox.KeyDown +=
-            (_, e) =>
+            async (_, e) =>
             {
                 if (e.Key ==
                     Key.Enter)
                 {
-                    RunSearch();
+                    e.Handled =
+                        true;
+
+                    await RunSearchAsync();
                 }
             };
 
@@ -102,8 +105,8 @@ public sealed class GlobalSearchWindow : Window
             };
 
         search.Click +=
-            (_, _) =>
-                RunSearch();
+            async (_, _) =>
+                await RunSearchAsync();
 
         toolbar.Children.Add(
             search);
@@ -203,26 +206,76 @@ public sealed class GlobalSearchWindow : Window
             root;
 
         Loaded +=
-            (_, _) =>
+            async (_, _) =>
             {
                 _searchBox.Focus();
                 _searchBox.SelectAll();
-                RunSearch();
+
+                await RunSearchAsync();
             };
     }
 
-    private void RunSearch()
+    private async Task RunSearchAsync()
     {
-        var results =
-            _service.Search(
-                _searchOwner,
-                _searchBox.Text);
+        var query =
+            _searchBox.Text.Trim();
 
-        _grid.ItemsSource =
-            results;
+        if (string.IsNullOrWhiteSpace(
+                query))
+        {
+            _grid.ItemsSource =
+                Array.Empty<GlobalSearchResult>();
+
+            _count.Text =
+                "0 result(s)";
+
+            return;
+        }
+
+        _searchBox.IsEnabled =
+            false;
 
         _count.Text =
-            $"{results.Count:N0} result(s)";
+            "Searching...";
+
+        try
+        {
+            var snapshot =
+                _service.CaptureItems(
+                    _searchOwner);
+
+            var results =
+                await Task.Run(
+                    () =>
+                        _service.Search(
+                            snapshot,
+                            query));
+
+            _grid.ItemsSource =
+                results;
+
+            _count.Text =
+                $"{results.Count:N0} result(s)";
+        }
+        catch (Exception ex)
+        {
+            _count.Text =
+                "Search failed";
+
+            MessageBox.Show(
+                this,
+                ex.Message,
+                "Global Search",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
+        }
+        finally
+        {
+            _searchBox.IsEnabled =
+                true;
+
+            _searchBox.Focus();
+        }
     }
 
     private void NavigateSelected()
