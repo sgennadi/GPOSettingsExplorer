@@ -36,8 +36,31 @@
                            TextWrapping="Wrap"
                            TextTrimming="None"
                            MinWidth="180"
-                           MaxWidth="640"
+                           MaxWidth="420"
                            Margin="0,0,10,0"/>
+
+                <Button Content="Connection..."
+                        Click="Connection_Click"/>
+
+                <ToggleButton x:Name="WriteModeToggle"
+                              Content="Safe mode: READ ONLY"
+                              Checked="WriteModeToggle_Changed"
+                              Unchecked="WriteModeToggle_Changed"
+                              ToolTip="Write operations are blocked while Safe mode is active."/>
+
+                <TextBox x:Name="GlobalSearchBox"
+                         Width="220"
+                         ToolTip="Search GPOs, settings, scripts, WMI filters and loaded preference items."
+                         KeyDown="GlobalSearchBox_KeyDown"/>
+
+                <Button Content="Search"
+                        Click="GlobalSearch_Click"/>
+
+                <Button Content="Diagnostics"
+                        Click="Diagnostics_Click"/>
+
+                <Button Content="Check updates"
+                        Click="CheckUpdates_Click"/>
 
                 <Button Content="Refresh all"
                         Click="RefreshAll_Click"/>
