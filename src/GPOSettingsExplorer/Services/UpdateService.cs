@@ -3,6 +3,7 @@ using System.IO.Compression;
 using System.Net.Http;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text.Json;
 
 namespace GPOSettingsExplorer.Services;
@@ -10,7 +11,8 @@ namespace GPOSettingsExplorer.Services;
 public sealed record UpdateAsset(
     string Name,
     string DownloadUrl,
-    long Size);
+    long Size,
+    string Digest);
 
 public sealed record UpdateInfo(
     Version CurrentVersion,
@@ -142,6 +144,14 @@ public sealed class UpdateService
                         ? parsedSize
                         : 0;
 
+                var digest =
+                    item.TryGetProperty(
+                        "digest",
+                        out var digestProperty)
+                        ? digestProperty.GetString()
+                          ?? string.Empty
+                        : string.Empty;
+
                 if (!string.IsNullOrWhiteSpace(
                         download))
                 {
@@ -149,7 +159,8 @@ public sealed class UpdateService
                         new UpdateAsset(
                             name,
                             download,
-                            size);
+                            size,
+                            digest);
                 }
 
                 break;
@@ -222,6 +233,10 @@ public sealed class UpdateService
             new byte[
                 1024 * 128];
 
+        using var hash =
+            IncrementalHash.CreateHash(
+                HashAlgorithmName.SHA256);
+
         long copied =
             0;
 
@@ -234,6 +249,11 @@ public sealed class UpdateService
 
             if (read <= 0)
                 break;
+
+            hash.AppendData(
+                buffer,
+                0,
+                read);
 
             await target.WriteAsync(
                 buffer.AsMemory(
@@ -250,6 +270,35 @@ public sealed class UpdateService
                     copied /
                     (double)total);
             }
+        }
+
+        await target.FlushAsync(
+            cancellationToken);
+
+        var computedDigest =
+            "sha256:" +
+            Convert.ToHexString(
+                    hash.GetHashAndReset())
+                .ToLowerInvariant();
+
+        if (!string.IsNullOrWhiteSpace(
+                update.Asset.Digest) &&
+            !computedDigest.Equals(
+                update.Asset.Digest.Trim(),
+                StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                target.Close();
+                File.Delete(
+                    destination);
+            }
+            catch
+            {
+            }
+
+            throw new InvalidOperationException(
+                $"The downloaded update failed SHA-256 verification. Expected {update.Asset.Digest}; received {computedDigest}.");
         }
 
         return destination;
