@@ -844,8 +844,7 @@ public sealed class GppPrinterEditorWindow : Window
                 AcceptsTab =
                     true,
                 FontFamily =
-                    new System.Windows.Media.FontFamily(
-                        "Consolas"),
+                    UiStyle.MonospaceFontFamily,
                 HorizontalScrollBarVisibility =
                     ScrollBarVisibility.Auto,
                 VerticalScrollBarVisibility =
