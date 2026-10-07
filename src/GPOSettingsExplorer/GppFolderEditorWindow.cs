@@ -41,7 +41,7 @@ public sealed class GppFolderEditorWindow : Window
 
         var root = new DockPanel { Margin = new Thickness(12) };
 
-        var footer = new StackPanel
+        var footer = new WrapPanel
         {
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Right
@@ -97,7 +97,7 @@ public sealed class GppFolderEditorWindow : Window
             ToolTip = "Folder path. Environment variables are supported by Group Policy Preferences."
         };
 
-        var attributes = new StackPanel { Orientation = Orientation.Horizontal };
+        var attributes = new WrapPanel { Orientation = Orientation.Horizontal };
         _readOnlyCheck = Check("Read-only", item.ReadOnly);
         _archiveCheck = Check("Archive", item.Archive);
         _hiddenCheck = Check("Hidden", item.Hidden);
