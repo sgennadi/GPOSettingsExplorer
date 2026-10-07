@@ -29,7 +29,7 @@ public sealed class GppScheduledTaskTargetWindow : Window
         Title = "New Scheduled Task Preference";
         Width = 760;
         Height = 310;
-        ResizeMode = ResizeMode.NoResize;
+        ResizeMode = ResizeMode.CanResizeWithGrip;
         WindowStartupLocation =
             WindowStartupLocation.CenterOwner;
 
