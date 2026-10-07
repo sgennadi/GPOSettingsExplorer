@@ -54,11 +54,10 @@ public sealed class GppLocalGroupEditorWindow : Window
             Margin = new Thickness(12)
         };
 
-        var footer = new StackPanel
+        var footer = new WrapPanel
         {
             Orientation = Orientation.Horizontal,
-            HorizontalAlignment =
-                HorizontalAlignment.Right
+            HorizontalAlignment = HorizontalAlignment.Right
         };
         DockPanel.SetDock(
             footer,
@@ -193,7 +192,7 @@ public sealed class GppLocalGroupEditorWindow : Window
             {
                 Text = item.GroupDescription,
                 AcceptsReturn = true,
-                Height = 58
+                MinHeight = 58
             };
 
         _currentUserActionCombo =
