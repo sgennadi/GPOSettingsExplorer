@@ -34,35 +34,104 @@ public sealed class GpoScriptService
     public IReadOnlyList<GpoScriptInfo> Load(
         IEnumerable<GpoInfo> gpos,
         IProgress<string>? progress = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool forceRefresh = false)
     {
-        var gpoArray = gpos.ToArray();
-        var result = new List<GpoScriptInfo>();
+        var gpoArray =
+            gpos.ToArray();
 
-        for (var gpoIndex = 0; gpoIndex < gpoArray.Length; gpoIndex++)
+        var result =
+            new List<GpoScriptInfo>();
+
+        for (var gpoIndex = 0;
+             gpoIndex < gpoArray.Length;
+             gpoIndex++)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var gpo = gpoArray[gpoIndex];
+            var gpo =
+                gpoArray[gpoIndex];
+
+            if (!forceRefresh &&
+                GpoScriptCacheService.TryLoad(
+                    gpo,
+                    out var cached))
+            {
+                progress?.Report(
+                    $"Scripts cache {gpoIndex + 1}/{gpoArray.Length}: {gpo.DisplayName}");
+
+                result.AddRange(
+                    cached);
+
+                continue;
+            }
+
             progress?.Report(
                 $"Scanning GPO scripts {gpoIndex + 1}/{gpoArray.Length}: {gpo.DisplayName}");
 
-            foreach (var scope in new[] { "Computer", "User" })
+            var perGpo =
+                new List<GpoScriptInfo>();
+
+            foreach (var scope in new[]
+                     {
+                         "Computer",
+                         "User"
+                     })
             {
                 ScanScope(
                     gpo,
                     scope,
-                    result,
+                    perGpo,
                     cancellationToken);
             }
+
+            var snapshot =
+                perGpo
+                    .OrderBy(
+                        item =>
+                            item.Scope,
+                        StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(
+                        item =>
+                            item.EventName,
+                        StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(
+                        item =>
+                            item.Order)
+                    .ThenBy(
+                        item =>
+                            item.FileName,
+                        StringComparer.CurrentCultureIgnoreCase)
+                    .ToArray();
+
+            GpoScriptCacheService.Save(
+                gpo,
+                snapshot);
+
+            result.AddRange(
+                snapshot);
         }
 
         return result
-            .OrderBy(item => item.GpoName, StringComparer.CurrentCultureIgnoreCase)
-            .ThenBy(item => item.Scope, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(item => item.EventName, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(item => item.Order)
-            .ThenBy(item => item.FileName, StringComparer.CurrentCultureIgnoreCase)
+            .OrderBy(
+                item =>
+                    item.GpoName,
+                StringComparer.CurrentCultureIgnoreCase)
+            .ThenBy(
+                item =>
+                    item.Scope,
+                StringComparer.OrdinalIgnoreCase)
+            .ThenBy(
+                item =>
+                    item.EventName,
+                StringComparer.OrdinalIgnoreCase)
+            .ThenBy(
+                item =>
+                    item.Order)
+            .ThenBy(
+                item =>
+                    item.FileName,
+                StringComparer.CurrentCultureIgnoreCase)
             .ToArray();
     }
 
@@ -429,6 +498,9 @@ public sealed class GpoScriptService
                 add: true,
                 ref extensionGuid,
                 ref toolGuid);
+
+            GpoScriptCacheService.Invalidate(
+                gpo);
         }
         catch
         {
