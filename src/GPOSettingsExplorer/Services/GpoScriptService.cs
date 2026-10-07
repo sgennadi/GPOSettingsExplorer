@@ -178,8 +178,19 @@ public sealed class GpoScriptService
                 "The selected script is outside this GPO's SYSVOL folder and will not be modified.");
         }
 
-        var encoding = Encoding.GetEncoding(document.CodePage);
-        var temp = fullPath + ".gposes-" + Guid.NewGuid().ToString("N") + ".tmp";
+        var encoding =
+            Encoding.GetEncoding(
+                document.CodePage);
+
+        var original =
+            File.ReadAllBytes(
+                fullPath);
+
+        var temp =
+            fullPath +
+            ".gposes-" +
+            Guid.NewGuid().ToString("N") +
+            ".tmp";
 
         WriteText(
             temp,
@@ -189,28 +200,52 @@ public sealed class GpoScriptService
 
         try
         {
-            File.Copy(temp, fullPath, overwrite: true);
+            File.Copy(
+                temp,
+                fullPath,
+                overwrite: true);
 
             using var policy =
                 new NativeGroupPolicyObject(
                     gpo,
                     domainDistinguishedName);
 
-            var extensionGuid = ScriptsExtensionGuid;
+            var extensionGuid =
+                ScriptsExtensionGuid;
+
             var toolGuid =
-                script.Scope.Equals("User", StringComparison.OrdinalIgnoreCase)
+                script.Scope.Equals(
+                    "User",
+                    StringComparison.OrdinalIgnoreCase)
                     ? UserScriptsToolGuid
                     : MachineScriptsToolGuid;
 
             policy.Save(
-                machine: !script.Scope.Equals("User", StringComparison.OrdinalIgnoreCase),
+                machine: !script.Scope.Equals(
+                    "User",
+                    StringComparison.OrdinalIgnoreCase),
                 add: true,
                 ref extensionGuid,
                 ref toolGuid);
         }
+        catch
+        {
+            File.WriteAllBytes(
+                fullPath,
+                original);
+
+            throw;
+        }
         finally
         {
-            try { File.Delete(temp); } catch { }
+            try
+            {
+                File.Delete(
+                    temp);
+            }
+            catch
+            {
+            }
         }
     }
 
