@@ -63,6 +63,8 @@ public sealed class RegistryPolicyService
         AdmxPolicyDefinition definition,
         PolicyEditSession session)
     {
+        EditingGuard.EnsureEnabled(
+            "Edit Administrative Template policy");
         using var policyObject =
             Open(
                 gpo,
