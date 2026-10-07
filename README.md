@@ -14,7 +14,7 @@ Download the latest portable build from:
 
 **[GitHub Releases](https://github.com/sgennadi/GPOSettingsExplorer/releases/latest)**
 
-Current release: **v0.2.8**
+Current release: **v0.2.9**
 
 Available packages:
 
@@ -69,7 +69,8 @@ The builds are self-contained. A separate .NET runtime installation is not requi
 - Editing never executes the script.
 - Every save creates a GPO backup, updates the Scripts extension revision, writes an audit entry, and rolls back the file if the GPO revision update fails.
 - Search script contents in **All files** or a **Selected file**. Searches such as `wmic`, `.vbs`, `cscript`, `powershell.exe`, or `net use` return file, line number, and matching text.
-- Double-click a search result to open the script directly at the matching line.
+- Identical script copies are grouped by SHA-256 content, so the same `bgscript.bat` copied into many GPOs appears only once per matching line. The results show copy/reference counts instead of repeating GPO names.
+- If an identical script has multiple physical GPO copies, double-clicking a result asks which copy to edit only at that point.
 
 ### Group Policy Preferences
 
@@ -233,7 +234,7 @@ GPOSettingsExplorer/
 
 ## Current status
 
-**v0.2.8** includes the ADMX cache, GPO Scripts browser/editor and all-file/selected-file search introduced in v0.2.7, with reliable first-selection loading of the GPO Scripts tab. It also includes the MMC working-directory and Group Policy COM apartment fixes.
+**v0.2.9** deduplicates identical GPO script search results by file content, adds copy selection only when editing a duplicated script, hardens exact MMC navigation against focus/COM errors, avoids exact-navigation claims for unmappable generic report rows, and removes raw RegistrySettings duplicates of Security Options from All Settings.
 
 See [CHANGELOG.md](CHANGELOG.md) for release details.
 

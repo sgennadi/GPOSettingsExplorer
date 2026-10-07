@@ -4,6 +4,18 @@
 
 - No unreleased changes yet.
 
+## 0.2.9 - 2026-10-07
+
+- GPO Scripts content search now deduplicates identical physical script contents by SHA-256. The same copied script no longer produces repeated matches for every GPO that contains it.
+- Deduplicated search rows show the file, matching line, number of physical copies, and number of GPO references instead of listing every policy name/path.
+- When an identical script exists in multiple GPOs, double-clicking a search result opens a compact copy picker only at edit time so the administrator can choose the physical copy to modify.
+- Fixed MMC UI Automation failure "Target element cannot receive focus" by removing unsafe SetFocus calls and using guarded selection/expand/invoke operations.
+- Hardened MMC exact-navigation against transient COM/UI Automation HRESULT failures. A failed automation step no longer produces the red "Unexpected HRESULT ... COM component" error dialog.
+- Exact native-editor navigation is attempted only for Security Options where the snap-in path is deterministic. Generic report rows such as RegistrySettings and PublicKeySettings now open the selected GPO normally without claiming exact navigation.
+- All Group Policy editor launches now use the full %SystemRoot%\System32\mmc.exe path with System32 as the working directory.
+- The All Settings parser now suppresses raw RegistrySettings rows that duplicate already reported Security Options by registry key/value.
+- Settings-index cache schema was advanced so the parser cleanup is applied automatically on first run of this version.
+
 ## 0.2.8 - 2026-10-07
 
 - GPO Scripts now initializes and scans automatically on the first actual selection of the tab, avoiding the WPF TabItem Loaded timing case where the tab could initialize before the domain GPO list was available.
