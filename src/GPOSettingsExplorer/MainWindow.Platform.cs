@@ -130,14 +130,14 @@ public partial class MainWindow
         window.ShowDialog();
     }
 
-    private void GlobalSearch_Click(
+    private async void GlobalSearch_Click(
         object sender,
         RoutedEventArgs e)
     {
-        ShowGlobalSearch();
+        await ShowGlobalSearchAsync();
     }
 
-    private void GlobalSearchBox_KeyDown(
+    private async void GlobalSearchBox_KeyDown(
         object sender,
         KeyEventArgs e)
     {
@@ -150,10 +150,10 @@ public partial class MainWindow
         e.Handled =
             true;
 
-        ShowGlobalSearch();
+        await ShowGlobalSearchAsync();
     }
 
-    private void ShowGlobalSearch()
+    private async Task ShowGlobalSearchAsync()
     {
         var query =
             GlobalSearchBox.Text.Trim();
@@ -163,6 +163,44 @@ public partial class MainWindow
         {
             GlobalSearchBox.Focus();
             return;
+        }
+
+        SetBusy(
+            true,
+            "Preparing global search data...");
+
+        try
+        {
+            await EnsureSettingsIndexAsync(
+                forceRebuild: false);
+
+            await EnsureGpoScriptsLoadedAsync();
+
+            if (!_gppDocumentInitialized)
+            {
+                GppXmlTab_Loaded(
+                    GppXmlTab,
+                    new RoutedEventArgs());
+            }
+
+            if (_gppDocuments.Count == 0)
+            {
+                await LoadGppDocumentsAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            CrashLogService.Write(
+                "Prepare global search",
+                ex);
+
+            StatusText.Text =
+                $"Global search is using the data that is already available: {ex.Message}";
+        }
+        finally
+        {
+            SetBusy(
+                false);
         }
 
         var window =
