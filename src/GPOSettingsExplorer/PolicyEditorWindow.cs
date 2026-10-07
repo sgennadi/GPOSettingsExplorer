@@ -56,7 +56,7 @@ public sealed class PolicyEditorWindow : Window
         panel.Children.Add(new TextBlock
         {
             Text = setting.SettingName,
-            FontSize = 19,
+            FontSize = UiStyle.HeadingFontSize,
             FontWeight = FontWeights.SemiBold,
             Margin = new Thickness(4, 0, 4, 8),
             TextWrapping = TextWrapping.Wrap
