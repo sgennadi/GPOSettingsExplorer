@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Windows.Automation;
 using GPOSettingsExplorer.Models;
 
@@ -6,11 +7,67 @@ namespace GPOSettingsExplorer.Services;
 
 public sealed class GpoEditorNavigatorService
 {
+    public bool CanNavigateExactly(
+        PolicySettingInfo setting)
+    {
+        // Non-ADMX settings arrive here only after ADMX mapping failed.
+        // Security Options have a stable native editor path. Generic report
+        // extensions such as RegistrySettings/PublicKeySettings do not.
+        return setting.Extension.Equals(
+            "SecuritySettings",
+            StringComparison.OrdinalIgnoreCase);
+    }
+
     public async Task<bool> OpenAtSettingAsync(
         GpoInfo gpo,
         string domainDistinguishedName,
         PolicySettingInfo setting,
         CancellationToken cancellationToken = default)
+    {
+        var process =
+            StartEditor(
+                gpo,
+                domainDistinguishedName);
+
+        if (!CanNavigateExactly(
+                setting))
+        {
+            return false;
+        }
+
+        return await Task.Run(
+            () =>
+            {
+                try
+                {
+                    return Navigate(
+                        process,
+                        setting,
+                        cancellationToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (COMException)
+                {
+                    return false;
+                }
+                catch (ElementNotAvailableException)
+                {
+                    return false;
+                }
+                catch (InvalidOperationException)
+                {
+                    return false;
+                }
+            },
+            cancellationToken);
+    }
+
+    private static Process StartEditor(
+        GpoInfo gpo,
+        string domainDistinguishedName)
     {
         var systemDirectory =
             Environment.GetFolderPath(
@@ -24,26 +81,20 @@ public sealed class GpoEditorNavigatorService
         var objectPath =
             $"LDAP://CN={gpo.Id:B},CN=Policies,CN=System,{domainDistinguishedName}";
 
-        var process =
-            Process.Start(
-                new ProcessStartInfo
-                {
-                    FileName = mmcPath,
-                    Arguments =
-                        $"gpme.msc /gpobject:\"{objectPath}\"",
-                    WorkingDirectory =
-                        systemDirectory,
-                    UseShellExecute = true
-                })
-            ?? throw new InvalidOperationException(
-                "Unable to start the Group Policy Management Editor.");
-
-        return await Task.Run(
-            () => Navigate(
-                process,
-                setting,
-                cancellationToken),
-            cancellationToken);
+        return Process.Start(
+                   new ProcessStartInfo
+                   {
+                       FileName =
+                           mmcPath,
+                       Arguments =
+                           $"gpme.msc /gpobject:\"{objectPath}\"",
+                       WorkingDirectory =
+                           systemDirectory,
+                       UseShellExecute =
+                           true
+                   })
+               ?? throw new InvalidOperationException(
+                   "Unable to start the Group Policy Management Editor.");
     }
 
     private static bool Navigate(
@@ -64,7 +115,9 @@ public sealed class GpoEditorNavigatorService
             process.Refresh();
 
             if (process.HasExited)
+            {
                 return false;
+            }
 
             if (process.MainWindowHandle != IntPtr.Zero)
             {
@@ -75,9 +128,14 @@ public sealed class GpoEditorNavigatorService
                             process.MainWindowHandle);
 
                     if (window is not null)
+                    {
                         break;
+                    }
                 }
-                catch
+                catch (COMException)
+                {
+                }
+                catch (ElementNotAvailableException)
                 {
                 }
             }
@@ -86,22 +144,36 @@ public sealed class GpoEditorNavigatorService
         }
 
         if (window is null)
+        {
             return false;
+        }
 
-        var tree =
-            window.FindFirst(
-                TreeScope.Descendants,
-                new PropertyCondition(
-                    AutomationElement.ControlTypeProperty,
-                    ControlType.Tree));
+        AutomationElement? tree;
+
+        try
+        {
+            tree =
+                window.FindFirst(
+                    TreeScope.Descendants,
+                    new PropertyCondition(
+                        AutomationElement.ControlTypeProperty,
+                        ControlType.Tree));
+        }
+        catch (COMException)
+        {
+            return false;
+        }
 
         if (tree is null)
+        {
             return false;
+        }
 
         AutomationElement? current =
             null;
 
-        foreach (var segment in BuildTreePath(setting))
+        foreach (var segment in BuildTreePath(
+                     setting))
         {
             current =
                 current is null
@@ -119,17 +191,23 @@ public sealed class GpoEditorNavigatorService
                         cancellationToken);
 
             if (current is null)
+            {
                 return false;
+            }
 
-            Expand(current);
-            Select(current);
+            TryExpand(
+                current);
+
+            TrySelect(
+                current);
         }
 
         if (current is null)
+        {
             return false;
+        }
 
-        current.SetFocus();
-        Thread.Sleep(350);
+        Thread.Sleep(400);
 
         var row =
             FindSettingRow(
@@ -139,17 +217,33 @@ public sealed class GpoEditorNavigatorService
                 cancellationToken);
 
         if (row is null)
-            return false;
-
-        Select(row);
-        row.SetFocus();
-
-        if (row.TryGetCurrentPattern(
-                InvokePattern.Pattern,
-                out var invokeObject) &&
-            invokeObject is InvokePattern invoke)
         {
-            invoke.Invoke();
+            return false;
+        }
+
+        TrySelect(
+            row);
+
+        // Do not call AutomationElement.SetFocus(). MMC frequently exposes
+        // scope/result elements that can be selected but cannot receive focus,
+        // which produced "Target element cannot receive focus".
+        try
+        {
+            if (row.TryGetCurrentPattern(
+                    InvokePattern.Pattern,
+                    out var invokeObject) &&
+                invokeObject is InvokePattern invoke)
+            {
+                invoke.Invoke();
+            }
+        }
+        catch (COMException)
+        {
+            // The exact row is already selected. Leave the editor there.
+        }
+        catch (InvalidOperationException)
+        {
+            // Some MMC result rows are selectable but not invokable.
         }
 
         return true;
@@ -165,45 +259,15 @@ public sealed class GpoEditorNavigatorService
                 ? "User Configuration"
                 : "Computer Configuration";
 
-        if (setting.Extension.Equals(
-                "SecuritySettings",
-                StringComparison.OrdinalIgnoreCase))
+        return new[]
         {
-            return new[]
-            {
-                scope,
-                "Policies",
-                "Windows Settings",
-                "Security Settings",
-                "Local Policies",
-                "Security Options"
-            };
-        }
-
-        var result =
-            new List<string>
-            {
-                scope,
-                "Policies",
-                "Administrative Templates"
-            };
-
-        result.AddRange(
-            (setting.Category ?? string.Empty)
-            .Replace(
-                "/",
-                " > ",
-                StringComparison.Ordinal)
-            .Split(
-                '>',
-                StringSplitOptions.RemoveEmptyEntries |
-                StringSplitOptions.TrimEntries)
-            .Where(part =>
-                !part.Equals(
-                    "Administrative Templates",
-                    StringComparison.OrdinalIgnoreCase)));
-
-        return result;
+            scope,
+            "Policies",
+            "Windows Settings",
+            "Security Settings",
+            "Local Policies",
+            "Security Options"
+        };
     }
 
     private static AutomationElement? FindTreeItem(
@@ -217,20 +281,39 @@ public sealed class GpoEditorNavigatorService
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var items =
-                parent.FindAll(
-                    scope,
-                    new PropertyCondition(
-                        AutomationElement.ControlTypeProperty,
-                        ControlType.TreeItem));
+            AutomationElementCollection items;
+
+            try
+            {
+                items =
+                    parent.FindAll(
+                        scope,
+                        new PropertyCondition(
+                            AutomationElement.ControlTypeProperty,
+                            ControlType.TreeItem));
+            }
+            catch (COMException)
+            {
+                return null;
+            }
+            catch (ElementNotAvailableException)
+            {
+                return null;
+            }
 
             foreach (AutomationElement item in items)
             {
-                if (item.Current.Name.Equals(
-                        name,
-                        StringComparison.CurrentCultureIgnoreCase))
+                try
                 {
-                    return item;
+                    if (item.Current.Name.Equals(
+                            name,
+                            StringComparison.CurrentCultureIgnoreCase))
+                    {
+                        return item;
+                    }
+                }
+                catch (ElementNotAvailableException)
+                {
                 }
             }
 
@@ -250,26 +333,45 @@ public sealed class GpoEditorNavigatorService
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var rows =
-                window.FindAll(
-                    TreeScope.Descendants,
-                    new PropertyCondition(
-                        AutomationElement.ControlTypeProperty,
-                        ControlType.ListItem));
+            AutomationElementCollection rows;
+
+            try
+            {
+                rows =
+                    window.FindAll(
+                        TreeScope.Descendants,
+                        new PropertyCondition(
+                            AutomationElement.ControlTypeProperty,
+                            ControlType.ListItem));
+            }
+            catch (COMException)
+            {
+                return null;
+            }
+            catch (ElementNotAvailableException)
+            {
+                return null;
+            }
 
             foreach (AutomationElement row in rows)
             {
-                var name =
-                    row.Current.Name;
-
-                if (name.Equals(
-                        settingName,
-                        StringComparison.CurrentCultureIgnoreCase) ||
-                    name.StartsWith(
-                        settingName,
-                        StringComparison.CurrentCultureIgnoreCase))
+                try
                 {
-                    return row;
+                    var name =
+                        row.Current.Name;
+
+                    if (name.Equals(
+                            settingName,
+                            StringComparison.CurrentCultureIgnoreCase) ||
+                        name.StartsWith(
+                            settingName,
+                            StringComparison.CurrentCultureIgnoreCase))
+                    {
+                        return row;
+                    }
+                }
+                catch (ElementNotAvailableException)
+                {
                 }
             }
 
@@ -279,33 +381,57 @@ public sealed class GpoEditorNavigatorService
         return null;
     }
 
-    private static void Expand(
+    private static void TryExpand(
         AutomationElement element)
     {
-        if (!element.TryGetCurrentPattern(
-                ExpandCollapsePattern.Pattern,
-                out var value) ||
-            value is not ExpandCollapsePattern pattern)
+        try
         {
-            return;
-        }
+            if (!element.TryGetCurrentPattern(
+                    ExpandCollapsePattern.Pattern,
+                    out var value) ||
+                value is not ExpandCollapsePattern pattern)
+            {
+                return;
+            }
 
-        if (pattern.Current.ExpandCollapseState ==
-            ExpandCollapseState.Collapsed)
+            if (pattern.Current.ExpandCollapseState ==
+                ExpandCollapseState.Collapsed)
+            {
+                pattern.Expand();
+            }
+        }
+        catch (COMException)
         {
-            pattern.Expand();
+        }
+        catch (InvalidOperationException)
+        {
+        }
+        catch (ElementNotAvailableException)
+        {
         }
     }
 
-    private static void Select(
+    private static void TrySelect(
         AutomationElement element)
     {
-        if (element.TryGetCurrentPattern(
-                SelectionItemPattern.Pattern,
-                out var value) &&
-            value is SelectionItemPattern pattern)
+        try
         {
-            pattern.Select();
+            if (element.TryGetCurrentPattern(
+                    SelectionItemPattern.Pattern,
+                    out var value) &&
+                value is SelectionItemPattern pattern)
+            {
+                pattern.Select();
+            }
+        }
+        catch (COMException)
+        {
+        }
+        catch (InvalidOperationException)
+        {
+        }
+        catch (ElementNotAvailableException)
+        {
         }
     }
 }
