@@ -332,7 +332,10 @@ public sealed class GppDocumentService
             : "Machine";
 
         return Path.Combine(
-            $@"\\{gpo.DomainName}\SYSVOL\{gpo.DomainName}\Policies\{gpo.Id:B}",
+            DomainConnectionState.BuildSysvolRoot(
+                gpo.DomainName),
+            "Policies",
+            gpo.Id.ToString("B"),
             side,
             "Preferences",
             relativePath);
@@ -429,7 +432,8 @@ public sealed class GppDocumentService
         try
         {
             var ldapPath =
-                $"LDAP://CN={gpo.Id:B},CN=Policies,CN=System,{domainDistinguishedName}";
+                DomainConnectionState.BuildLdapPath(
+                    $"CN={gpo.Id:B},CN=Policies,CN=System,{domainDistinguishedName}");
 
             ThrowIfFailed(
                 policyObject.OpenDSGPO(
