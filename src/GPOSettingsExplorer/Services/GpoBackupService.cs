@@ -44,6 +44,8 @@ public sealed class GpoBackupService
 
     public void Restore(string currentDomainName, GpoBackupInfo backup)
     {
+        EditingGuard.EnsureEnabled(
+            "Restore GPO backup");
         if (!string.Equals(
                 currentDomainName,
                 backup.DomainName,
@@ -80,6 +82,8 @@ public sealed class GpoBackupService
 
     public void DeleteBackup(GpoBackupInfo backup)
     {
+        EditingGuard.EnsureEnabled(
+            "Delete GPO backup");
         if (!Directory.Exists(backup.BackupDirectory))
             return;
 
