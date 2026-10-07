@@ -196,6 +196,8 @@ public sealed class GppDocumentService
         GppDocumentInfo document,
         string xml)
     {
+        EditingGuard.EnsureEnabled(
+            "Edit Group Policy Preferences");
         if (string.IsNullOrWhiteSpace(xml))
             throw new InvalidOperationException("XML cannot be empty.");
 
@@ -247,6 +249,8 @@ public sealed class GppDocumentService
         string domainDistinguishedName,
         GppDocumentInfo document)
     {
+        EditingGuard.EnsureEnabled(
+            "Delete Group Policy Preferences");
         var path = GetXmlPath(gpo, document.Scope, document.RelativePath);
         if (!File.Exists(path))
             return;
