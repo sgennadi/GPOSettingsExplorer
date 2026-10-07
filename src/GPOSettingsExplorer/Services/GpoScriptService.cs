@@ -73,71 +73,132 @@ public sealed class GpoScriptService
         if (string.IsNullOrWhiteSpace(query))
             return Array.Empty<GpoScriptSearchResult>();
 
-        var needle = query.Trim();
-        var result = new List<GpoScriptSearchResult>();
+        var needle =
+            query.Trim();
+
+        var result =
+            new List<GpoScriptSearchResult>();
 
         foreach (var script in scripts
-                     .Where(item => item.Exists)
-                     .GroupBy(item => item.FullPath, StringComparer.OrdinalIgnoreCase)
+                     .GroupBy(
+                         item => item.FullPath,
+                         StringComparer.OrdinalIgnoreCase)
                      .Select(group => group.First()))
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (!IsSupportedScriptFile(script.FullPath))
+            var metadataMatches =
+                script.FileName.Contains(
+                    needle,
+                    StringComparison.CurrentCultureIgnoreCase) ||
+                script.Parameters.Contains(
+                    needle,
+                    StringComparison.CurrentCultureIgnoreCase) ||
+                script.FullPath.Contains(
+                    needle,
+                    StringComparison.CurrentCultureIgnoreCase);
+
+            if (metadataMatches)
+            {
+                result.Add(
+                    new GpoScriptSearchResult
+                    {
+                        Script = script,
+                        LineNumber = 0,
+                        LineText =
+                            BuildMetadataMatchText(
+                                script,
+                                needle)
+                    });
+            }
+
+            if (!script.Exists ||
+                !IsSupportedScriptFile(
+                    script.FullPath))
+            {
                 continue;
+            }
 
             string text;
+
             try
             {
-                text = ReadDocument(script.FullPath).Text;
+                text =
+                    ReadDocument(
+                        script.FullPath)
+                    .Text;
             }
             catch
             {
                 continue;
             }
 
-            var lines = text
-                .Replace("\r\n", "\n", StringComparison.Ordinal)
-                .Replace("\r", "\n", StringComparison.Ordinal)
-                .Split('\n');
+            var lines =
+                text
+                    .Replace(
+                        "\r\n",
+                        "\n",
+                        StringComparison.Ordinal)
+                    .Replace(
+                        "\r",
+                        "\n",
+                        StringComparison.Ordinal)
+                    .Split('\n');
 
-            for (var lineIndex = 0; lineIndex < lines.Length; lineIndex++)
+            for (var lineIndex = 0;
+                 lineIndex < lines.Length;
+                 lineIndex++)
             {
                 if (!lines[lineIndex].Contains(
                         needle,
                         StringComparison.CurrentCultureIgnoreCase))
+                {
                     continue;
+                }
 
-                result.Add(new GpoScriptSearchResult
-                {
-                    Script = script,
-                    LineNumber = lineIndex + 1,
-                    LineText = lines[lineIndex].Trim()
-                });
-            }
-
-            if (Path.GetFileName(script.FullPath).Contains(
-                    needle,
-                    StringComparison.CurrentCultureIgnoreCase) &&
-                !result.Any(item =>
-                    item.Script.FullPath.Equals(
-                        script.FullPath,
-                        StringComparison.OrdinalIgnoreCase)))
-            {
-                result.Add(new GpoScriptSearchResult
-                {
-                    Script = script,
-                    LineNumber = 0,
-                    LineText = "<matched file name>"
-                });
+                result.Add(
+                    new GpoScriptSearchResult
+                    {
+                        Script = script,
+                        LineNumber =
+                            lineIndex + 1,
+                        LineText =
+                            lines[lineIndex].Trim()
+                    });
             }
         }
 
         return result
-            .OrderBy(item => item.GpoName, StringComparer.CurrentCultureIgnoreCase)
-            .ThenBy(item => item.FileName, StringComparer.CurrentCultureIgnoreCase)
-            .ThenBy(item => item.LineNumber)
+            .OrderBy(
+                item => item.GpoName,
+                StringComparer.CurrentCultureIgnoreCase)
+            .ThenBy(
+                item => item.FileName,
+                StringComparer.CurrentCultureIgnoreCase)
+            .ThenBy(
+                item => item.LineNumber)
             .ToArray();
+    }
+
+    private static string BuildMetadataMatchText(
+        GpoScriptInfo script,
+        string needle)
+    {
+        if (script.FileName.Contains(
+                needle,
+                StringComparison.CurrentCultureIgnoreCase))
+        {
+            return "<matched file name>";
+        }
+
+        if (script.Parameters.Contains(
+                needle,
+                StringComparison.CurrentCultureIgnoreCase))
+        {
+            return $"<parameters> {script.Parameters}";
+        }
+
+        return "<matched path>";
     }
 
     public GpoScriptDocument ReadDocument(string path)
