@@ -95,7 +95,7 @@ public partial class MainWindow
                     StatusText.Text =
                         $"Writing {setting.SettingName}...";
 
-                    await Task.Run(() =>
+                    await StaTask.Run(() =>
                         _securityTemplateService.ApplyBoolean(
                             gpo,
                             _domainContext.DomainDistinguishedName,
@@ -150,7 +150,7 @@ public partial class MainWindow
             }
 
             StatusText.Text = $"Reading {setting.SettingName}...";
-            var session = await Task.Run(() =>
+            var session = await StaTask.Run(() =>
                 _registryPolicyService.Read(
                     gpo,
                     _domainContext.DomainDistinguishedName,
@@ -177,7 +177,7 @@ public partial class MainWindow
                     $"Automatic backup before editing '{setting.SettingName}'"));
 
             StatusText.Text = "Writing policy setting...";
-            await Task.Run(() =>
+            await StaTask.Run(() =>
                 _registryPolicyService.Apply(
                     gpo,
                     _domainContext.DomainDistinguishedName,
