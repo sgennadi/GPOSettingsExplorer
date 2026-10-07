@@ -346,7 +346,7 @@ public sealed class GppScheduledTaskEditorWindow : Window
                     item.Arguments,
                 AcceptsReturn =
                     true,
-                Height =
+                MinHeight =
                     65
             };
 
