@@ -37,6 +37,8 @@ public sealed class SecurityTemplateService
         PolicySettingInfo setting,
         bool value)
     {
+        EditingGuard.EnsureEnabled(
+            "Edit Security Option");
         if (!CanEditBoolean(setting))
         {
             throw new InvalidOperationException(
