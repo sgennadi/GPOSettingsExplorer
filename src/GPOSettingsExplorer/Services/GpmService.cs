@@ -266,10 +266,23 @@ public sealed class GpmService
                 domainName,
                 gpoId);
         }
-        catch (COMException)
+        catch (COMException gpmException)
         {
-            return LoadPermissionsFromDirectory(
-                gpoId);
+            try
+            {
+                return LoadPermissionsFromDirectory(
+                    gpoId);
+            }
+            catch (Exception directoryException)
+            {
+                throw new InvalidOperationException(
+                    BuildSecurityLoadDiagnostic(
+                        domainName,
+                        gpoId,
+                        gpmException,
+                        directoryException),
+                    directoryException);
+            }
         }
     }
 
@@ -489,7 +502,7 @@ public sealed class GpmService
     {
         var rights =
             rules.Aggregate(
-                ActiveDirectoryRights.None,
+                (ActiveDirectoryRights)0,
                 (current, rule) =>
                     current |
                     rule.ActiveDirectoryRights);
@@ -551,6 +564,145 @@ public sealed class GpmService
             GpoPermissionLevel.FullControl => 0x10102,
             _ => 0
         };
+    }
+
+    private static string BuildSecurityLoadDiagnostic(
+        string domainName,
+        Guid gpoId,
+        COMException gpmException,
+        Exception directoryException)
+    {
+        var builder =
+            new System.Text.StringBuilder();
+
+        builder.AppendLine(
+            "Unable to load GPO security.");
+        builder.AppendLine();
+        builder.AppendLine(
+            $"GPO GUID: {gpoId:B}");
+        builder.AppendLine(
+            $"Domain: {domainName}");
+        builder.AppendLine();
+        builder.AppendLine(
+            "GPMC stage: GetSecurityInfo()");
+        builder.AppendLine(
+            $"GPMC error: {gpmException.Message}");
+        builder.AppendLine(
+            $"GPMC HRESULT: 0x{gpmException.HResult:X8}");
+
+        if (gpmException.HResult ==
+            unchecked((int)0x80070002))
+        {
+            builder.AppendLine(
+                "GPMC returned ERROR_FILE_NOT_FOUND, but the COM exception did not include the concrete file name.");
+        }
+
+        builder.AppendLine();
+        builder.AppendLine(
+            "Active Directory fallback error:");
+        builder.AppendLine(
+            $"{directoryException.GetType().Name}: {directoryException.Message}");
+
+        try
+        {
+            using var rootDse =
+                new DirectoryEntry(
+                    "LDAP://RootDSE");
+
+            var defaultNamingContext =
+                Convert.ToString(
+                    rootDse.Properties[
+                        "defaultNamingContext"].Value)
+                ?? string.Empty;
+
+            var gpoDn =
+                $"CN={gpoId.ToString("B").ToUpperInvariant()},CN=Policies,CN=System,{defaultNamingContext}";
+
+            builder.AppendLine();
+            builder.AppendLine(
+                "Paths checked:");
+            builder.AppendLine(
+                $"AD object: LDAP://{gpoDn}");
+
+            using var gpoEntry =
+                new DirectoryEntry(
+                    $"LDAP://{gpoDn}");
+
+            var displayName =
+                Convert.ToString(
+                    gpoEntry.Properties[
+                        "displayName"].Value)
+                ?? string.Empty;
+
+            if (!string.IsNullOrWhiteSpace(
+                    displayName))
+            {
+                builder.AppendLine(
+                    $"GPO name: {displayName}");
+            }
+
+            var fileSysPath =
+                Convert.ToString(
+                    gpoEntry.Properties[
+                        "gPCFileSysPath"].Value)
+                ?? string.Empty;
+
+            if (string.IsNullOrWhiteSpace(
+                    fileSysPath))
+            {
+                builder.AppendLine(
+                    "gPCFileSysPath: <missing in Active Directory>");
+            }
+            else
+            {
+                builder.AppendLine(
+                    $"gPCFileSysPath: {fileSysPath}");
+
+                var directoryExists =
+                    Directory.Exists(
+                        fileSysPath);
+
+                builder.AppendLine(
+                    $"SYSVOL GPO folder exists: {directoryExists}");
+
+                var gptIniPath =
+                    Path.Combine(
+                        fileSysPath,
+                        "GPT.INI");
+
+                builder.AppendLine(
+                    $"GPT.INI: {gptIniPath}");
+                builder.AppendLine(
+                    $"GPT.INI exists: {File.Exists(gptIniPath)}");
+
+                var machinePath =
+                    Path.Combine(
+                        fileSysPath,
+                        "Machine");
+
+                var userPath =
+                    Path.Combine(
+                        fileSysPath,
+                        "User");
+
+                builder.AppendLine(
+                    $"Machine folder: {machinePath} | exists: {Directory.Exists(machinePath)}");
+                builder.AppendLine(
+                    $"User folder: {userPath} | exists: {Directory.Exists(userPath)}");
+            }
+        }
+        catch (Exception diagnosticException)
+        {
+            builder.AppendLine();
+            builder.AppendLine(
+                "Path diagnostics failed:");
+            builder.AppendLine(
+                $"{diagnosticException.GetType().Name}: {diagnosticException.Message}");
+        }
+
+        return builder
+            .ToString()
+            .TrimEnd();
     }
 
     private static string ResolveAccountName(
