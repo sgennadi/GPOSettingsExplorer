@@ -40,12 +40,12 @@ public sealed class GppShortcutEditorWindow : Window
         Width = 1000;
         Height = 790;
         MinWidth = 800;
-        MinHeight = 620;
+        MinMinHeight = 620;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
 
         var root = new DockPanel { Margin = new Thickness(12) };
 
-        var footer = new StackPanel
+        var footer = new WrapPanel
         {
             Orientation = Orientation.Horizontal,
             HorizontalAlignment = HorizontalAlignment.Right
