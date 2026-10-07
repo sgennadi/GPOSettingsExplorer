@@ -151,6 +151,8 @@ public sealed class GpoLinkService
         bool enforced,
         int order)
     {
+        EditingGuard.EnsureEnabled(
+            "Change GPO link");
         using var entry = new DirectoryEntry($"LDAP://{targetDn}");
         entry.RefreshCache(new[] { "gPLink" });
 
@@ -171,6 +173,8 @@ public sealed class GpoLinkService
 
     public void RemoveLink(string targetDn, Guid gpoId)
     {
+        EditingGuard.EnsureEnabled(
+            "Remove GPO link");
         using var entry = new DirectoryEntry($"LDAP://{targetDn}");
         entry.RefreshCache(new[] { "gPLink" });
 
@@ -183,6 +187,8 @@ public sealed class GpoLinkService
 
     public void SetBlockInheritance(string targetDn, bool block)
     {
+        EditingGuard.EnsureEnabled(
+            "Change block inheritance");
         using var entry = new DirectoryEntry($"LDAP://{targetDn}");
         entry.Properties["gPOptions"].Value = block ? 1 : 0;
         entry.CommitChanges();
