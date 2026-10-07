@@ -221,7 +221,7 @@ public sealed class GppDriveEditorWindow : Window
             Text = item.FiltersXml,
             AcceptsReturn = true,
             AcceptsTab = true,
-            FontFamily = new System.Windows.Media.FontFamily("Consolas"),
+            FontFamily = UiStyle.MonospaceFontFamily,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto
         };
