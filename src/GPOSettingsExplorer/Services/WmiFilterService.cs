@@ -15,7 +15,8 @@ public sealed class WmiFilterService
         // which can return WBEM_E_PROVIDER_NOT_CAPABLE on otherwise healthy
         // management hosts.
         using var rootDse =
-            new DirectoryEntry("LDAP://RootDSE");
+            new DirectoryEntry(
+                DomainConnectionState.BuildRootDsePath());
 
         var defaultNamingContext =
             Convert.ToString(
@@ -26,7 +27,8 @@ public sealed class WmiFilterService
 
         using var systemContainer =
             new DirectoryEntry(
-                $"LDAP://CN=System,{defaultNamingContext}");
+                DomainConnectionState.BuildLdapPath(
+                    $"CN=System,{defaultNamingContext}"));
 
         using var searcher =
             new DirectorySearcher(systemContainer)
