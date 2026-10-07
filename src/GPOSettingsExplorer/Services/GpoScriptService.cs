@@ -638,8 +638,13 @@ public sealed class GpoScriptService
     private static bool IsSupportedScriptFile(string path) =>
         ScriptExtensions.Contains(Path.GetExtension(path));
 
-    private static string GetGpoRoot(GpoInfo gpo) =>
-        $@"\\{gpo.DomainName}\SYSVOL\{gpo.DomainName}\Policies\{gpo.Id.ToString("B").ToUpperInvariant()}";
+    private static string GetGpoRoot(
+        GpoInfo gpo) =>
+        Path.Combine(
+            DomainConnectionState.BuildSysvolRoot(
+                gpo.DomainName),
+            "Policies",
+            gpo.Id.ToString("B").ToUpperInvariant());
 
     private static string ReadText(string path)
     {
@@ -738,7 +743,8 @@ public sealed class GpoScriptService
             {
                 var open = GetMethod<OpenDsgpoDelegate>(4);
                 var ldapPath =
-                    $"LDAP://CN={gpo.Id:B},CN=Policies,CN=System,{domainDistinguishedName}";
+                    DomainConnectionState.BuildLdapPath(
+                        $"CN={gpo.Id:B},CN=Policies,CN=System,{domainDistinguishedName}");
 
                 ThrowIfFailed(
                     open(
