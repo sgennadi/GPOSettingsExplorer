@@ -61,6 +61,12 @@ public partial class MainWindow
             return;
         }
 
+        if (GpoScriptsTab.IsSelected)
+        {
+            await EnsureGpoScriptsLoadedAsync();
+            return;
+        }
+
         if (!SecurityTab.IsSelected)
         {
             return;
