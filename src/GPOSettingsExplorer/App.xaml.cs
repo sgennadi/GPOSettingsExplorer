@@ -24,6 +24,13 @@ public partial class App : Application
 
         base.OnStartup(e);
 
+        if (UpdateInstaller.TryApply(
+                e.Args))
+        {
+            Shutdown();
+            return;
+        }
+
         if (CommandLineOptions.Current.ConnectedSession)
         {
             DomainConnectionState.SetProfile(
