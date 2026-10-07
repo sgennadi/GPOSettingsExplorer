@@ -1384,7 +1384,7 @@
                 </DockPanel>
             </TabItem>
 
-            <TabItem Header="Backups" Loaded="BackupsTab_Loaded">
+            <TabItem x:Name="BackupsTab" Header="Backups" Loaded="BackupsTab_Loaded">
                 <DockPanel Margin="6">
                     <StackPanel DockPanel.Dock="Top" Orientation="Vertical">
                         <WrapPanel>
@@ -1432,6 +1432,8 @@
                             <Button Content="Refresh" Click="RefreshAudit_Click"/>
                             <Button Content="Open folder" Click="OpenAuditFolder_Click"/>
                             <Button Content="Export CSV" Click="ExportAuditCsv_Click"/>
+                            <Button Content="Open linked backup" Click="OpenAuditBackup_Click"/>
+                            <Button Content="Restore linked backup" Click="RestoreAuditBackup_Click"/>
                             <TextBlock Text="Search:" VerticalAlignment="Center" Margin="12,0,0,0"/>
                             <TextBox x:Name="AuditSearchBox"
                                      Width="260"
