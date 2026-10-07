@@ -320,12 +320,12 @@ public sealed class UpdateService
 
     private static string Quote(
         string value) =>
-        """ +
+        "\"" +
         value.Replace(
-            """,
             "\"",
+            "\\\"",
             StringComparison.Ordinal) +
-        """;
+        "\"";
 
     private static Version ParseVersion(
         string value)
