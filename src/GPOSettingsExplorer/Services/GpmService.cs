@@ -144,6 +144,8 @@ public sealed class GpmService
 
     public Guid CreateGpo(string domainName, string displayName)
     {
+        EditingGuard.EnsureEnabled(
+            "Create GPO");
         if (string.IsNullOrWhiteSpace(displayName))
         {
             throw new ArgumentException("GPO name cannot be empty.", nameof(displayName));
@@ -170,6 +172,8 @@ public sealed class GpmService
         string newDisplayName,
         bool copyAcl)
     {
+        EditingGuard.EnsureEnabled(
+            "Copy GPO");
         if (string.IsNullOrWhiteSpace(newDisplayName))
         {
             throw new ArgumentException("GPO name cannot be empty.", nameof(newDisplayName));
@@ -209,6 +213,8 @@ public sealed class GpmService
         GpoBackupInfo backup,
         string? migrationTablePath = null)
     {
+        EditingGuard.EnsureEnabled(
+            "Import GPO settings");
         if (!Directory.Exists(backup.BackupDirectory))
         {
             throw new DirectoryNotFoundException(
@@ -250,6 +256,8 @@ public sealed class GpmService
 
     public void RenameGpo(string domainName, Guid gpoId, string newDisplayName)
     {
+        EditingGuard.EnsureEnabled(
+            "Rename GPO");
         if (string.IsNullOrWhiteSpace(newDisplayName))
         {
             throw new ArgumentException("GPO name cannot be empty.", nameof(newDisplayName));
@@ -264,6 +272,8 @@ public sealed class GpmService
 
     public void DeleteGpo(string domainName, Guid gpoId)
     {
+        EditingGuard.EnsureEnabled(
+            "Delete GPO");
         dynamic gpm = CreateGpm();
         dynamic constants = gpm.GetConstants();
         dynamic domain = GetDomain(gpm, constants, domainName);
@@ -273,6 +283,8 @@ public sealed class GpmService
 
     public void SetComputerEnabled(string domainName, Guid gpoId, bool enabled)
     {
+        EditingGuard.EnsureEnabled(
+            "Change Computer Configuration scope");
         dynamic gpm = CreateGpm();
         dynamic constants = gpm.GetConstants();
         dynamic domain = GetDomain(gpm, constants, domainName);
@@ -282,6 +294,8 @@ public sealed class GpmService
 
     public void SetUserEnabled(string domainName, Guid gpoId, bool enabled)
     {
+        EditingGuard.EnsureEnabled(
+            "Change User Configuration scope");
         dynamic gpm = CreateGpm();
         dynamic constants = gpm.GetConstants();
         dynamic domain = GetDomain(gpm, constants, domainName);
@@ -777,6 +791,8 @@ public sealed class GpmService
         string trustee,
         GpoPermissionLevel level)
     {
+        EditingGuard.EnsureEnabled(
+            "Change GPO permissions");
         if (string.IsNullOrWhiteSpace(trustee))
         {
             throw new ArgumentException("Trustee cannot be empty.", nameof(trustee));
@@ -806,6 +822,8 @@ public sealed class GpmService
         GpoPermissionInfo existing,
         GpoPermissionLevel newLevel)
     {
+        EditingGuard.EnsureEnabled(
+            "Change GPO permissions");
         if (existing.Inherited)
         {
             throw new InvalidOperationException(
@@ -853,6 +871,8 @@ public sealed class GpmService
         Guid gpoId,
         GpoPermissionInfo existing)
     {
+        EditingGuard.EnsureEnabled(
+            "Change GPO permissions");
         if (existing.Inherited)
         {
             throw new InvalidOperationException(
@@ -920,6 +940,8 @@ public sealed class GpmService
 
     public void SetWmiFilter(string domainName, Guid gpoId, WmiFilterInfo? filter)
     {
+        EditingGuard.EnsureEnabled(
+            "Assign WMI filter");
         dynamic gpm = CreateGpm();
         dynamic constants = gpm.GetConstants();
         dynamic domain = GetDomain(gpm, constants, domainName);
