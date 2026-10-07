@@ -98,17 +98,34 @@ public sealed class GpmService
         return settings;
     }
 
-    public void OpenEditor(GpoInfo gpo, string domainDistinguishedName)
+    public void OpenEditor(
+        GpoInfo gpo,
+        string domainDistinguishedName)
     {
-        var objectPath = $"LDAP://CN={gpo.Id:B},CN=Policies,CN=System,{domainDistinguishedName}";
-        var arguments = $"gpme.msc /gpobject:\"{objectPath}\"";
+        _ = OpenEditorProcess(
+            gpo,
+            domainDistinguishedName);
+    }
 
-        Process.Start(new ProcessStartInfo
-        {
-            FileName = "mmc.exe",
-            Arguments = arguments,
-            UseShellExecute = true
-        });
+    public Process OpenEditorProcess(
+        GpoInfo gpo,
+        string domainDistinguishedName)
+    {
+        var objectPath =
+            $"LDAP://CN={gpo.Id:B},CN=Policies,CN=System,{domainDistinguishedName}";
+
+        var arguments =
+            $"gpme.msc /gpobject:\"{objectPath}\"";
+
+        return Process.Start(
+                   new ProcessStartInfo
+                   {
+                       FileName = "mmc.exe",
+                       Arguments = arguments,
+                       UseShellExecute = true
+                   })
+               ?? throw new InvalidOperationException(
+                   "Unable to start the Group Policy Management Editor.");
     }
 
     public Guid CreateGpo(string domainName, string displayName)
