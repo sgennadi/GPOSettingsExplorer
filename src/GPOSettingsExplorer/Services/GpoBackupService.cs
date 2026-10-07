@@ -69,6 +69,18 @@ public sealed class GpoBackupService
 
         dynamic backupDirectory = gpm.GetBackupDir(backup.BackupDirectory);
         dynamic backupObject = backupDirectory.GetBackup(backup.BackupId.ToString("B"));
+
+        ChangePreviewGuard.Confirm(
+            new ChangePreviewRequest(
+                "Restore GPO backup",
+                string.IsNullOrWhiteSpace(backup.DisplayName)
+                    ? backup.GpoId.ToString("B")
+                    : backup.DisplayName,
+                "Current GPO state",
+                $"Backup from {backup.Timestamp:yyyy-MM-dd HH:mm:ss}",
+                $"Backup ID: {backup.BackupId:B}\nDirectory: {backup.BackupDirectory}",
+                "Restore"));
+
         dynamic result = domain.RestoreGPO(backupObject, null, null);
 
         var status = ReadOverallStatus(result);
@@ -90,6 +102,16 @@ public sealed class GpoBackupService
         dynamic gpm = CreateGpm();
         dynamic backupDirectory = gpm.GetBackupDir(backup.BackupDirectory);
         dynamic backupObject = backupDirectory.GetBackup(backup.BackupId.ToString("B"));
+
+        ChangePreviewGuard.Confirm(
+            new ChangePreviewRequest(
+                "Delete GPO backup",
+                backup.DisplayName,
+                $"{backup.BackupId:B} | {backup.Timestamp:yyyy-MM-dd HH:mm:ss}",
+                "<deleted>",
+                backup.BackupDirectory,
+                "Delete"));
+
         backupObject.Delete();
 
         TryDeleteEmptyDirectory(backup.BackupDirectory);
