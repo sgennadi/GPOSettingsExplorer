@@ -235,7 +235,8 @@
                 </Grid>
             </TabItem>
 
-            <TabItem Header="ADMX Catalog">
+            <TabItem x:Name="AdmxCatalogTab"
+                     Header="ADMX Catalog">
                 <DockPanel Margin="6">
                     <WrapPanel DockPanel.Dock="Top">
                         <TextBlock Text="Search all Administrative Template policies:" VerticalAlignment="Center"/>
