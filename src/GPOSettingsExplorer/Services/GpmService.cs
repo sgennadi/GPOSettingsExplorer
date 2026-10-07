@@ -117,12 +117,26 @@ public sealed class GpmService
         var arguments =
             $"gpme.msc /gpobject:\"{objectPath}\"";
 
+        var systemDirectory =
+            Environment.GetFolderPath(
+                Environment.SpecialFolder.System);
+
+        var mmcPath =
+            Path.Combine(
+                systemDirectory,
+                "mmc.exe");
+
         return Process.Start(
                    new ProcessStartInfo
                    {
-                       FileName = "mmc.exe",
-                       Arguments = arguments,
-                       UseShellExecute = true
+                       FileName =
+                           mmcPath,
+                       Arguments =
+                           arguments,
+                       WorkingDirectory =
+                           systemDirectory,
+                       UseShellExecute =
+                           true
                    })
                ?? throw new InvalidOperationException(
                    "Unable to start the Group Policy Management Editor.");
