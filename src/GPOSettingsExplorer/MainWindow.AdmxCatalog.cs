@@ -9,7 +9,8 @@ public partial class MainWindow
 {
     private async void LoadAdmxCatalog_Click(object sender, RoutedEventArgs e)
     {
-        await LoadAdmxCatalogIntoGridAsync();
+        await LoadAdmxCatalogIntoGridAsync(
+            forceRefresh: true);
     }
 
     private async void ConfigureAdmxPolicy_Click(object sender, RoutedEventArgs e)
@@ -27,7 +28,8 @@ public partial class MainWindow
         ApplyAdmxFilter();
     }
 
-    private async Task LoadAdmxCatalogIntoGridAsync()
+    private async Task LoadAdmxCatalogIntoGridAsync(
+        bool forceRefresh = false)
     {
         if (_domainContext is null)
         {
@@ -38,13 +40,17 @@ public partial class MainWindow
 
         try
         {
-            await EnsureAdmxCatalogAsync();
+            await EnsureAdmxCatalogAsync(
+                forceRefresh);
             ApplyAdmxFilter();
 
             AdmxCountText.Text =
                 $"{_admxPolicies?.Count ?? 0:N0} policies | {_admxCatalogService.LastLanguage} | {_admxCatalogService.LastSourcePath}";
 
-            StatusText.Text = "ADMX catalog loaded";
+            StatusText.Text =
+                forceRefresh
+                    ? "ADMX catalog refreshed and cached"
+                    : "ADMX catalog loaded";
         }
         catch (Exception ex)
         {
