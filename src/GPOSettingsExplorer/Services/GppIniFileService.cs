@@ -65,7 +65,7 @@ public sealed class GppIniFileService
                 try
                 {
                     var document =
-                        XDocument.Load(
+                        GppXmlCacheService.Load(
                             target.XmlPath,
                             LoadOptions.PreserveWhitespace);
 
@@ -285,7 +285,7 @@ public sealed class GppIniFileService
                 target.XmlPath))
         {
             document =
-                XDocument.Load(
+                GppXmlCacheService.Load(
                     target.XmlPath,
                     LoadOptions.PreserveWhitespace);
 
@@ -368,7 +368,7 @@ public sealed class GppIniFileService
             return;
 
         var document =
-            XDocument.Load(
+            GppXmlCacheService.Load(
                 target.XmlPath,
                 LoadOptions.PreserveWhitespace);
 
