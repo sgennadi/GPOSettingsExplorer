@@ -14,7 +14,7 @@ Download the latest portable build from:
 
 **[GitHub Releases](https://github.com/sgennadi/GPOSettingsExplorer/releases/latest)**
 
-Current release: **v0.2.4**
+Current release: **v0.2.5**
 
 Available packages:
 
@@ -220,7 +220,7 @@ GPOSettingsExplorer/
 
 ## Current status
 
-**v0.2.4** adds compact editable Boolean Security Options, automatic backup/audit for direct True/False changes, native MMC navigation to the selected GPO setting when supported, and native IGroupPolicyObject based Administrative Template editing.
+**v0.2.5** adds a persistent incremental All Settings cache: cached results appear immediately, only new/modified GPOs are re-indexed by GUID + ModificationTime, deleted GPOs are removed automatically, and the cache survives portable application updates under %LOCALAPPDATA%.
 
 See [CHANGELOG.md](CHANGELOG.md) for release details.
 

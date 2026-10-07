@@ -4,6 +4,16 @@
 
 - No unreleased changes yet.
 
+## 0.2.5 - 2026-10-07
+
+- All Settings now automatically loads a persistent cached settings index when the tab is opened.
+- The cache is stored under %LOCALAPPDATA%\GPOSettingsExplorer\Cache so it survives replacing or extracting a newer portable build.
+- Cached settings are displayed immediately while the application compares current GPO GUID + ModificationTime metadata in the background.
+- Only new or modified GPOs are re-indexed; deleted GPOs are removed from the cache automatically.
+- If no cache exists, opening All Settings automatically starts the first full index build.
+- Manual Rebuild index remains available as a forced full refresh.
+- Successful direct policy edits update the persistent settings cache so All Settings stays current during the same session.
+
 ## 0.2.4 - 2026-10-07
 
 - Reworked the non-ADMX Setting Value dialog into a compact Windows-style editor.
