@@ -29,7 +29,7 @@ public sealed class GppPrinterTargetWindow : Window
         Title = "New Printer Preference";
         Width = 760;
         Height = 300;
-        ResizeMode = ResizeMode.NoResize;
+        ResizeMode = ResizeMode.CanResizeWithGrip;
         WindowStartupLocation =
             WindowStartupLocation.CenterOwner;
 
