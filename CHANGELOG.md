@@ -4,6 +4,15 @@
 
 - No unreleased changes yet.
 
+## 0.2.10 - 2026-10-07
+
+- GPO Scripts now supports multi-select search scoping by both policies and files. Use Select GPOs... to choose one or more GPOs and Ctrl/Shift in the script grid to choose one or more files; when both are selected, search uses their intersection.
+- The script search bar shows the active scope and match counts so it is clear whether the query is running across all GPOs, selected policies, selected files, or both.
+- After saving a script, the active search is automatically rerun against the newly saved content. A fixed wmic/vbs/etc. match disappears from the result list immediately without pressing Find again.
+- Accidental outer Markdown code fences such as ```bat ... ``` are stripped from the editor view and again before saving, so chat/Markdown wrappers cannot be written back into BAT/CMD/PowerShell/VBS script files.
+- Exact Security Options navigation in the native Group Policy editor was strengthened for lazy-loaded MMC trees and result panes. It now supports both ListItem and DataItem rows, scrolls the target into view, and falls back to guarded UI clicks/double-clicks without unsafe SetFocus calls.
+- The GPO editor is brought to the foreground and the selected Security Option is opened when MMC exposes the corresponding row.
+
 ## 0.2.9 - 2026-10-07
 
 - GPO Scripts content search now deduplicates identical physical script contents by SHA-256. The same copied script no longer produces repeated matches for every GPO that contains it.

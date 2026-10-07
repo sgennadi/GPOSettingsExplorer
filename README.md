@@ -14,7 +14,7 @@ Download the latest portable build from:
 
 **[GitHub Releases](https://github.com/sgennadi/GPOSettingsExplorer/releases/latest)**
 
-Current release: **v0.2.9**
+Current release: **v0.2.10**
 
 Available packages:
 
@@ -68,9 +68,12 @@ The builds are self-contained. A separate .NET runtime installation is not requi
 - Edit BAT, CMD, PS1, PSM1, PSD1, VBS, JS, WSF, and HTA text files in the built-in editor.
 - Editing never executes the script.
 - Every save creates a GPO backup, updates the Scripts extension revision, writes an audit entry, and rolls back the file if the GPO revision update fails.
-- Search script contents in **All files** or a **Selected file**. Searches such as `wmic`, `.vbs`, `cscript`, `powershell.exe`, or `net use` return file, line number, and matching text.
+- Search script contents for `wmic`, `.vbs`, `cscript`, `powershell.exe`, `net use`, or any other text.
+- Search can be limited to one or more selected GPOs, one or more selected files, or the intersection of both selections. File rows use standard Ctrl/Shift multi-selection.
 - Identical script copies are grouped by SHA-256 content, so the same `bgscript.bat` copied into many GPOs appears only once per matching line. The results show copy/reference counts instead of repeating GPO names.
 - If an identical script has multiple physical GPO copies, double-clicking a result asks which copy to edit only at that point.
+- After Save, the current search is rerun automatically against the saved content, so resolved matches disappear immediately.
+- Outer Markdown wrappers such as ```bat / ``` are removed before editing/saving and are never written back to SYSVOL.
 
 ### Group Policy Preferences
 
@@ -234,7 +237,7 @@ GPOSettingsExplorer/
 
 ## Current status
 
-**v0.2.9** deduplicates identical GPO script search results by file content, adds copy selection only when editing a duplicated script, hardens exact MMC navigation against focus/COM errors, avoids exact-navigation claims for unmappable generic report rows, and removes raw RegistrySettings duplicates of Security Options from All Settings.
+**v0.2.10** adds multi-GPO and multi-file script search scopes, automatic search refresh after script saves, Markdown-fence cleanup for edited scripts, and stronger exact Security Options navigation in the native Group Policy editor.
 
 See [CHANGELOG.md](CHANGELOG.md) for release details.
 
