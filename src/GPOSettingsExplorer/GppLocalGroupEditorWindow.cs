@@ -346,7 +346,7 @@ public sealed class GppLocalGroupEditorWindow : Window
             };
 
         var memberButtons =
-            new StackPanel
+            new WrapPanel
             {
                 Orientation =
                     Orientation.Horizontal
