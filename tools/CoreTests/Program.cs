@@ -130,6 +130,26 @@ static void TestScriptSearchModes()
         var edited = service.ReadDocument(nameMatch);
         Assert(!string.IsNullOrWhiteSpace(edited.OriginalSha256),
             "Script editor did not capture the original file checksum.");
+        Assert(edited.NewLine == "\r\n",
+            "The script's CRLF line endings were not detected correctly.");
+
+        var otherNameSameBody = Path.Combine(root, "other-script.cmd");
+        File.Copy(nameMatch, otherNameSameBody);
+        var alternate = new GpoScriptInfo
+        {
+            GpoId = Guid.NewGuid(),
+            GpoName = "A first alphabetically",
+            DomainName = "example.test",
+            Scope = "Computer",
+            FileName = "other-script.cmd",
+            FullPath = otherNameSameBody,
+            Exists = true
+        };
+        var collidingContent = scripts.Append(alternate).ToArray();
+        var fileMatches = service.SearchContent(
+            collidingContent, "bat", mode: GpoScriptSearchMode.FileNamesAndPaths);
+        Assert(fileMatches.Count == 1 && fileMatches[0].FileName == "sample.bat",
+            "Metadata search showed a different filename with identical script contents.");
     }
     finally
     {
