@@ -2,6 +2,10 @@ using System.Text.Json;
 
 namespace GPOSettingsExplorer.Services;
 
+public sealed record WorkspaceSortDescription(
+    string Property,
+    string Direction);
+
 public sealed class WorkspaceState
 {
     public double WindowLeft { get; set; } = double.NaN;
@@ -18,6 +22,10 @@ public sealed class WorkspaceState
     public List<Guid> FavoriteGpoIds { get; set; } = new();
     public List<Guid> RecentGpoIds { get; set; } = new();
     public Dictionary<string, List<double>> GridColumnWidths { get; set; } =
+        new(
+            StringComparer.OrdinalIgnoreCase);
+
+    public Dictionary<string, List<WorkspaceSortDescription>> GridSorts { get; set; } =
         new(
             StringComparer.OrdinalIgnoreCase);
 }
