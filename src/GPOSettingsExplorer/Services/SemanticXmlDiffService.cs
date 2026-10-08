@@ -193,9 +193,19 @@ public sealed class SemanticXmlDiffService
                 name] =
                 index + 1;
 
+            var identity =
+                Identity(
+                    child);
+
+            var childPath =
+                string.IsNullOrWhiteSpace(
+                    identity)
+                    ? $"{currentPath}/{name}#{index + 1}"
+                    : $"{currentPath}/{name}";
+
             Visit(
                 child,
-                $"{currentPath}/{name}#{index + 1}",
+                childPath,
                 result);
         }
     }
