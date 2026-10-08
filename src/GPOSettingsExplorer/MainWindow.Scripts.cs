@@ -575,85 +575,20 @@ public partial class MainWindow
                 new GpoScriptEditorWindow(
                     script,
                     document,
-                    lineNumber)
+                    lineNumber,
+                    editedText => SaveGpoScriptEditorChangesAsync(
+                        script,
+                        document,
+                        editedText,
+                        removedMarkdownFence,
+                        selectionBeforeEdit))
                 {
-                    Owner =
-                        this
+                    Owner = this
                 };
 
-            if (editor.ShowDialog() != true)
-            {
-                return;
-            }
-
-            // Never create a backup and start a write if the operator
-            // has left the application in read-only mode.
-            if (!EditingGuard.IsEnabled)
-            {
-                MessageBox.Show(
-                    this,
-                    "Script saving is blocked by Safe mode: READ ONLY. Enable WRITE ENABLED in the main toolbar, reopen the script and save again.",
-                    "GPO Scripts - Read only",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Warning);
-                return;
-            }
-
-            SetBusy(
-                true,
-                "Backing up GPO before script edit...");
-
-            var backupPath =
-                await Task.Run(() =>
-                    _gpmService.BackupGpo(
-                        _domainContext.DomainName,
-                        script.GpoId,
-                        $"Automatic backup before editing script '{script.FileName}'"));
-
-            var gpo =
-                _gpos.FirstOrDefault(item =>
-                    item.Id ==
-                    script.GpoId)
-                ?? throw new InvalidOperationException(
-                    "The script's GPO is no longer available.");
-
-            document.Text =
-                ScriptTextSanitizer.StripOuterMarkdownFence(
-                    editor.ScriptText,
-                    out _);
-
-            await StaTask.Run(() =>
-                _gpoScriptService.SaveDocument(
-                    gpo,
-                    _domainContext.DomainDistinguishedName,
-                    script,
-                    document));
-
-            _auditService.Write(
-                "Edit GPO Script",
-                "GPO Script",
-                script.FileName,
-                $"GPO: {gpo.DisplayName}; Assignment: {script.Assignment}; Path: {script.FullPath}; Backup: {backupPath}");
-
-            await LoadGpoScriptsAsync(
-                forceRefresh: false);
-
-            RestoreGpoScriptSelection(
-                selectionBeforeEdit);
-
-            var remainingMatches =
-                await RecalculateCurrentGpoScriptSearchAsync(
-                    showValidationMessages: false);
-
-            var markdownNote =
-                removedMarkdownFence
-                    ? " Markdown wrapper removed."
-                    : string.Empty;
-
-            StatusText.Text =
-                remainingMatches is null
-                    ? $"Saved {script.FileName}.{markdownNote} Backup: {backupPath}"
-                    : $"Saved {script.FileName}.{markdownNote} Search refreshed: {remainingMatches.Value:N0} unique match(es) remain. Backup: {backupPath}";
+            // The editor stays open while its Save callback is running. Failed
+            // backups, SYSVOL copies and GPO commits do not discard the text.
+            editor.ShowDialog();
         }
         catch (Exception ex)
         {
@@ -668,6 +603,83 @@ public partial class MainWindow
         {
             SetBusy(
                 false);
+        }
+    }
+
+    private async Task SaveGpoScriptEditorChangesAsync(
+        GpoScriptInfo script,
+        GpoScriptDocument document,
+        string editedText,
+        bool removedMarkdownFence,
+        IReadOnlyList<ScriptSelectionKey> selectionBeforeEdit)
+    {
+        EditingGuard.EnsureEnabled("Save GPO script");
+        var context = _domainContext
+            ?? throw new InvalidOperationException("The Active Directory connection is no longer available.");
+
+        document.Text = ScriptTextSanitizer.StripOuterMarkdownFence(editedText, out _);
+        if (document.Text.Equals(document.OriginalText, StringComparison.Ordinal))
+        {
+            StatusText.Text = "No changes to " + script.FileName;
+            return;
+        }
+
+        var gpo = _gpos.FirstOrDefault(item => item.Id == script.GpoId)
+            ?? throw new InvalidOperationException("The script's GPO is no longer available.");
+
+        SetBusy(true, "Backing up GPO before script edit...");
+
+        try
+        {
+            var backupPath = await Task.Run(() =>
+                _gpmService.BackupGpo(
+                    context.DomainName,
+                    script.GpoId,
+                    $"Automatic backup before editing script '{script.FileName}'"));
+
+            SetBusy(true, "Writing and verifying script in SYSVOL...");
+            await StaTask.Run(() =>
+                _gpoScriptService.SaveDocument(
+                    gpo,
+                    context.DomainDistinguishedName,
+                    script,
+                    document));
+
+            try
+            {
+                _auditService.Write(
+                    "Edit GPO Script",
+                    "GPO Script",
+                    script.FileName,
+                    $"GPO: {gpo.DisplayName}; Assignment: {script.Assignment}; Path: {script.FullPath}; Backup: {backupPath}");
+            }
+            catch (Exception auditError)
+            {
+                CrashLogService.Write("GPO script saved but audit logging failed", auditError);
+            }
+
+            StatusText.Text = $"Saved and verified {script.FileName}. Backup: {backupPath}";
+
+            try
+            {
+                await LoadGpoScriptsAsync(forceRefresh: true);
+                RestoreGpoScriptSelection(selectionBeforeEdit);
+                var matches = await RecalculateCurrentGpoScriptSearchAsync(showValidationMessages: false);
+
+                var note = removedMarkdownFence ? " Markdown wrapper removed." : string.Empty;
+                StatusText.Text = matches is null
+                    ? $"Saved {script.FileName}.{note} Backup: {backupPath}"
+                    : $"Saved {script.FileName}.{note} Search refreshed: {matches.Value:N0} unique match(es) remain. Backup: {backupPath}";
+            }
+            catch (Exception refreshError)
+            {
+                CrashLogService.Write("GPO script saved but refresh failed", refreshError);
+                StatusText.Text = $"Saved {script.FileName}. Backup: {backupPath}. Refresh failed; use Refresh manually.";
+            }
+        }
+        finally
+        {
+            SetBusy(false);
         }
     }
 
