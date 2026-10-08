@@ -237,7 +237,7 @@
                             BorderThickness="0,1,0,0"
                             Padding="0,6,0,0">
                         <WrapPanel>
-                            <TextBlock Text="Search file contents:"
+                            <TextBlock Text="Find in scripts:"
                                        VerticalAlignment="Center"/>
                             <TextBox x:Name="GpoScriptContentSearchBox"
                                      Width="300"/>
