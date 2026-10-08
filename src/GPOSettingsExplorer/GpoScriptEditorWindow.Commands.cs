@@ -169,6 +169,81 @@ public sealed partial class GpoScriptEditorWindow
             UiStyle.MonospaceFontSize * 2.5);
     }
 
+    private void CommentSelection(bool add)
+    {
+        var extension = Path.GetExtension(_script.FileName);
+        if (!ScriptSyntaxService.IsPowerShell(_script.FileName) &&
+            !ScriptSyntaxService.IsBatch(_script.FileName))
+        {
+            _validationMessage = "Comment tool is currently available for BAT, CMD and PowerShell only";
+            UpdateStatus();
+            return;
+        }
+
+        var prefix = ScriptSyntaxService.IsPowerShell(_script.FileName) ? "# " : "rem ";
+        TransformSelectedLines(line =>
+        {
+            if (add)
+                return prefix + line;
+
+            var trimmed = line.TrimStart();
+            var leading = line.Length - trimmed.Length;
+            if (trimmed.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                return line.Remove(leading, prefix.Length);
+            if (ScriptSyntaxService.IsPowerShell(_script.FileName) &&
+                trimmed.StartsWith("#", StringComparison.Ordinal))
+                return line.Remove(leading, 1);
+            if (ScriptSyntaxService.IsBatch(_script.FileName) &&
+                trimmed.StartsWith("::", StringComparison.Ordinal))
+                return line.Remove(leading, 2);
+            return line;
+        });
+    }
+
+    private void ChangeIndent(bool add)
+    {
+        TransformSelectedLines(line =>
+        {
+            if (add)
+                return "    " + line;
+            if (line.StartsWith("\t", StringComparison.Ordinal))
+                return line[1..];
+            var spaces = line.TakeWhile(ch => ch == ' ').Count();
+            return spaces == 0 ? line : line[Math.Min(spaces, 4)..];
+        });
+    }
+
+    private void TransformSelectedLines(Func<string, string> transform)
+    {
+        var doc = _editor.Document;
+        if (doc is null)
+            return;
+
+        var start = _editor.SelectionStart;
+        var end = Math.Max(start, start + _editor.SelectionLength - 1);
+        var first = doc.GetLineByOffset(Math.Clamp(start, 0, doc.TextLength)).LineNumber;
+        var last = doc.GetLineByOffset(Math.Clamp(end, 0, doc.TextLength)).LineNumber;
+        doc.BeginUpdate();
+        try
+        {
+            for (var lineNo = last; lineNo >= first; lineNo--)
+            {
+                var line = doc.GetLineByNumber(lineNo);
+                var oldText = doc.GetText(line);
+                var newText = transform(oldText);
+                if (!oldText.Equals(newText, StringComparison.Ordinal))
+                    doc.Replace(line.Offset, line.Length, newText);
+            }
+        }
+        finally
+        {
+            doc.EndUpdate();
+        }
+
+        _editor.Focus();
+        UpdateStatus();
+    }
+
     private async Task<IReadOnlyList<ScriptDiagnostic>> ValidateAsync(bool showPanel)
     {
         var text = _editor.Text;
