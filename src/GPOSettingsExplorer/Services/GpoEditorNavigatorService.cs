@@ -45,8 +45,14 @@ public sealed class GpoEditorNavigatorService
         PolicySettingInfo setting)
     {
         return setting.Extension.Equals(
-            "SecuritySettings",
-            StringComparison.OrdinalIgnoreCase);
+                   "SecuritySettings",
+                   StringComparison.OrdinalIgnoreCase) ||
+               setting.Extension.Equals(
+                   "AuditSettings",
+                   StringComparison.OrdinalIgnoreCase) ||
+               setting.Extension.Equals(
+                   "SoftwareInstallationSettings",
+                   StringComparison.OrdinalIgnoreCase);
     }
 
     public async Task<bool> OpenAtSettingAsync(
@@ -400,6 +406,51 @@ public sealed class GpoEditorNavigatorService
             };
         }
 
+        if (setting.Extension.Equals(
+                "AuditSettings",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            var category =
+                LastCategorySegment(
+                    setting.Category);
+
+            var path =
+                new List<string>
+                {
+                    scope,
+                    "Policies",
+                    "Windows Settings",
+                    "Security Settings",
+                    "Advanced Audit Policy Configuration",
+                    "Audit Policies"
+                };
+
+            if (!string.IsNullOrWhiteSpace(
+                    category) &&
+                !category.Equals(
+                    "Audit Policies",
+                    StringComparison.CurrentCultureIgnoreCase))
+            {
+                path.Add(
+                    category);
+            }
+
+            return path;
+        }
+
+        if (setting.Extension.Equals(
+                "SoftwareInstallationSettings",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return new[]
+            {
+                scope,
+                "Policies",
+                "Software Settings",
+                "Software installation"
+            };
+        }
+
         return new[]
         {
             scope,
@@ -409,6 +460,27 @@ public sealed class GpoEditorNavigatorService
             "Local Policies",
             "Security Options"
         };
+    }
+
+    private static string LastCategorySegment(
+        string category)
+    {
+        if (string.IsNullOrWhiteSpace(
+                category))
+        {
+            return string.Empty;
+        }
+
+        var parts =
+            category.Split(
+                '>',
+                StringSplitOptions.TrimEntries |
+                StringSplitOptions.RemoveEmptyEntries);
+
+        return parts.Length ==
+            0
+                ? string.Empty
+                : parts[^1];
     }
 
     private static AutomationElement? FindTreeItem(
