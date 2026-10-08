@@ -586,6 +586,19 @@ public partial class MainWindow
                 return;
             }
 
+            // Never create a backup and start a write if the operator
+            // has left the application in read-only mode.
+            if (!EditingGuard.IsEnabled)
+            {
+                MessageBox.Show(
+                    this,
+                    "Script saving is blocked by Safe mode: READ ONLY. Enable WRITE ENABLED in the main toolbar, reopen the script and save again.",
+                    "GPO Scripts - Read only",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                return;
+            }
+
             SetBusy(
                 true,
                 "Backing up GPO before script edit...");
