@@ -19,9 +19,16 @@ public sealed class GpoEditorNavigatorService
     private const int LvmEnsureVisible = LvmFirst + 19;
     private const int LvmSetItemState = LvmFirst + 43;
     private const int LvmGetItemTextW = LvmFirst + 115;
+    private const int LvmGetNextItem = LvmFirst + 12;
     private const uint LvifText = 0x0001;
     private const uint LvisFocused = 0x0001;
     private const uint LvisSelected = 0x0002;
+    private const int LvniFocused = 0x0001;
+    private const int LvniSelected = 0x0002;
+    private const int WmSetFocus = 0x0007;
+    private const int WmKeyDown = 0x0100;
+    private const int WmKeyUp = 0x0101;
+    private const int VkReturn = 0x0D;
     private const int LvirBounds = 0;
 
     private const uint ProcessVmOperation = 0x0008;
@@ -242,6 +249,7 @@ public sealed class GpoEditorNavigatorService
 
             if (TryOpenNativeListViewSetting(
                     process,
+                    setting,
                     candidates,
                     cancellationToken,
                     out var nativeDiagnostics))
@@ -1355,6 +1363,7 @@ public sealed class GpoEditorNavigatorService
 
     private static bool TryOpenNativeListViewSetting(
         Process process,
+        PolicySettingInfo setting,
         IReadOnlyList<string> candidates,
         CancellationToken cancellationToken,
         out string diagnostics)
@@ -1443,13 +1452,10 @@ public sealed class GpoEditorNavigatorService
                 }
 
                 var match =
-                    rows.FirstOrDefault(
-                        row =>
-                            candidates.Any(
-                                candidate =>
-                                    TextMatches(
-                                        row.Text,
-                                        candidate)));
+                    FindBestNativeListViewMatch(
+                        rows,
+                        setting,
+                        candidates);
 
                 if (match is null)
                 {
@@ -1463,13 +1469,18 @@ public sealed class GpoEditorNavigatorService
                         process,
                         processHandle,
                         listView,
-                        match.Index))
+                        match.Index,
+                        out var selectedIndex,
+                        out var focusedIndex))
                 {
                     builder.AppendLine(
-                        "  Matching row was found, but native selection/open failed.");
+                        $"  Matching row was found, but native selection/open failed. Selected={selectedIndex}, Focused={focusedIndex}.");
 
                     continue;
                 }
+
+                builder.AppendLine(
+                    $"  Native row confirmed selected/focused at index {match.Index}; opened with Enter.");
 
                 diagnostics =
                     builder.ToString();
@@ -1487,6 +1498,56 @@ public sealed class GpoEditorNavigatorService
             builder.ToString();
 
         return false;
+    }
+
+    private static NativeListViewRow? FindBestNativeListViewMatch(
+        IReadOnlyList<NativeListViewRow> rows,
+        PolicySettingInfo setting,
+        IReadOnlyList<string> candidates)
+    {
+        var target =
+            NormalizeUiText(
+                setting.SettingName);
+
+        foreach (var row in rows)
+        {
+            var firstColumn =
+                NormalizeUiText(
+                    row.Text.Split(
+                            " | ",
+                            StringSplitOptions.None)
+                        .FirstOrDefault()
+                    ?? string.Empty);
+
+            if (firstColumn.Equals(
+                    target,
+                    StringComparison.CurrentCultureIgnoreCase))
+            {
+                return row;
+            }
+
+            var trimmed =
+                firstColumn
+                    .TrimEnd(
+                        '.')
+                    .TrimEnd();
+
+            if (trimmed.Length >= 28 &&
+                target.StartsWith(
+                    trimmed,
+                    StringComparison.CurrentCultureIgnoreCase))
+            {
+                return row;
+            }
+        }
+
+        return rows.FirstOrDefault(
+            row =>
+                candidates.Any(
+                    candidate =>
+                        TextMatches(
+                            row.Text,
+                            candidate)));
     }
 
     private static IReadOnlyList<IntPtr> FindNativeListViews(
@@ -1735,8 +1796,16 @@ public sealed class GpoEditorNavigatorService
         Process process,
         IntPtr processHandle,
         IntPtr listView,
-        int index)
+        int index,
+        out int selectedIndex,
+        out int focusedIndex)
     {
+        selectedIndex =
+            -1;
+
+        focusedIndex =
+            -1;
+
         var itemSize =
             Marshal.SizeOf<NativeLvItem>();
 
@@ -1749,48 +1818,41 @@ public sealed class GpoEditorNavigatorService
                 MemReserve,
                 PageReadWrite);
 
-        var rectSize =
-            Marshal.SizeOf<NativeRect>();
-
-        var remoteRect =
-            VirtualAllocEx(
-                processHandle,
-                IntPtr.Zero,
-                (UIntPtr)rectSize,
-                MemCommit |
-                MemReserve,
-                PageReadWrite);
-
         if (remoteItem ==
-                IntPtr.Zero ||
-            remoteRect ==
-                IntPtr.Zero)
+            IntPtr.Zero)
         {
-            if (remoteItem !=
-                IntPtr.Zero)
-            {
-                VirtualFreeEx(
-                    processHandle,
-                    remoteItem,
-                    UIntPtr.Zero,
-                    MemRelease);
-            }
-
-            if (remoteRect !=
-                IntPtr.Zero)
-            {
-                VirtualFreeEx(
-                    processHandle,
-                    remoteRect,
-                    UIntPtr.Zero,
-                    MemRelease);
-            }
-
             return false;
         }
 
         try
         {
+            var clearState =
+                new NativeLvItem
+                {
+                    State =
+                        0,
+                    StateMask =
+                        LvisSelected |
+                        LvisFocused
+                };
+
+            if (!WriteRemoteStructure(
+                    processHandle,
+                    remoteItem,
+                    clearState,
+                    itemSize))
+            {
+                return false;
+            }
+
+            _ =
+                SendMessage(
+                    listView,
+                    LvmSetItemState,
+                    new IntPtr(
+                        -1),
+                    remoteItem);
+
             var state =
                 new NativeLvItem
                 {
@@ -1826,65 +1888,30 @@ public sealed class GpoEditorNavigatorService
                     IntPtr.Zero);
 
             Thread.Sleep(
-                150);
+                120);
 
-            var rect =
-                new NativeRect
-                {
-                    Left =
-                        LvirBounds
-                };
+            selectedIndex =
+                checked(
+                    (int)SendMessage(
+                        listView,
+                        LvmGetNextItem,
+                        new IntPtr(
+                            -1),
+                        (IntPtr)LvniSelected));
 
-            if (!WriteRemoteStructure(
-                    processHandle,
-                    remoteRect,
-                    rect,
-                    rectSize))
-            {
-                return false;
-            }
+            focusedIndex =
+                checked(
+                    (int)SendMessage(
+                        listView,
+                        LvmGetNextItem,
+                        new IntPtr(
+                            -1),
+                        (IntPtr)LvniFocused));
 
-            var rectResult =
-                SendMessage(
-                    listView,
-                    LvmGetItemRect,
-                    (IntPtr)index,
-                    remoteRect);
-
-            if (rectResult ==
-                IntPtr.Zero ||
-                !ReadRemoteStructure(
-                    processHandle,
-                    remoteRect,
-                    out rect))
-            {
-                return false;
-            }
-
-            var point =
-                new NativePoint
-                {
-                    X =
-                        rect.Left +
-                        Math.Min(
-                            Math.Max(
-                                20,
-                                (rect.Right -
-                                 rect.Left) /
-                                2),
-                            320),
-                    Y =
-                        rect.Top +
-                        Math.Max(
-                            4,
-                            (rect.Bottom -
-                             rect.Top) /
-                            2)
-                };
-
-            if (!ClientToScreen(
-                    listView,
-                    ref point))
+            if (selectedIndex !=
+                    index ||
+                focusedIndex !=
+                    index)
             {
                 return false;
             }
@@ -1896,19 +1923,29 @@ public sealed class GpoEditorNavigatorService
             SetForegroundWindow(
                 process.MainWindowHandle);
 
-            if (!SetCursorPos(
-                    point.X,
-                    point.Y))
-            {
-                return false;
-            }
-
-            MouseClick();
+            _ =
+                SendMessage(
+                    listView,
+                    WmSetFocus,
+                    IntPtr.Zero,
+                    IntPtr.Zero);
 
             Thread.Sleep(
-                120);
+                80);
 
-            MouseClick();
+            _ =
+                SendMessage(
+                    listView,
+                    WmKeyDown,
+                    (IntPtr)VkReturn,
+                    IntPtr.Zero);
+
+            _ =
+                SendMessage(
+                    listView,
+                    WmKeyUp,
+                    (IntPtr)VkReturn,
+                    IntPtr.Zero);
 
             return true;
         }
@@ -1917,12 +1954,6 @@ public sealed class GpoEditorNavigatorService
             VirtualFreeEx(
                 processHandle,
                 remoteItem,
-                UIntPtr.Zero,
-                MemRelease);
-
-            VirtualFreeEx(
-                processHandle,
-                remoteRect,
                 UIntPtr.Zero,
                 MemRelease);
         }
