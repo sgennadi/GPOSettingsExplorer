@@ -63,7 +63,14 @@ public sealed class SettingValueWindow : Window
                 Text =
                     exactNavigationAvailable
                         ? $"Exact MMC target: {GpoEditorNavigatorService.NavigationTarget(setting)}"
-                        : "The standard GPO editor will be opened.",
+                        : setting.Extension.Equals(
+                            "RegistrySettings",
+                            StringComparison.OrdinalIgnoreCase) &&
+                          setting.Value.Contains(
+                              "AdmSetting=false",
+                              StringComparison.OrdinalIgnoreCase)
+                            ? "This is an Extra Registry Setting from registry.pol (AdmSetting=false), not a Group Policy Preferences Registry item. There is no deterministic row for it in the standard GPO editor."
+                            : "The standard GPO editor will be opened.",
                 TextWrapping =
                     TextWrapping.Wrap,
                 Foreground =
