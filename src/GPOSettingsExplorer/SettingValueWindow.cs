@@ -57,6 +57,25 @@ public sealed class SettingValueWindow : Window
             footer,
             Dock.Bottom);
 
+        var navigationStatus =
+            new TextBlock
+            {
+                Text =
+                    exactNavigationAvailable
+                        ? $"Exact MMC target: {GpoEditorNavigatorService.NavigationTarget(setting)}"
+                        : "The standard GPO editor will be opened.",
+                TextWrapping =
+                    TextWrapping.Wrap,
+                Foreground =
+                    System.Windows.Media.Brushes.DimGray,
+                Margin =
+                    new Thickness(
+                        4,
+                        0,
+                        4,
+                        8)
+            };
+
         var open =
             new Button
             {
@@ -181,25 +200,6 @@ public sealed class SettingValueWindow : Window
 
         var panel =
             new StackPanel();
-
-        var navigationStatus =
-            new TextBlock
-            {
-                Text =
-                    exactNavigationAvailable
-                        ? $"Exact MMC target: {GpoEditorNavigatorService.NavigationTarget(setting)}"
-                        : "The standard GPO editor will be opened.",
-                TextWrapping =
-                    TextWrapping.Wrap,
-                Foreground =
-                    System.Windows.Media.Brushes.DimGray,
-                Margin =
-                    new Thickness(
-                        4,
-                        0,
-                        4,
-                        8)
-            };
 
         panel.Children.Add(
             navigationStatus);
