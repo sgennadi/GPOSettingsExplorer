@@ -19,7 +19,7 @@ public sealed class SettingValueWindow : Window
         PolicySettingInfo setting,
         bool canEditBoolean,
         bool exactNavigationAvailable,
-        Func<Task<bool>> openExactGpoEditor)
+        Func<IProgress<string>, Task<bool>> openExactGpoEditor)
     {
         Title =
             $"Setting Value - {setting.SettingName}";
@@ -79,8 +79,18 @@ public sealed class SettingValueWindow : Window
 
             try
             {
+                navigationStatus.Text =
+                    "Starting Group Policy Management Editor...";
+
+                var progress =
+                    new Progress<string>(
+                        message =>
+                            navigationStatus.Text =
+                                message);
+
                 var exact =
-                    await openExactGpoEditor();
+                    await openExactGpoEditor(
+                        progress);
 
                 if (exact ||
                     !exactNavigationAvailable)
@@ -102,27 +112,14 @@ public sealed class SettingValueWindow : Window
             }
             catch (Exception ex)
             {
-                var log =
-                    CrashLogService.Write(
-                        $"Open GPO editor: {setting.SettingName}",
-                        ex);
+                navigationStatus.Text =
+                    "GPO editor navigation failed.";
 
-                var message =
-                    ex.Message;
-
-                if (!string.IsNullOrWhiteSpace(
-                        log))
-                {
-                    message +=
-                        $"\n\nDiagnostic log:\n{log}";
-                }
-
-                MessageBox.Show(
+                ErrorDialog.Show(
                     this,
-                    message,
                     "Open GPO Editor",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error);
+                    $"Unable to navigate to: {GpoEditorNavigatorService.NavigationTarget(setting)}",
+                    ex);
             }
             finally
             {
@@ -184,6 +181,28 @@ public sealed class SettingValueWindow : Window
 
         var panel =
             new StackPanel();
+
+        var navigationStatus =
+            new TextBlock
+            {
+                Text =
+                    exactNavigationAvailable
+                        ? $"Exact MMC target: {GpoEditorNavigatorService.NavigationTarget(setting)}"
+                        : "The standard GPO editor will be opened.",
+                TextWrapping =
+                    TextWrapping.Wrap,
+                Foreground =
+                    System.Windows.Media.Brushes.DimGray,
+                Margin =
+                    new Thickness(
+                        4,
+                        0,
+                        4,
+                        8)
+            };
+
+        panel.Children.Add(
+            navigationStatus);
 
         panel.Children.Add(
             new TextBlock
