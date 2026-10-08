@@ -1481,15 +1481,29 @@ public sealed class GpmService
                 continue;
             }
 
-            var settingName = GetGenericSettingName(element);
+            // Advanced Audit settings must use their real subcategory names.
+            // A repeated generic "Audit Setting" label cannot identify the
+            // policy, makes text searches fail and causes unsafe MMC navigation.
+            var isAdvancedAudit =
+                extensionType.Equals("AuditSettings", StringComparison.OrdinalIgnoreCase);
+            var auditSubcategory = isAdvancedAudit &&
+                element.Name.LocalName.Equals("AuditSetting", StringComparison.OrdinalIgnoreCase)
+                    ? FindNamedValue(element, "SubcategoryName")
+                    : string.Empty;
+
+            var settingName = !string.IsNullOrWhiteSpace(auditSubcategory)
+                ? auditSubcategory
+                : GetGenericSettingName(element);
             if (string.IsNullOrWhiteSpace(settingName))
             {
                 continue;
             }
 
-            var category = string.IsNullOrWhiteSpace(extensionType)
-                ? GetNamespaceTail(element.Name.NamespaceName)
-                : extensionType;
+            var category = isAdvancedAudit
+                ? "Security Settings > Advanced Audit Policy Configuration > Audit Policies"
+                : string.IsNullOrWhiteSpace(extensionType)
+                    ? GetNamespaceTail(element.Name.NamespaceName)
+                    : extensionType;
 
             var state = GetDirectOrAttributeValue(element, "State");
             if (string.IsNullOrWhiteSpace(state))
