@@ -215,6 +215,9 @@
             <DataTrigger Binding="{Binding Referenced}" Value="False">
                 <Setter Property="Background" Value="{StaticResource UiUnassignedRowBrush}"/>
             </DataTrigger>
+            <DataTrigger Binding="{Binding ScopeDisabled}" Value="True">
+                <Setter Property="Background" Value="{StaticResource UiPartialRowBrush}"/>
+            </DataTrigger>
             <DataTrigger Binding="{Binding Exists}" Value="False">
                 <Setter Property="Background" Value="{StaticResource UiMissingRowBrush}"/>
                 <Setter Property="Foreground" Value="{StaticResource UiErrorBrush}"/>
@@ -251,6 +254,18 @@
             </DataTrigger>
             <DataTrigger Binding="{Binding Type}" Value="JS">
                 <Setter Property="Foreground" Value="{StaticResource UiFileJavaScriptBrush}"/>
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="UiScriptStatusTextStyle" TargetType="{x:Type TextBlock}">
+        <Setter Property="TextWrapping" Value="NoWrap"/>
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding ScopeDisabled}" Value="True">
+                <Setter Property="Foreground" Value="{StaticResource UiWarningBrush}"/>
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Exists}" Value="False">
+                <Setter Property="Foreground" Value="{StaticResource UiErrorBrush}"/>
             </DataTrigger>
         </Style.Triggers>
     </Style>
