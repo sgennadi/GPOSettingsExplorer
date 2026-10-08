@@ -16,8 +16,11 @@ public sealed class GpoEditorNavigatorService
         PolicySettingInfo setting)
     {
         return setting.Extension.Equals(
-            "SecuritySettings",
-            StringComparison.OrdinalIgnoreCase);
+                   "SecuritySettings",
+                   StringComparison.OrdinalIgnoreCase) ||
+               setting.Extension.Equals(
+                   "RegistrySettings",
+                   StringComparison.OrdinalIgnoreCase);
     }
 
     public async Task<bool> OpenAtSettingAsync(
@@ -105,7 +108,7 @@ public sealed class GpoEditorNavigatorService
     {
         var deadline =
             DateTime.UtcNow.AddSeconds(
-                15);
+                25);
 
         var window =
             WaitForWindow(
@@ -190,7 +193,7 @@ public sealed class GpoEditorNavigatorService
         var row =
             FindSettingRow(
                 window,
-                setting.SettingName,
+                setting,
                 deadline,
                 cancellationToken);
 
@@ -296,6 +299,19 @@ public sealed class GpoEditorNavigatorService
                 ? "User Configuration"
                 : "Computer Configuration";
 
+        if (setting.Extension.Equals(
+                "RegistrySettings",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return new[]
+            {
+                scope,
+                "Preferences",
+                "Windows Settings",
+                "Registry"
+            };
+        }
+
         return new[]
         {
             scope,
@@ -360,10 +376,19 @@ public sealed class GpoEditorNavigatorService
 
     private static AutomationElement? FindSettingRow(
         AutomationElement window,
-        string settingName,
+        PolicySettingInfo setting,
         DateTime deadline,
         CancellationToken cancellationToken)
     {
+        var candidates =
+            BuildRowCandidates(
+                setting);
+
+        if (candidates.Count == 0)
+        {
+            return null;
+        }
+
         var rowCondition =
             new OrCondition(
                 new PropertyCondition(
@@ -377,46 +402,190 @@ public sealed class GpoEditorNavigatorService
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            AutomationElementCollection rows;
+            var visible =
+                FindVisibleRow(
+                    window,
+                    candidates,
+                    rowCondition);
 
-            try
+            if (visible is not null)
             {
-                rows =
-                    window.FindAll(
-                        TreeScope.Descendants,
-                        rowCondition);
-            }
-            catch (COMException)
-            {
-                return null;
-            }
-            catch (ElementNotAvailableException)
-            {
-                return null;
-            }
-
-            foreach (AutomationElement row in rows)
-            {
-                if (ElementContainsSettingName(
-                        row,
-                        settingName))
-                {
-                    return row;
-                }
+                return visible;
             }
 
             var byText =
                 FindRowByText(
                     window,
-                    settingName);
+                    candidates);
 
             if (byText is not null)
             {
                 return byText;
             }
 
+            var virtualized =
+                FindVirtualizedRow(
+                    window,
+                    candidates);
+
+            if (virtualized is not null)
+            {
+                return virtualized;
+            }
+
+            var scrolled =
+                FindRowByScrolling(
+                    window,
+                    candidates,
+                    rowCondition,
+                    deadline,
+                    cancellationToken);
+
+            if (scrolled is not null)
+            {
+                return scrolled;
+            }
+
             Thread.Sleep(
-                220);
+                180);
+        }
+
+        return null;
+    }
+
+    private static IReadOnlyList<string> BuildRowCandidates(
+        PolicySettingInfo setting)
+    {
+        var result =
+            new List<string>();
+
+        AddCandidate(
+            result,
+            setting.SettingName);
+
+        if (setting.SettingName.StartsWith(
+                "Registry:",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            AddCandidate(
+                result,
+                setting.SettingName[
+                    "Registry:".Length..]);
+        }
+
+        if (setting.Extension.Equals(
+                "RegistrySettings",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            AddCandidate(
+                result,
+                setting.RegistryValue);
+
+            AddCandidate(
+                result,
+                ExtractSummaryValue(
+                    setting.Value,
+                    "name"));
+
+            AddCandidate(
+                result,
+                ExtractSummaryValue(
+                    setting.Value,
+                    "status"));
+        }
+
+        return result;
+    }
+
+    private static void AddCandidate(
+        ICollection<string> candidates,
+        string? value)
+    {
+        var normalized =
+            NormalizeUiText(
+                value ?? string.Empty);
+
+        if (normalized.Length < 2 ||
+            candidates.Any(
+                candidate =>
+                    candidate.Equals(
+                        normalized,
+                        StringComparison.CurrentCultureIgnoreCase)))
+        {
+            return;
+        }
+
+        candidates.Add(
+            normalized);
+    }
+
+    private static string ExtractSummaryValue(
+        string summary,
+        string name)
+    {
+        if (string.IsNullOrWhiteSpace(
+                summary))
+        {
+            return string.Empty;
+        }
+
+        foreach (var part in summary.Split(
+                     ';',
+                     StringSplitOptions.RemoveEmptyEntries |
+                     StringSplitOptions.TrimEntries))
+        {
+            var separator =
+                part.IndexOf('=');
+
+            if (separator <= 0)
+            {
+                continue;
+            }
+
+            if (!part[..separator].Trim().Equals(
+                    name,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            return part[(separator + 1)..].Trim();
+        }
+
+        return string.Empty;
+    }
+
+    private static AutomationElement? FindVisibleRow(
+        AutomationElement parent,
+        IReadOnlyList<string> candidates,
+        Condition rowCondition)
+    {
+        AutomationElementCollection rows;
+
+        try
+        {
+            rows =
+                parent.FindAll(
+                    TreeScope.Descendants,
+                    rowCondition);
+        }
+        catch (COMException)
+        {
+            return null;
+        }
+        catch (ElementNotAvailableException)
+        {
+            return null;
+        }
+
+        foreach (AutomationElement row in rows)
+        {
+            if (ElementContainsAnySettingName(
+                    row,
+                    candidates))
+            {
+                return row;
+            }
         }
 
         return null;
@@ -424,7 +593,7 @@ public sealed class GpoEditorNavigatorService
 
     private static AutomationElement? FindRowByText(
         AutomationElement window,
-        string settingName)
+        IReadOnlyList<string> candidates)
     {
         try
         {
@@ -437,9 +606,9 @@ public sealed class GpoEditorNavigatorService
 
             foreach (AutomationElement text in texts)
             {
-                if (!ElementNameMatches(
+                if (!ElementNameMatchesAny(
                         text,
-                        settingName))
+                        candidates))
                 {
                     continue;
                 }
@@ -448,7 +617,7 @@ public sealed class GpoEditorNavigatorService
                     text;
 
                 for (var depth = 0;
-                     depth < 6;
+                     depth < 8;
                      depth++)
                 {
                     current =
@@ -481,13 +650,254 @@ public sealed class GpoEditorNavigatorService
         return null;
     }
 
-    private static bool ElementContainsSettingName(
-        AutomationElement element,
-        string settingName)
+    private static AutomationElement? FindVirtualizedRow(
+        AutomationElement window,
+        IReadOnlyList<string> candidates)
     {
-        if (ElementNameMatches(
+        var containerCondition =
+            new OrCondition(
+                new PropertyCondition(
+                    AutomationElement.ControlTypeProperty,
+                    ControlType.List),
+                new PropertyCondition(
+                    AutomationElement.ControlTypeProperty,
+                    ControlType.DataGrid));
+
+        AutomationElementCollection containers;
+
+        try
+        {
+            containers =
+                window.FindAll(
+                    TreeScope.Descendants,
+                    containerCondition);
+        }
+        catch (COMException)
+        {
+            return null;
+        }
+        catch (ElementNotAvailableException)
+        {
+            return null;
+        }
+
+        foreach (AutomationElement container in containers)
+        {
+            try
+            {
+                if (!container.TryGetCurrentPattern(
+                        ItemContainerPattern.Pattern,
+                        out var value) ||
+                    value is not ItemContainerPattern pattern)
+                {
+                    continue;
+                }
+
+                foreach (var candidate in candidates)
+                {
+                    var item =
+                        pattern.FindItemByProperty(
+                            null,
+                            AutomationElement.NameProperty,
+                            candidate);
+
+                    if (item is null)
+                    {
+                        continue;
+                    }
+
+                    TryRealize(
+                        item);
+
+                    return item;
+                }
+            }
+            catch (COMException)
+            {
+            }
+            catch (InvalidOperationException)
+            {
+            }
+            catch (ElementNotAvailableException)
+            {
+            }
+        }
+
+        return null;
+    }
+
+    private static AutomationElement? FindRowByScrolling(
+        AutomationElement window,
+        IReadOnlyList<string> candidates,
+        Condition rowCondition,
+        DateTime deadline,
+        CancellationToken cancellationToken)
+    {
+        var containerCondition =
+            new OrCondition(
+                new PropertyCondition(
+                    AutomationElement.ControlTypeProperty,
+                    ControlType.List),
+                new PropertyCondition(
+                    AutomationElement.ControlTypeProperty,
+                    ControlType.DataGrid));
+
+        AutomationElementCollection containers;
+
+        try
+        {
+            containers =
+                window.FindAll(
+                    TreeScope.Descendants,
+                    containerCondition);
+        }
+        catch (COMException)
+        {
+            return null;
+        }
+        catch (ElementNotAvailableException)
+        {
+            return null;
+        }
+
+        foreach (AutomationElement container in containers)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (DateTime.UtcNow >= deadline)
+            {
+                break;
+            }
+
+            ScrollPattern? scroll =
+                null;
+
+            try
+            {
+                if (container.TryGetCurrentPattern(
+                        ScrollPattern.Pattern,
+                        out var value) &&
+                    value is ScrollPattern pattern &&
+                    pattern.Current.VerticallyScrollable)
+                {
+                    scroll =
+                        pattern;
+                }
+            }
+            catch (COMException)
+            {
+            }
+            catch (InvalidOperationException)
+            {
+            }
+            catch (ElementNotAvailableException)
+            {
+            }
+
+            if (scroll is null)
+            {
+                continue;
+            }
+
+            try
+            {
+                scroll.SetScrollPercent(
+                    ScrollPattern.NoScroll,
+                    0);
+            }
+            catch (COMException)
+            {
+            }
+            catch (InvalidOperationException)
+            {
+            }
+            catch (ElementNotAvailableException)
+            {
+                continue;
+            }
+
+            for (var page = 0;
+                 page < 80 &&
+                 DateTime.UtcNow < deadline;
+                 page++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                Thread.Sleep(
+                    70);
+
+                var row =
+                    FindVisibleRow(
+                        container,
+                        candidates,
+                        rowCondition);
+
+                if (row is not null)
+                {
+                    return row;
+                }
+
+                double before;
+
+                try
+                {
+                    before =
+                        scroll.Current.VerticalScrollPercent;
+
+                    scroll.Scroll(
+                        ScrollAmount.NoAmount,
+                        ScrollAmount.LargeIncrement);
+
+                    Thread.Sleep(
+                        70);
+
+                    var after =
+                        scroll.Current.VerticalScrollPercent;
+
+                    if (after >= 99.9 ||
+                        Math.Abs(
+                            after -
+                            before) < 0.01)
+                    {
+                        var finalRow =
+                            FindVisibleRow(
+                                container,
+                                candidates,
+                                rowCondition);
+
+                        if (finalRow is not null)
+                        {
+                            return finalRow;
+                        }
+
+                        break;
+                    }
+                }
+                catch (COMException)
+                {
+                    break;
+                }
+                catch (InvalidOperationException)
+                {
+                    break;
+                }
+                catch (ElementNotAvailableException)
+                {
+                    break;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static bool ElementContainsAnySettingName(
+        AutomationElement element,
+        IReadOnlyList<string> candidates)
+    {
+        if (ElementNameMatchesAny(
                 element,
-                settingName))
+                candidates))
         {
             return true;
         }
@@ -503,9 +913,9 @@ public sealed class GpoEditorNavigatorService
 
             foreach (AutomationElement text in texts)
             {
-                if (ElementNameMatches(
+                if (ElementNameMatchesAny(
                         text,
-                        settingName))
+                        candidates))
                 {
                     return true;
                 }
@@ -521,15 +931,20 @@ public sealed class GpoEditorNavigatorService
         return false;
     }
 
-    private static bool ElementNameMatches(
+    private static bool ElementNameMatchesAny(
         AutomationElement element,
-        string expected)
+        IReadOnlyList<string> candidates)
     {
         try
         {
-            return TextMatches(
-                element.Current.Name,
-                expected);
+            var actual =
+                element.Current.Name;
+
+            return candidates.Any(
+                expected =>
+                    TextMatches(
+                        actual,
+                        expected));
         }
         catch (ElementNotAvailableException)
         {
@@ -560,18 +975,55 @@ public sealed class GpoEditorNavigatorService
                    StringComparison.CurrentCultureIgnoreCase) ||
                normalizedActual.StartsWith(
                    normalizedExpected,
+                   StringComparison.CurrentCultureIgnoreCase) ||
+               normalizedActual.Contains(
+                   normalizedExpected,
                    StringComparison.CurrentCultureIgnoreCase);
     }
 
     private static string NormalizeUiText(
         string value)
     {
+        var cleaned =
+            (value ?? string.Empty)
+            .Replace(
+                "&",
+                string.Empty,
+                StringComparison.Ordinal)
+            .Replace(
+                "…",
+                "...",
+                StringComparison.Ordinal);
+
         return string.Join(
             " ",
-            (value ?? string.Empty)
-                .Split(
-                    (char[]?)null,
-                    StringSplitOptions.RemoveEmptyEntries));
+            cleaned.Split(
+                (char[]?)null,
+                StringSplitOptions.RemoveEmptyEntries));
+    }
+
+    private static void TryRealize(
+        AutomationElement element)
+    {
+        try
+        {
+            if (element.TryGetCurrentPattern(
+                    VirtualizedItemPattern.Pattern,
+                    out var value) &&
+                value is VirtualizedItemPattern pattern)
+            {
+                pattern.Realize();
+            }
+        }
+        catch (COMException)
+        {
+        }
+        catch (InvalidOperationException)
+        {
+        }
+        catch (ElementNotAvailableException)
+        {
+        }
     }
 
     private static void TryExpand(
