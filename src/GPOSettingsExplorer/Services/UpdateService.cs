@@ -37,10 +37,18 @@ public sealed class UpdateService
     public UpdateService()
     {
         _client =
-            new HttpClient();
+            new HttpClient
+            {
+                Timeout =
+                    TimeSpan.FromSeconds(
+                        20)
+            };
 
         _client.DefaultRequestHeaders.UserAgent.ParseAdd(
             "GPOSettingsExplorer-update-check");
+
+        _client.DefaultRequestHeaders.Accept.ParseAdd(
+            "application/vnd.github+json");
     }
 
     public async Task<UpdateInfo> CheckAsync(
