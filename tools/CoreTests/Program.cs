@@ -87,8 +87,8 @@ static void TestScriptSearchModes()
     {
         var nameMatch = Path.Combine(root, "sample.bat");
         var bodyMatch = Path.Combine(root, "content.cmd");
-        File.WriteAllText(nameMatch, "@echo off\\r\\necho hello\\r\\n");
-        File.WriteAllText(bodyMatch, "@echo off\\r\\necho bat appears in the script body\\r\\n");
+        File.WriteAllText(nameMatch, "@echo off\r\necho hello\r\n");
+        File.WriteAllText(bodyMatch, "@echo off\r\necho bat appears in the script body\r\n");
 
         var scripts = new[] { nameMatch, bodyMatch }
             .Select(path => new GpoScriptInfo
