@@ -65,6 +65,15 @@ foreach (var file in files)
     CheckMultilineTextBoxHeight(
         relative,
         text);
+
+    if (relative.Equals(
+            "MainWindow.xaml",
+            StringComparison.OrdinalIgnoreCase))
+    {
+        CheckOverviewCheckBoxColumns(
+            relative,
+            text);
+    }
 }
 
 var manifest = Path.Combine(root, "app.manifest");
@@ -142,6 +151,48 @@ void Check(
 
         violations.Add(
             $"{relative}:{line}: {message}");
+    }
+}
+
+void CheckOverviewCheckBoxColumns(
+    string relative,
+    string text)
+{
+    var columns =
+        new Regex(
+            @"<DataGridCheckBoxColumn\b(?<attrs>[\s\S]*?)/>",
+            RegexOptions.CultureInvariant);
+
+    foreach (Match match in columns.Matches(text))
+    {
+        var attrs =
+            match.Groups["attrs"].Value;
+
+        if (!Regex.IsMatch(
+                attrs,
+                @"Binding\s*=\s*""\{Binding\s+[^""]*\bMode\s*=\s*OneWay\b[^""]*\}""",
+                RegexOptions.IgnoreCase |
+                RegexOptions.CultureInvariant))
+        {
+            var line =
+                1 + text.AsSpan(0, match.Index).Count('\n');
+
+            violations.Add(
+                $"{relative}:{line}: MainWindow DataGridCheckBoxColumn bindings must use Mode=OneWay so computed/read-only properties cannot create TwoWay binding failures.");
+        }
+
+        if (!Regex.IsMatch(
+                attrs,
+                @"IsReadOnly\s*=\s*""True""",
+                RegexOptions.IgnoreCase |
+                RegexOptions.CultureInvariant))
+        {
+            var line =
+                1 + text.AsSpan(0, match.Index).Count('\n');
+
+            violations.Add(
+                $"{relative}:{line}: MainWindow DataGridCheckBoxColumn must be IsReadOnly=True. Changes belong in the dedicated editor/action workflow.");
+        }
     }
 }
 
