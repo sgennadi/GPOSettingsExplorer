@@ -127,11 +127,8 @@ public sealed class SettingValueWindow : Window
 
                 MessageBox.Show(
                     this,
-                    setting.Extension.Equals(
-                        "RegistrySettings",
-                        StringComparison.OrdinalIgnoreCase)
-                        ? "The selected GPO was opened. MMC did not expose the exact Group Policy Preferences Registry item reliably, so the Registry node remains open for manual selection."
-                        : "The selected GPO was opened. MMC did not expose the exact Security Option row reliably, so the Security Options node remains open for manual selection.",
+                    BuildNavigationFallbackMessage(
+                        setting),
                     "GPO Editor Navigation",
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
@@ -373,6 +370,33 @@ public sealed class SettingValueWindow : Window
         {
             _booleanCombo?.Focus();
         };
+    }
+
+    private static string BuildNavigationFallbackMessage(
+        PolicySettingInfo setting)
+    {
+        if (setting.Extension.Equals(
+                "RegistrySettings",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return "The selected GPO was opened. This raw Registry setting does not map to a deterministic editable row in the standard GPO editor, so the closest Registry node remains open.";
+        }
+
+        if (setting.Extension.Equals(
+                "AuditSettings",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return "The selected GPO was opened at Advanced Audit Policy Configuration, but MMC did not expose the exact audit subcategory row reliably. The matching audit category remains open for manual selection.";
+        }
+
+        if (setting.Extension.Equals(
+                "SoftwareInstallationSettings",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return "The selected GPO was opened at Software installation, but MMC did not expose the exact package row reliably. The Software installation node remains open for manual selection.";
+        }
+
+        return "The selected GPO was opened. MMC did not expose the exact Security Option row reliably, so the Security Options node remains open for manual selection.";
     }
 
     private static string BuildRegistrySummary(
