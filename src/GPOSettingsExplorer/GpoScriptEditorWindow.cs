@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using GPOSettingsExplorer.Models;
+using GPOSettingsExplorer.Services;
 
 namespace GPOSettingsExplorer;
 
@@ -32,8 +33,10 @@ public sealed class GpoScriptEditorWindow : Window
 
         var save = new Button
         {
-            Content = "Save",
-            IsDefault = true
+            Content = EditingGuard.IsEnabled ? "Save" : "Save (read-only)",
+            IsDefault = true,
+            IsEnabled = EditingGuard.IsEnabled,
+            ToolTip = EditingGuard.IsEnabled ? "Save the updated GPO script." : "Read-only mode blocks writes. Close this editor, enable WRITE ENABLED in the main window, then reopen."
         };
         save.Click += (_, _) => DialogResult = true;
 
@@ -66,14 +69,17 @@ public sealed class GpoScriptEditorWindow : Window
         {
             Text = script.FullPath,
             TextWrapping = TextWrapping.Wrap,
-            Foreground = System.Windows.Media.Brushes.DimGray,
+            Foreground = UiStyle.MutedBrush,
             Margin = new Thickness(0, 2, 0, 8)
         });
 
         header.Children.Add(new TextBlock
         {
-            Text = "Edit only: GPO Settings Explorer never executes this script.",
+            Text = EditingGuard.IsEnabled
+                ? "Edit only: GPO Settings Explorer never executes this script."
+                : "READ ONLY: Saving is disabled. Close the editor and switch the main toolbar to WRITE ENABLED before modifying Group Policy.",
             TextWrapping = TextWrapping.Wrap,
+            Foreground = EditingGuard.IsEnabled ? UiStyle.MutedBrush : UiStyle.WarningBrush,
             FontWeight = FontWeights.SemiBold,
             Margin = new Thickness(0, 0, 0, 8)
         });
