@@ -558,7 +558,7 @@ public sealed class GpoEditorNavigatorService
     private static AutomationElement? FindVisibleRow(
         AutomationElement parent,
         IReadOnlyList<string> candidates,
-        Condition rowCondition)
+        System.Windows.Automation.Condition rowCondition)
     {
         AutomationElementCollection rows;
 
@@ -729,7 +729,7 @@ public sealed class GpoEditorNavigatorService
     private static AutomationElement? FindRowByScrolling(
         AutomationElement window,
         IReadOnlyList<string> candidates,
-        Condition rowCondition,
+        System.Windows.Automation.Condition rowCondition,
         DateTime deadline,
         CancellationToken cancellationToken)
     {
