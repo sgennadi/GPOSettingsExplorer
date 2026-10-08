@@ -91,7 +91,11 @@ public sealed class SettingValueWindow : Window
 
                 MessageBox.Show(
                     this,
-                    "The selected GPO was opened. MMC did not expose the exact Security Option row reliably, so the editor remains open for manual navigation.",
+                    setting.Extension.Equals(
+                        "RegistrySettings",
+                        StringComparison.OrdinalIgnoreCase)
+                        ? "The selected GPO was opened. MMC did not expose the exact Group Policy Preferences Registry item reliably, so the Registry node remains open for manual selection."
+                        : "The selected GPO was opened. MMC did not expose the exact Security Option row reliably, so the Security Options node remains open for manual selection.",
                     "GPO Editor Navigation",
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);

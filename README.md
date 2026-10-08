@@ -14,7 +14,7 @@ Download the latest portable build from:
 
 **[GitHub Releases](https://github.com/sgennadi/GPOSettingsExplorer/releases/latest)**
 
-Current release: **v0.3.0**
+Current release: **v0.3.1**
 
 Available packages:
 
