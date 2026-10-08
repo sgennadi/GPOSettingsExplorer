@@ -4,6 +4,22 @@
 
 - No unreleased changes yet.
 
+## 0.4.0 - 2026-10-08
+
+- Reworked portable self-update into a staged install. Update ZIPs are verified before shutdown, extracted into a staging directory, existing application files are backed up, and failed replacement attempts automatically restore the previous files.
+- Retain the three most recent application rollback snapshots and expose "Rollback last update" from Diagnostics.
+- Update availability now includes GitHub release notes and publication time, with Install now, Install on exit, Open release, and Later actions.
+- Added an actionable crash/error window with Copy error, Open log, Open logs folder, and Create support package actions. Recoverable INI Files failures use the same diagnostic workflow.
+- Exact native MMC navigation now reports the target tree path and live navigation progress while it waits for MMC, opens policy nodes, searches virtualized/scrolled result panes, and selects the exact row.
+- Global Search now has an "Open / edit exact" action and double-click behavior that selects the source object and invokes its dedicated editor where available.
+- Added GPO Favorites and Recent views. Recently opened/edited GPOs are ranked and favorites persist across sessions.
+- Added semantic Backup vs Current comparison based on normalized GPMC XML reports. Report timestamps are ignored and identifiable XML elements are compared independent of ordering.
+- Audit Log now opens a focused before/after detail window with copy support and one-click restore of the linked GPO backup.
+- Added permission-aware controls. The application evaluates current-token GPO rights and selected-GPO SYSVOL write access, displays a compact Read/Edit/Security summary, and disables confirmed-unavailable write actions before they are attempted.
+- Added persistent workspace state: window bounds/maximized state, selected tab/GPO, GPO quick filter, favorites/recent GPOs, named text/combo filters, DataGrid column widths, and sort order are restored across runs.
+- Added regression coverage for semantic XML comparison while retaining the update-schedule, cache, DPAPI, domain-routing, and script-sanitization tests.
+
+
 ## 0.3.3 - 2026-10-08
 
 - Added a quiet automatic update check after startup. A successful check is repeated at most once every 24 hours.
