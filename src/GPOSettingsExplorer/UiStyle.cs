@@ -1,4 +1,6 @@
+using System.Globalization;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Media;
 
 namespace GPOSettingsExplorer;
@@ -27,6 +29,38 @@ internal static class UiStyle
         Math.Max(
             SystemFonts.MessageFontSize * 1.45,
             SystemFonts.MessageFontSize + 3.0);
+
+    public static void ApplyDataGridDefaults(DataGrid grid)
+    {
+        // Every grid, including GPP preferences and dialogs, gets a minimum
+        // visible header width. Star columns can scroll horizontally instead
+        // of crushing their labels into one letter per line.
+        var typeface = new Typeface(
+            grid.FontFamily,
+            grid.FontStyle,
+            grid.FontWeight,
+            grid.FontStretch);
+        var pixelsPerDip = VisualTreeHelper.GetDpi(grid).PixelsPerDip;
+
+        foreach (var column in grid.Columns)
+        {
+            var title = Convert.ToString(column.Header, CultureInfo.CurrentCulture);
+            if (string.IsNullOrWhiteSpace(title))
+                continue;
+
+            var measure = new FormattedText(
+                title,
+                CultureInfo.CurrentUICulture,
+                grid.FlowDirection,
+                typeface,
+                grid.FontSize,
+                grid.Foreground,
+                pixelsPerDip);
+            column.MinWidth = Math.Max(
+                column.MinWidth,
+                Math.Max(90, Math.Ceiling(measure.WidthIncludingTrailingWhitespace + 28)));
+        }
+    }
 
     public static void ApplyWindowDefaults(Window window)
     {
