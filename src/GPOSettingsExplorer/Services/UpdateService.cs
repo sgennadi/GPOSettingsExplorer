@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.IO.Compression;
 using System.Net.Http;
+using System.Net.Sockets;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
@@ -51,6 +52,70 @@ public sealed class UpdateService
 
         _client.DefaultRequestHeaders.Accept.ParseAdd(
             "application/vnd.github+json");
+    }
+
+    public static bool IsExpectedConnectivityFailure(
+        Exception exception)
+    {
+        for (Exception? current = exception;
+             current is not null;
+             current = current.InnerException)
+        {
+            if (current is SocketException socket)
+            {
+                return socket.SocketErrorCode is
+                    SocketError.AccessDenied or
+                    SocketError.TimedOut or
+                    SocketError.ConnectionRefused or
+                    SocketError.HostNotFound or
+                    SocketError.TryAgain or
+                    SocketError.NetworkUnreachable or
+                    SocketError.HostUnreachable or
+                    SocketError.NetworkDown or
+                    SocketError.ConnectionReset;
+            }
+
+            if (current is HttpRequestException)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    public static string BuildConnectivityFailureMessage(
+        Exception exception)
+    {
+        var socket =
+            EnumerateExceptionChain(
+                    exception)
+                .OfType<SocketException>()
+                .FirstOrDefault();
+
+        if (socket?.SocketErrorCode ==
+            SocketError.AccessDenied)
+        {
+            return
+                "Windows blocked the HTTPS connection to GitHub (socket error 10013). " +
+                "GPO Settings Explorer will continue normally. Allow outbound HTTPS to api.github.com and github.com, " +
+                "or update the portable build manually from GitHub Releases.";
+        }
+
+        return
+            "GitHub could not be reached from this computer. GPO Settings Explorer will continue normally. " +
+            "Check Internet/proxy/firewall access to api.github.com and github.com, or update the portable build manually.";
+    }
+
+    private static IEnumerable<Exception> EnumerateExceptionChain(
+        Exception exception)
+    {
+        for (Exception? current = exception;
+             current is not null;
+             current = current.InnerException)
+        {
+            yield return current;
+        }
     }
 
     public async Task<UpdateInfo> CheckAsync(
