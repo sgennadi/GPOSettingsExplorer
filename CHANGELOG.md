@@ -4,6 +4,14 @@
 
 - No unreleased changes yet.
 
+## 0.3.2 - 2026-10-08
+
+- Fixed the GPP INI Files crash dialog: the Targeting column was binding TwoWay to the read-only computed HasFilters property.
+- Converted all MainWindow DataGrid checkbox columns to explicit read-only OneWay bindings so display-only values such as HasFilters, HasStoredCredential, Referenced, Exists, Inherited and similar computed flags cannot trigger WPF source-update exceptions.
+- Overview checkbox cells are now non-editable; changes continue to go through the dedicated Edit/action dialogs where backups, previews and audit logging are enforced.
+- Added a UI lint guard that fails CI if a MainWindow DataGridCheckBoxColumn is added without Mode=OneWay and IsReadOnly=True.
+
+
 ## 0.3.1 - 2026-10-08
 
 - Fixed exact MMC navigation for Security Options such as "Network security: LAN Manager authentication level" by handling virtualized MMC rows and scrolling through the full result pane instead of searching only currently materialized rows.
