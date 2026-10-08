@@ -8,14 +8,17 @@ namespace GPOSettingsExplorer;
 public sealed class GpoScriptEditorWindow : Window
 {
     private readonly TextBox _editor;
+    private readonly Func<string, Task>? _saveAction;
 
     public string ScriptText => _editor.Text;
 
     public GpoScriptEditorWindow(
         GpoScriptInfo script,
         GpoScriptDocument document,
-        int lineNumber = 0)
+        int lineNumber = 0,
+        Func<string, Task>? saveAction = null)
     {
+        _saveAction = saveAction;
         Title = $"Edit GPO Script - {script.FileName}";
         Width = 980;
         Height = 720;
@@ -38,7 +41,37 @@ public sealed class GpoScriptEditorWindow : Window
             IsEnabled = EditingGuard.IsEnabled,
             ToolTip = EditingGuard.IsEnabled ? "Save the updated GPO script." : "Read-only mode blocks writes. Close this editor, enable WRITE ENABLED in the main window, then reopen."
         };
-        save.Click += (_, _) => DialogResult = true;
+        save.Click += async (_, _) =>
+        {
+            if (_saveAction is null)
+            {
+                DialogResult = true;
+                return;
+            }
+
+            save.IsEnabled = false;
+            save.Content = "Saving...";
+            try
+            {
+                await _saveAction(_editor.Text);
+                DialogResult = true;
+            }
+            catch (Exception ex)
+            {
+                // The editor and its unsaved text stay open on any failure.
+                ErrorDialog.Show(
+                    this,
+                    "Save GPO Script",
+                    "The script was not saved successfully. Your edited text is still in this window; fix the reported error and try Save again.",
+                    ex);
+
+                if (IsLoaded)
+                {
+                    save.Content = "Save";
+                    save.IsEnabled = EditingGuard.IsEnabled;
+                }
+            }
+        };
 
         footer.Children.Add(new Button
         {
