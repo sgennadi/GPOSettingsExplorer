@@ -44,6 +44,7 @@
                         Click="Connection_Click"/>
 
                 <ToggleButton x:Name="WriteModeToggle"
+                              Style="{StaticResource UiWriteModeToggle}"
                               Content="Safe mode: READ ONLY"
                               Checked="WriteModeToggle_Changed"
                               Unchecked="WriteModeToggle_Changed"
@@ -55,6 +56,7 @@
                          KeyDown="GlobalSearchBox_KeyDown"/>
 
                 <Button Content="Search"
+                        Style="{StaticResource UiPrimaryButton}"
                         Click="GlobalSearch_Click"/>
 
                 <Button Content="Diagnostics"
@@ -242,11 +244,12 @@
                             <ComboBox x:Name="GpoScriptSearchScopeCombo"
                                       Width="120"/>
                             <Button Content="Find"
+                                    Style="{StaticResource UiPrimaryButton}"
                                     Click="SearchGpoScriptContent_Click"/>
                             <TextBlock x:Name="GpoScriptSearchCountText"
                                        Margin="14,0,0,0"
                                        VerticalAlignment="Center"
-                                       Foreground="DimGray"/>
+                                       Foreground="{StaticResource UiMutedBrush}"/>
                         </WrapPanel>
                     </Border>
 
@@ -260,6 +263,9 @@
                             <DataGridTextColumn Header="Line"
                                                 Binding="{Binding LineNumber}"
                                                 Width="65"/>
+                            <DataGridTextColumn Header="Match type"
+                                                Binding="{Binding MatchType}"
+                                                Width="140"/>
                             <DataGridTextColumn Header="Match"
                                                 Binding="{Binding LineText}"
                                                 Width="3*"/>
