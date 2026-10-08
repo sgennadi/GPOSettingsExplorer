@@ -28,6 +28,14 @@ public sealed class WorkspaceState
     public Dictionary<string, List<WorkspaceSortDescription>> GridSorts { get; set; } =
         new(
             StringComparer.OrdinalIgnoreCase);
+
+    public Dictionary<string, string> TextValues { get; set; } =
+        new(
+            StringComparer.OrdinalIgnoreCase);
+
+    public Dictionary<string, string> ComboValues { get; set; } =
+        new(
+            StringComparer.OrdinalIgnoreCase);
 }
 
 public sealed class WorkspaceStateService
