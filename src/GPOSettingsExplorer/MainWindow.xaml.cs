@@ -48,7 +48,12 @@ public partial class MainWindow : Window
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
     {
         UpdateWriteModeUi();
+        ApplyStoredUpdateState();
+
         await RefreshAllAsync();
+
+        _ =
+            CheckForUpdatesAutomaticallyAsync();
     }
 
     private async void RefreshAll_Click(object sender, RoutedEventArgs e)
