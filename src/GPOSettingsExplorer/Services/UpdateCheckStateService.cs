@@ -59,28 +59,54 @@ public sealed class UpdateCheckStateService
     public bool ShouldCheckAutomatically(
         DateTime utcNow)
     {
-        var state =
-            Load();
+        return ShouldCheckAutomatically(
+            Load(),
+            utcNow);
+    }
 
-        if (state.LastSuccessfulCheckUtc !=
-            DateTime.MinValue)
+    public static bool ShouldCheckAutomatically(
+        UpdateCheckState state,
+        DateTime utcNow)
+    {
+        var now =
+            EnsureUtc(
+                utcNow);
+
+        var lastSuccess =
+            state.LastSuccessfulCheckUtc ==
+            DateTime.MinValue
+                ? DateTime.MinValue
+                : EnsureUtc(
+                    state.LastSuccessfulCheckUtc);
+
+        var lastAttempt =
+            state.LastAttemptUtc ==
+            DateTime.MinValue
+                ? DateTime.MinValue
+                : EnsureUtc(
+                    state.LastAttemptUtc);
+
+        if (lastSuccess !=
+                DateTime.MinValue &&
+            now -
+            lastSuccess <
+            AutomaticCheckInterval)
         {
-            return utcNow -
-                   EnsureUtc(
-                       state.LastSuccessfulCheckUtc) >=
-                   AutomaticCheckInterval;
+            return false;
         }
 
-        if (state.LastAttemptUtc ==
-            DateTime.MinValue)
+        if (lastAttempt !=
+                DateTime.MinValue &&
+            lastAttempt >
+            lastSuccess &&
+            now -
+            lastAttempt <
+            FailedCheckRetryInterval)
         {
-            return true;
+            return false;
         }
 
-        return utcNow -
-               EnsureUtc(
-                   state.LastAttemptUtc) >=
-               FailedCheckRetryInterval;
+        return true;
     }
 
     public void MarkAttempt(
