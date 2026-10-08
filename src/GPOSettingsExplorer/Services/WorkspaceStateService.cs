@@ -8,6 +8,8 @@ public sealed record WorkspaceSortDescription(
 
 public sealed class WorkspaceState
 {
+    public int LayoutSchemaVersion { get; set; } =
+        WorkspaceStateService.CurrentLayoutSchemaVersion;
     public double WindowLeft { get; set; } = double.NaN;
     public double WindowTop { get; set; } = double.NaN;
     public double WindowWidth { get; set; } = 1400;
@@ -40,6 +42,9 @@ public sealed class WorkspaceState
 
 public sealed class WorkspaceStateService
 {
+    public const int CurrentLayoutSchemaVersion =
+        2;
+
     private static readonly JsonSerializerOptions JsonOptions =
         new()
         {
@@ -64,11 +69,26 @@ public sealed class WorkspaceStateService
                 return new WorkspaceState();
             }
 
-            return JsonSerializer.Deserialize<WorkspaceState>(
-                       File.ReadAllText(
-                           StatePath),
-                       JsonOptions)
-                   ?? new WorkspaceState();
+            var state =
+                JsonSerializer.Deserialize<WorkspaceState>(
+                    File.ReadAllText(
+                        StatePath),
+                    JsonOptions)
+                ?? new WorkspaceState();
+
+            if (state.LayoutSchemaVersion <
+                CurrentLayoutSchemaVersion)
+            {
+                // Older releases could persist 20px widths from hidden or
+                // unmeasured tab grids. Keep the user's filters/favorites,
+                // but discard only the corrupt column-width snapshot.
+                state.GridColumnWidths.Clear();
+
+                state.LayoutSchemaVersion =
+                    CurrentLayoutSchemaVersion;
+            }
+
+            return state;
         }
         catch
         {
@@ -81,6 +101,8 @@ public sealed class WorkspaceStateService
     {
         try
         {
+            state.LayoutSchemaVersion =
+                CurrentLayoutSchemaVersion;
             var directory =
                 Path.GetDirectoryName(
                     StatePath)!;
