@@ -12,6 +12,13 @@ public sealed class GpoScriptInfo
     public string Parameters { get; init; } = string.Empty;
     public string FullPath { get; init; } = string.Empty;
     public string SourceIni { get; init; } = string.Empty;
+    public bool GpoComputerEnabled { get; init; }
+    public bool GpoUserEnabled { get; init; }
+    public bool ScopeDisabled => Scope.Equals("User", StringComparison.OrdinalIgnoreCase)
+        ? !GpoUserEnabled : !GpoComputerEnabled;
+    public string StatusText => !Exists ? "Missing file" :
+        ScopeDisabled ? "Inactive GPO scope" :
+        !Referenced ? "Unassigned" : "Assigned / active";
     public bool Referenced { get; init; }
     public bool Exists { get; init; }
     public long Size { get; init; }
@@ -50,6 +57,7 @@ public sealed class GpoScriptSearchResult
         Scripts.FirstOrDefault() ?? new GpoScriptInfo();
 
     public string FileName => Script.FileName;
+    public string Type => Script.Type;
     public string FullPath => Script.FullPath;
 
     public int CopyCount =>
