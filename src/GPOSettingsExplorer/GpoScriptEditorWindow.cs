@@ -9,6 +9,7 @@ public sealed class GpoScriptEditorWindow : Window
 {
     private readonly TextBox _editor;
     private readonly Func<string, Task>? _saveAction;
+    private bool _saving;
 
     public string ScriptText => _editor.Text;
 
@@ -41,6 +42,12 @@ public sealed class GpoScriptEditorWindow : Window
             IsEnabled = EditingGuard.IsEnabled,
             ToolTip = EditingGuard.IsEnabled ? "Save the updated GPO script." : "Read-only mode blocks writes. Close this editor, enable WRITE ENABLED in the main window, then reopen."
         };
+        var cancel = new Button
+        {
+            Content = "Cancel",
+            IsCancel = true
+        };
+
         save.Click += async (_, _) =>
         {
             if (_saveAction is null)
@@ -49,15 +56,23 @@ public sealed class GpoScriptEditorWindow : Window
                 return;
             }
 
+            _saving = true;
             save.IsEnabled = false;
             save.Content = "Saving...";
+            _editor.IsReadOnly = true;
+            cancel.IsEnabled = false;
             try
             {
                 await _saveAction(_editor.Text);
+                _saving = false;
                 DialogResult = true;
             }
             catch (Exception ex)
             {
+                _saving = false;
+                _editor.IsReadOnly = false;
+                cancel.IsEnabled = true;
+
                 // The editor and its unsaved text stay open on any failure.
                 ErrorDialog.Show(
                     this,
@@ -73,11 +88,7 @@ public sealed class GpoScriptEditorWindow : Window
             }
         };
 
-        footer.Children.Add(new Button
-        {
-            Content = "Cancel",
-            IsCancel = true
-        });
+        footer.Children.Add(cancel);
         footer.Children.Add(save);
 
         var header = new StackPanel();
@@ -133,6 +144,14 @@ public sealed class GpoScriptEditorWindow : Window
         root.Children.Add(header);
         root.Children.Add(_editor);
         Content = root;
+
+        Closing += (_, args) =>
+        {
+            // Keep the modal editor open until the in-flight SYSVOL save
+            // finishes so a second click cannot race the GPO commit.
+            if (_saving)
+                args.Cancel = true;
+        };
 
         Loaded += (_, _) =>
         {
