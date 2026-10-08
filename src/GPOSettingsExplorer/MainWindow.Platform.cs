@@ -224,9 +224,71 @@ public partial class MainWindow
         window.ShowDialog();
     }
 
-    private void NavigateToGlobalSearchObject(
-        object target)
+    private async Task NavigateToGlobalSearchObject(
+        object target,
+        bool openExact)
     {
+        if (target is GpoInfo gpo)
+        {
+            MainTabs.SelectedItem =
+                GposTab;
+
+            var selected =
+                _gpos.FirstOrDefault(
+                    item =>
+                        item.Id ==
+                        gpo.Id)
+                ?? gpo;
+
+            GpoGrid.SelectedItem =
+                selected;
+
+            GpoGrid.ScrollIntoView(
+                selected);
+
+            if (openExact)
+            {
+                OpenSelectedGpo();
+            }
+
+            return;
+        }
+
+        if (target is PolicySettingInfo setting)
+        {
+            MainTabs.SelectedItem =
+                AllSettingsTab;
+
+            var selected =
+                _settings.FirstOrDefault(
+                    item =>
+                        item.GpoId ==
+                        setting.GpoId &&
+                        item.Scope.Equals(
+                            setting.Scope,
+                            StringComparison.OrdinalIgnoreCase) &&
+                        item.SettingName.Equals(
+                            setting.SettingName,
+                            StringComparison.CurrentCultureIgnoreCase))
+                ?? setting;
+
+            SettingsGrid.SelectedItem =
+                selected;
+
+            SettingsGrid.ScrollIntoView(
+                selected);
+
+            if (openExact)
+            {
+                MarkGpoRecent(
+                    setting.GpoId);
+
+                await EditSelectedSettingAsync();
+            }
+
+            return;
+        }
+
         foreach (var tabObject in MainTabs.Items)
         {
             if (tabObject is not TabItem tab ||
@@ -256,6 +318,19 @@ public partial class MainWindow
                     target);
 
                 grid.Focus();
+
+                if (openExact)
+                {
+                    MarkRecentFromObject(
+                        target);
+
+                    if (!TryInvokeSourceEditor(
+                            root))
+                    {
+                        StatusText.Text =
+                            "The item was selected in its source tab; no dedicated editor action was found.";
+                    }
+                }
             }
             else
             {
@@ -276,6 +351,66 @@ public partial class MainWindow
             "Global Search",
             MessageBoxButton.OK,
             MessageBoxImage.Information);
+    }
+
+    private void MarkRecentFromObject(
+        object target)
+    {
+        var property =
+            target.GetType()
+                .GetProperty(
+                    "GpoId");
+
+        if (property?.PropertyType ==
+                typeof(Guid) &&
+            property.GetValue(
+                target) is Guid id)
+        {
+            MarkGpoRecent(
+                id);
+        }
+    }
+
+    private static bool TryInvokeSourceEditor(
+        DependencyObject root)
+    {
+        foreach (var child in LogicalTreeHelper.GetChildren(
+                     root))
+        {
+            if (child is Button button)
+            {
+                var text =
+                    Convert.ToString(
+                        button.Content)
+                    ?? string.Empty;
+
+                if (text.Equals(
+                        "Edit",
+                        StringComparison.CurrentCultureIgnoreCase) ||
+                    text.StartsWith(
+                        "Edit ",
+                        StringComparison.CurrentCultureIgnoreCase) ||
+                    text.StartsWith(
+                        "Configure",
+                        StringComparison.CurrentCultureIgnoreCase))
+                {
+                    button.RaiseEvent(
+                        new RoutedEventArgs(
+                            Button.ClickEvent));
+
+                    return true;
+                }
+            }
+
+            if (child is DependencyObject dependency &&
+                TryInvokeSourceEditor(
+                    dependency))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static DataGrid? FindDataGridContaining(
