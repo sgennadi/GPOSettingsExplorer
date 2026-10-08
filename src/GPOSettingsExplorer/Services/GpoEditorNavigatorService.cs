@@ -16,11 +16,8 @@ public sealed class GpoEditorNavigatorService
         PolicySettingInfo setting)
     {
         return setting.Extension.Equals(
-                   "SecuritySettings",
-                   StringComparison.OrdinalIgnoreCase) ||
-               setting.Extension.Equals(
-                   "RegistrySettings",
-                   StringComparison.OrdinalIgnoreCase);
+            "SecuritySettings",
+            StringComparison.OrdinalIgnoreCase);
     }
 
     public async Task<bool> OpenAtSettingAsync(
