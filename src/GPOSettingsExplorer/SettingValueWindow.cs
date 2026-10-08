@@ -125,13 +125,15 @@ public sealed class SettingValueWindow : Window
                     return;
                 }
 
+                navigationStatus.Foreground = UiStyle.WarningBrush;
+
                 MessageBox.Show(
                     this,
                     setting.Extension.Equals(
                         "RegistrySettings",
                         StringComparison.OrdinalIgnoreCase)
                         ? "The selected GPO was opened. MMC did not expose the exact Group Policy Preferences Registry item reliably, so the Registry node remains open for manual selection."
-                        : "The selected GPO was opened. MMC did not expose the exact Security Option row reliably, so the Security Options node remains open for manual selection.",
+                        : "The GPO editor opened the correct Security Options category, but the requested policy name could not be verified in MMC. No unrelated policy was opened. If the list cannot be inspected, try launching this program and MMC at the same elevation. The diagnostic log is stored in %LOCALAPPDATA%\\GPOSettingsExplorer\\Logs.",
                     "GPO Editor Navigation",
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
