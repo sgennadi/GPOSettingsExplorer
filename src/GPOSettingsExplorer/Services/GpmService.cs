@@ -440,7 +440,9 @@ public sealed class GpmService
                 domainName,
                 gpoId);
         }
-        catch (COMException gpmException)
+        catch (Exception gpmException)
+            when (!IsFatal(
+                gpmException))
         {
             try
             {
@@ -448,6 +450,8 @@ public sealed class GpmService
                     gpoId);
             }
             catch (Exception directoryException)
+                when (!IsFatal(
+                    directoryException))
             {
                 throw new InvalidOperationException(
                     BuildSecurityLoadDiagnostic(
@@ -540,10 +544,14 @@ public sealed class GpmService
                             SafeBool(() => permission.Inheritable)
                     });
             }
-            catch (COMException)
+            catch (Exception ex)
+                when (!IsFatal(
+                    ex))
             {
-                // A deleted or otherwise unresolvable trustee must not make
-                // the complete GPO security page unusable.
+                // A deleted, stale or otherwise unresolvable trustee must not
+                // make the complete GPO security page unusable. GPMC can
+                // surface these failures as COMException, FileNotFoundException
+                // or RuntimeBinderException depending on the trustee property.
             }
         }
 
@@ -1956,7 +1964,9 @@ public sealed class GpmService
                        getter())
                    ?? string.Empty;
         }
-        catch (COMException)
+        catch (Exception ex)
+            when (!IsFatal(
+                ex))
         {
             return string.Empty;
         }
@@ -1968,7 +1978,9 @@ public sealed class GpmService
         {
             return Convert.ToInt32(getter());
         }
-        catch (COMException)
+        catch (Exception ex)
+            when (!IsFatal(
+                ex))
         {
             return 0;
         }
@@ -1980,9 +1992,17 @@ public sealed class GpmService
         {
             return Convert.ToBoolean(getter());
         }
-        catch (COMException)
+        catch (Exception ex)
+            when (!IsFatal(
+                ex))
         {
             return false;
         }
     }
+
+    private static bool IsFatal(
+        Exception exception) =>
+        exception is OutOfMemoryException or
+                     StackOverflowException or
+                     AccessViolationException;
 }
