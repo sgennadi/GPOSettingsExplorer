@@ -508,6 +508,8 @@ public sealed class GpoScriptService
                 {
                     GpoId = gpo.Id,
                     GpoName = gpo.DisplayName,
+                    GpoComputerEnabled = gpo.ComputerEnabled,
+                    GpoUserEnabled = gpo.UserEnabled,
                     DomainName = gpo.DomainName,
                     Scope = scope,
                     EventName = entry.EventName,
@@ -548,6 +550,8 @@ public sealed class GpoScriptService
             {
                 GpoId = gpo.Id,
                 GpoName = gpo.DisplayName,
+                GpoComputerEnabled = gpo.ComputerEnabled,
+                GpoUserEnabled = gpo.UserEnabled,
                 DomainName = gpo.DomainName,
                 Scope = scope,
                 EventName = DetectEventName(root, path),
