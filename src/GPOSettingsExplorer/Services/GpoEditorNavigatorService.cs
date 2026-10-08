@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Windows;
 using System.Windows.Automation;
 using GPOSettingsExplorer.Models;
@@ -11,6 +12,27 @@ public sealed class GpoEditorNavigatorService
     private const uint MouseEventLeftDown = 0x0002;
     private const uint MouseEventLeftUp = 0x0004;
     private const int SwRestore = 9;
+
+    private const int LvmFirst = 0x1000;
+    private const int LvmGetItemCount = LvmFirst + 4;
+    private const int LvmGetItemRect = LvmFirst + 14;
+    private const int LvmEnsureVisible = LvmFirst + 19;
+    private const int LvmSetItemState = LvmFirst + 43;
+    private const int LvmGetItemTextW = LvmFirst + 115;
+    private const uint LvifText = 0x0001;
+    private const uint LvisFocused = 0x0001;
+    private const uint LvisSelected = 0x0002;
+    private const int LvirBounds = 0;
+
+    private const uint ProcessVmOperation = 0x0008;
+    private const uint ProcessVmRead = 0x0010;
+    private const uint ProcessVmWrite = 0x0020;
+    private const uint ProcessQueryLimitedInformation = 0x1000;
+
+    private const uint MemCommit = 0x1000;
+    private const uint MemReserve = 0x2000;
+    private const uint MemRelease = 0x8000;
+    private const uint PageReadWrite = 0x04;
 
     public bool CanNavigateExactly(
         PolicySettingInfo setting)
@@ -212,6 +234,25 @@ public sealed class GpoEditorNavigatorService
         if (row is null)
         {
             progress?.Report(
+                "UI Automation exposed no matching row. Trying native MMC list view...");
+
+            var candidates =
+                BuildRowCandidates(
+                    setting);
+
+            if (TryOpenNativeListViewSetting(
+                    process,
+                    candidates,
+                    cancellationToken,
+                    out var nativeDiagnostics))
+            {
+                progress?.Report(
+                    "Exact setting opened through the native MMC list view.");
+
+                return true;
+            }
+
+            progress?.Report(
                 "MMC opened the target policy node but did not expose a matching row.");
 
             CrashLogService.Write(
@@ -219,8 +260,9 @@ public sealed class GpoEditorNavigatorService
                 BuildNavigationMissDetails(
                     window,
                     setting,
-                    BuildRowCandidates(
-                        setting)));
+                    candidates) +
+                Environment.NewLine +
+                nativeDiagnostics);
 
             return false;
         }
@@ -1311,6 +1353,719 @@ public sealed class GpoEditorNavigatorService
                 StringSplitOptions.RemoveEmptyEntries));
     }
 
+    private static bool TryOpenNativeListViewSetting(
+        Process process,
+        IReadOnlyList<string> candidates,
+        CancellationToken cancellationToken,
+        out string diagnostics)
+    {
+        var builder =
+            new StringBuilder();
+
+        builder.AppendLine(
+            "Native MMC list-view probe:");
+
+        var listViews =
+            FindNativeListViews(
+                process.MainWindowHandle);
+
+        if (listViews.Count == 0)
+        {
+            builder.AppendLine(
+                "  No SysListView32 controls were found.");
+
+            diagnostics =
+                builder.ToString();
+
+            return false;
+        }
+
+        var access =
+            ProcessVmOperation |
+            ProcessVmRead |
+            ProcessVmWrite |
+            ProcessQueryLimitedInformation;
+
+        var processHandle =
+            OpenProcess(
+                access,
+                inheritHandle:
+                    false,
+                process.Id);
+
+        if (processHandle ==
+            IntPtr.Zero)
+        {
+            builder.AppendLine(
+                $"  OpenProcess failed. Win32={Marshal.GetLastWin32Error()}");
+
+            diagnostics =
+                builder.ToString();
+
+            return false;
+        }
+
+        try
+        {
+            foreach (var listView in listViews)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var count =
+                    checked(
+                        (int)SendMessage(
+                            listView,
+                            LvmGetItemCount,
+                            IntPtr.Zero,
+                            IntPtr.Zero));
+
+                builder.AppendLine(
+                    $"  SysListView32 0x{listView.ToInt64():X}: {count} rows");
+
+                if (count <= 0 ||
+                    count > 20000)
+                {
+                    continue;
+                }
+
+                var rows =
+                    ReadNativeListViewRows(
+                        processHandle,
+                        listView,
+                        count,
+                        cancellationToken);
+
+                foreach (var row in rows.Take(
+                             120))
+                {
+                    builder.AppendLine(
+                        $"    [{row.Index}] {row.Text}");
+                }
+
+                var match =
+                    rows.FirstOrDefault(
+                        row =>
+                            candidates.Any(
+                                candidate =>
+                                    TextMatches(
+                                        row.Text,
+                                        candidate)));
+
+                if (match is null)
+                {
+                    continue;
+                }
+
+                builder.AppendLine(
+                    $"  Native match: [{match.Index}] {match.Text}");
+
+                if (!SelectAndOpenNativeListViewRow(
+                        process,
+                        processHandle,
+                        listView,
+                        match.Index))
+                {
+                    builder.AppendLine(
+                        "  Matching row was found, but native selection/open failed.");
+
+                    continue;
+                }
+
+                diagnostics =
+                    builder.ToString();
+
+                return true;
+            }
+        }
+        finally
+        {
+            CloseHandle(
+                processHandle);
+        }
+
+        diagnostics =
+            builder.ToString();
+
+        return false;
+    }
+
+    private static IReadOnlyList<IntPtr> FindNativeListViews(
+        IntPtr parent)
+    {
+        var result =
+            new List<IntPtr>();
+
+        if (parent ==
+            IntPtr.Zero)
+        {
+            return result;
+        }
+
+        EnumChildWindows(
+            parent,
+            (handle, _) =>
+            {
+                var className =
+                    new StringBuilder(
+                        128);
+
+                if (GetClassName(
+                        handle,
+                        className,
+                        className.Capacity) >
+                    0 &&
+                    className.ToString()
+                        .Equals(
+                            "SysListView32",
+                            StringComparison.OrdinalIgnoreCase))
+                {
+                    result.Add(
+                        handle);
+                }
+
+                return true;
+            },
+            IntPtr.Zero);
+
+        return result;
+    }
+
+    private static IReadOnlyList<NativeListViewRow> ReadNativeListViewRows(
+        IntPtr processHandle,
+        IntPtr listView,
+        int count,
+        CancellationToken cancellationToken)
+    {
+        const int textCharacters =
+            2048;
+
+        var textBytes =
+            checked(
+                textCharacters *
+                sizeof(char));
+
+        var itemSize =
+            Marshal.SizeOf<NativeLvItem>();
+
+        var remoteText =
+            VirtualAllocEx(
+                processHandle,
+                IntPtr.Zero,
+                (UIntPtr)textBytes,
+                MemCommit |
+                MemReserve,
+                PageReadWrite);
+
+        var remoteItem =
+            VirtualAllocEx(
+                processHandle,
+                IntPtr.Zero,
+                (UIntPtr)itemSize,
+                MemCommit |
+                MemReserve,
+                PageReadWrite);
+
+        if (remoteText ==
+                IntPtr.Zero ||
+            remoteItem ==
+                IntPtr.Zero)
+        {
+            if (remoteText !=
+                IntPtr.Zero)
+            {
+                VirtualFreeEx(
+                    processHandle,
+                    remoteText,
+                    UIntPtr.Zero,
+                    MemRelease);
+            }
+
+            if (remoteItem !=
+                IntPtr.Zero)
+            {
+                VirtualFreeEx(
+                    processHandle,
+                    remoteItem,
+                    UIntPtr.Zero,
+                    MemRelease);
+            }
+
+            return Array.Empty<NativeListViewRow>();
+        }
+
+        try
+        {
+            var result =
+                new List<NativeListViewRow>(
+                    Math.Min(
+                        count,
+                        2048));
+
+            for (var index = 0;
+                 index < count;
+                 index++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var parts =
+                    new List<string>();
+
+                for (var subItem = 0;
+                     subItem < 3;
+                     subItem++)
+                {
+                    var text =
+                        ReadNativeListViewText(
+                            processHandle,
+                            listView,
+                            remoteItem,
+                            itemSize,
+                            remoteText,
+                            textBytes,
+                            textCharacters,
+                            index,
+                            subItem);
+
+                    if (!string.IsNullOrWhiteSpace(
+                            text))
+                    {
+                        parts.Add(
+                            text);
+                    }
+                }
+
+                if (parts.Count ==
+                    0)
+                {
+                    continue;
+                }
+
+                result.Add(
+                    new NativeListViewRow(
+                        index,
+                        string.Join(
+                            " | ",
+                            parts.Distinct(
+                                StringComparer.CurrentCultureIgnoreCase))));
+            }
+
+            return result;
+        }
+        finally
+        {
+            VirtualFreeEx(
+                processHandle,
+                remoteText,
+                UIntPtr.Zero,
+                MemRelease);
+
+            VirtualFreeEx(
+                processHandle,
+                remoteItem,
+                UIntPtr.Zero,
+                MemRelease);
+        }
+    }
+
+    private static string ReadNativeListViewText(
+        IntPtr processHandle,
+        IntPtr listView,
+        IntPtr remoteItem,
+        int itemSize,
+        IntPtr remoteText,
+        int textBytes,
+        int textCharacters,
+        int index,
+        int subItem)
+    {
+        var item =
+            new NativeLvItem
+            {
+                Mask =
+                    LvifText,
+                Item =
+                    index,
+                SubItem =
+                    subItem,
+                Text =
+                    remoteText,
+                TextMax =
+                    textCharacters
+            };
+
+        if (!WriteRemoteStructure(
+                processHandle,
+                remoteItem,
+                item,
+                itemSize))
+        {
+            return string.Empty;
+        }
+
+        _ =
+            SendMessage(
+                listView,
+                LvmGetItemTextW,
+                (IntPtr)index,
+                remoteItem);
+
+        var buffer =
+            new byte[
+                textBytes];
+
+        if (!ReadProcessMemory(
+                processHandle,
+                remoteText,
+                buffer,
+                buffer.Length,
+                out _))
+        {
+            return string.Empty;
+        }
+
+        return Encoding.Unicode
+            .GetString(
+                buffer)
+            .TrimEnd(
+                '\0')
+            .Trim();
+    }
+
+    private static bool SelectAndOpenNativeListViewRow(
+        Process process,
+        IntPtr processHandle,
+        IntPtr listView,
+        int index)
+    {
+        var itemSize =
+            Marshal.SizeOf<NativeLvItem>();
+
+        var remoteItem =
+            VirtualAllocEx(
+                processHandle,
+                IntPtr.Zero,
+                (UIntPtr)itemSize,
+                MemCommit |
+                MemReserve,
+                PageReadWrite);
+
+        var rectSize =
+            Marshal.SizeOf<NativeRect>();
+
+        var remoteRect =
+            VirtualAllocEx(
+                processHandle,
+                IntPtr.Zero,
+                (UIntPtr)rectSize,
+                MemCommit |
+                MemReserve,
+                PageReadWrite);
+
+        if (remoteItem ==
+                IntPtr.Zero ||
+            remoteRect ==
+                IntPtr.Zero)
+        {
+            if (remoteItem !=
+                IntPtr.Zero)
+            {
+                VirtualFreeEx(
+                    processHandle,
+                    remoteItem,
+                    UIntPtr.Zero,
+                    MemRelease);
+            }
+
+            if (remoteRect !=
+                IntPtr.Zero)
+            {
+                VirtualFreeEx(
+                    processHandle,
+                    remoteRect,
+                    UIntPtr.Zero,
+                    MemRelease);
+            }
+
+            return false;
+        }
+
+        try
+        {
+            var state =
+                new NativeLvItem
+                {
+                    State =
+                        LvisSelected |
+                        LvisFocused,
+                    StateMask =
+                        LvisSelected |
+                        LvisFocused
+                };
+
+            if (!WriteRemoteStructure(
+                    processHandle,
+                    remoteItem,
+                    state,
+                    itemSize))
+            {
+                return false;
+            }
+
+            _ =
+                SendMessage(
+                    listView,
+                    LvmSetItemState,
+                    (IntPtr)index,
+                    remoteItem);
+
+            _ =
+                SendMessage(
+                    listView,
+                    LvmEnsureVisible,
+                    (IntPtr)index,
+                    IntPtr.Zero);
+
+            Thread.Sleep(
+                150);
+
+            var rect =
+                new NativeRect
+                {
+                    Left =
+                        LvirBounds
+                };
+
+            if (!WriteRemoteStructure(
+                    processHandle,
+                    remoteRect,
+                    rect,
+                    rectSize))
+            {
+                return false;
+            }
+
+            var rectResult =
+                SendMessage(
+                    listView,
+                    LvmGetItemRect,
+                    (IntPtr)index,
+                    remoteRect);
+
+            if (rectResult ==
+                IntPtr.Zero ||
+                !ReadRemoteStructure(
+                    processHandle,
+                    remoteRect,
+                    out rect))
+            {
+                return false;
+            }
+
+            var point =
+                new NativePoint
+                {
+                    X =
+                        rect.Left +
+                        Math.Min(
+                            Math.Max(
+                                20,
+                                (rect.Right -
+                                 rect.Left) /
+                                2),
+                            320),
+                    Y =
+                        rect.Top +
+                        Math.Max(
+                            4,
+                            (rect.Bottom -
+                             rect.Top) /
+                            2)
+                };
+
+            if (!ClientToScreen(
+                    listView,
+                    ref point))
+            {
+                return false;
+            }
+
+            ShowWindow(
+                process.MainWindowHandle,
+                SwRestore);
+
+            SetForegroundWindow(
+                process.MainWindowHandle);
+
+            if (!SetCursorPos(
+                    point.X,
+                    point.Y))
+            {
+                return false;
+            }
+
+            MouseClick();
+
+            Thread.Sleep(
+                120);
+
+            MouseClick();
+
+            return true;
+        }
+        finally
+        {
+            VirtualFreeEx(
+                processHandle,
+                remoteItem,
+                UIntPtr.Zero,
+                MemRelease);
+
+            VirtualFreeEx(
+                processHandle,
+                remoteRect,
+                UIntPtr.Zero,
+                MemRelease);
+        }
+    }
+
+    private static bool WriteRemoteStructure<T>(
+        IntPtr processHandle,
+        IntPtr remoteAddress,
+        T value,
+        int size)
+        where T : struct
+    {
+        var local =
+            Marshal.AllocHGlobal(
+                size);
+
+        try
+        {
+            Marshal.StructureToPtr(
+                value,
+                local,
+                false);
+
+            var bytes =
+                new byte[
+                    size];
+
+            Marshal.Copy(
+                local,
+                bytes,
+                0,
+                bytes.Length);
+
+            return WriteProcessMemory(
+                processHandle,
+                remoteAddress,
+                bytes,
+                bytes.Length,
+                out _);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(
+                local);
+        }
+    }
+
+    private static bool ReadRemoteStructure<T>(
+        IntPtr processHandle,
+        IntPtr remoteAddress,
+        out T value)
+        where T : struct
+    {
+        var size =
+            Marshal.SizeOf<T>();
+
+        var bytes =
+            new byte[
+                size];
+
+        if (!ReadProcessMemory(
+                processHandle,
+                remoteAddress,
+                bytes,
+                bytes.Length,
+                out _))
+        {
+            value =
+                default;
+
+            return false;
+        }
+
+        var local =
+            Marshal.AllocHGlobal(
+                size);
+
+        try
+        {
+            Marshal.Copy(
+                bytes,
+                0,
+                local,
+                bytes.Length);
+
+            value =
+                Marshal.PtrToStructure<T>(
+                    local);
+
+            return true;
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(
+                local);
+        }
+    }
+
+    private sealed record NativeListViewRow(
+        int Index,
+        string Text);
+
+    [StructLayout(
+        LayoutKind.Sequential,
+        CharSet =
+            CharSet.Unicode)]
+    private struct NativeLvItem
+    {
+        public uint Mask;
+        public int Item;
+        public int SubItem;
+        public uint State;
+        public uint StateMask;
+        public IntPtr Text;
+        public int TextMax;
+        public int Image;
+        public IntPtr Parameter;
+        public int Indent;
+        public int GroupId;
+        public uint Columns;
+        public IntPtr ColumnIndices;
+        public IntPtr ColumnFormats;
+        public int Group;
+    }
+
+    [StructLayout(
+        LayoutKind.Sequential)]
+    private struct NativeRect
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
+
+    [StructLayout(
+        LayoutKind.Sequential)]
+    private struct NativePoint
+    {
+        public int X;
+        public int Y;
+    }
+
     private static void TryRealize(
         AutomationElement element)
     {
@@ -1519,6 +2274,108 @@ public sealed class GpoEditorNavigatorService
             0,
             UIntPtr.Zero);
     }
+
+    private delegate bool EnumChildProc(
+        IntPtr windowHandle,
+        IntPtr parameter);
+
+    [DllImport(
+        "user32.dll",
+        CharSet =
+            CharSet.Unicode)]
+    private static extern int GetClassName(
+        IntPtr windowHandle,
+        StringBuilder className,
+        int maxCount);
+
+    [DllImport(
+        "user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool EnumChildWindows(
+        IntPtr parentWindow,
+        EnumChildProc callback,
+        IntPtr parameter);
+
+    [DllImport(
+        "user32.dll",
+        CharSet =
+            CharSet.Unicode)]
+    private static extern IntPtr SendMessage(
+        IntPtr windowHandle,
+        int message,
+        IntPtr wParam,
+        IntPtr lParam);
+
+    [DllImport(
+        "user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ClientToScreen(
+        IntPtr windowHandle,
+        ref NativePoint point);
+
+    [DllImport(
+        "kernel32.dll",
+        SetLastError =
+            true)]
+    private static extern IntPtr OpenProcess(
+        uint desiredAccess,
+        [MarshalAs(UnmanagedType.Bool)]
+        bool inheritHandle,
+        int processId);
+
+    [DllImport(
+        "kernel32.dll",
+        SetLastError =
+            true)]
+    private static extern IntPtr VirtualAllocEx(
+        IntPtr processHandle,
+        IntPtr address,
+        UIntPtr size,
+        uint allocationType,
+        uint protect);
+
+    [DllImport(
+        "kernel32.dll",
+        SetLastError =
+            true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool VirtualFreeEx(
+        IntPtr processHandle,
+        IntPtr address,
+        UIntPtr size,
+        uint freeType);
+
+    [DllImport(
+        "kernel32.dll",
+        SetLastError =
+            true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool ReadProcessMemory(
+        IntPtr processHandle,
+        IntPtr baseAddress,
+        [Out] byte[] buffer,
+        int size,
+        out UIntPtr bytesRead);
+
+    [DllImport(
+        "kernel32.dll",
+        SetLastError =
+            true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool WriteProcessMemory(
+        IntPtr processHandle,
+        IntPtr baseAddress,
+        byte[] buffer,
+        int size,
+        out UIntPtr bytesWritten);
+
+    [DllImport(
+        "kernel32.dll",
+        SetLastError =
+            true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CloseHandle(
+        IntPtr handle);
 
     [DllImport(
         "user32.dll")]
