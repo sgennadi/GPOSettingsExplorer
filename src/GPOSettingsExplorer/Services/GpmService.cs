@@ -752,7 +752,7 @@ public sealed class GpmService
     private static string BuildSecurityLoadDiagnostic(
         string domainName,
         Guid gpoId,
-        COMException gpmException,
+        Exception gpmException,
         Exception directoryException)
     {
         var builder =
