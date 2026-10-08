@@ -21,6 +21,7 @@ public partial class MainWindow
     private bool _gpoScriptsLoaded;
     private CancellationTokenSource? _gpoScriptSearchCancellation;
     private TextBlock? _gpoScriptSearchScopeText;
+    private ComboBox? _gpoScriptSearchModeCombo;
 
     private async Task EnsureGpoScriptsLoadedAsync()
     {
@@ -75,6 +76,31 @@ public partial class MainWindow
             return;
         }
 
+        _gpoScriptSearchModeCombo = new ComboBox
+        {
+            MinWidth = 190,
+            ToolTip = "Choose whether to find a word inside the script, in its file name/path, or both."
+        };
+        _gpoScriptSearchModeCombo.Items.Add(new ComboBoxItem
+        {
+            Content = "Content only",
+            Tag = GpoScriptSearchMode.ContentOnly
+        });
+        _gpoScriptSearchModeCombo.Items.Add(new ComboBoxItem
+        {
+            Content = "File names & paths",
+            Tag = GpoScriptSearchMode.FileNamesAndPaths
+        });
+        _gpoScriptSearchModeCombo.Items.Add(new ComboBoxItem
+        {
+            Content = "Both",
+            Tag = GpoScriptSearchMode.Both
+        });
+        _gpoScriptSearchModeCombo.SelectedIndex = 0;
+        panel.Children.Insert(
+            panel.Children.IndexOf(GpoScriptSearchScopeCombo) + 1,
+            _gpoScriptSearchModeCombo);
+
         var selectGpos =
             new Button
             {
@@ -104,8 +130,7 @@ public partial class MainWindow
                         0),
                 VerticalAlignment =
                     VerticalAlignment.Center,
-                Foreground =
-                    System.Windows.Media.Brushes.DimGray,
+                Foreground = UiStyle.MutedBrush,
                 TextWrapping =
                     TextWrapping.Wrap
             };
@@ -669,6 +694,12 @@ public partial class MainWindow
             ResolveGpoScriptSearchSource(
                 out var scopeDescription);
 
+        var searchMode =
+            (_gpoScriptSearchModeCombo?.SelectedItem as ComboBoxItem)?.Tag
+            is GpoScriptSearchMode selectedMode
+                ? selectedMode
+                : GpoScriptSearchMode.ContentOnly;
+
         _gpoScriptSearchCancellation?.Cancel();
 
         _gpoScriptSearchCancellation =
@@ -685,7 +716,8 @@ public partial class MainWindow
                     _gpoScriptService.SearchContent(
                         source,
                         query,
-                        _gpoScriptSearchCancellation.Token));
+                        _gpoScriptSearchCancellation.Token,
+                        searchMode));
 
             ReplaceCollection(
                 _gpoScriptSearchResults,
@@ -702,7 +734,7 @@ public partial class MainWindow
                     .Count();
 
             GpoScriptSearchCountText.Text =
-                $"{results.Count:N0} unique matches | {physicalCopies:N0} copies | {scopeDescription}";
+                $"{results.Count:N0} unique matches | {physicalCopies:N0} copies | {scopeDescription} | {searchMode}";
 
             StatusText.Text =
                 results.Count == 0
