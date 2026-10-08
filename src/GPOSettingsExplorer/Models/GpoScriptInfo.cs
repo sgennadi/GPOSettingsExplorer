@@ -29,6 +29,13 @@ public sealed class GpoScriptInfo
         Referenced ? Order.ToString() : string.Empty;
 }
 
+public enum GpoScriptSearchMode
+{
+    ContentOnly,
+    FileNamesAndPaths,
+    Both
+}
+
 public sealed class GpoScriptSearchResult
 {
     public IReadOnlyList<GpoScriptInfo> Scripts { get; init; } =
@@ -37,6 +44,7 @@ public sealed class GpoScriptSearchResult
     public string Identity { get; init; } = string.Empty;
     public int LineNumber { get; init; }
     public string LineText { get; init; } = string.Empty;
+    public string MatchType { get; init; } = string.Empty;
 
     public GpoScriptInfo Script =>
         Scripts.FirstOrDefault() ?? new GpoScriptInfo();
@@ -62,4 +70,5 @@ public sealed class GpoScriptDocument
     public string Text { get; set; } = string.Empty;
     public int CodePage { get; init; }
     public bool EmitBom { get; init; }
+    public string OriginalSha256 { get; init; } = string.Empty;
 }
