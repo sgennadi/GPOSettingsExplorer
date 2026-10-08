@@ -4,6 +4,16 @@
 
 - No unreleased changes yet.
 
+## 0.3.3 - 2026-10-08
+
+- Added a quiet automatic update check after startup. A successful check is repeated at most once every 24 hours.
+- Temporary GitHub/network failures no longer interrupt startup and are throttled to a two-hour retry window instead of checking on every launch.
+- When a newer release is found automatically, the top-bar button changes to "Update vX.Y.Z" without showing a modal prompt.
+- The last successful release check is persisted under LocalAppData so an available update remains visible across restarts without another network request.
+- Manual "Check updates" still performs an immediate fresh check and then offers to download, verify and install the matching x64/ARM64 portable package.
+- Added core regression tests for the 24-hour successful-check interval and two-hour failed-check retry interval.
+
+
 ## 0.3.2 - 2026-10-08
 
 - Fixed the GPP INI Files crash dialog: the Targeting column was binding TwoWay to the read-only computed HasFilters property.
