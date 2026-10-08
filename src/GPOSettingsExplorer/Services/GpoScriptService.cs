@@ -138,244 +138,138 @@ public sealed class GpoScriptService
     public IReadOnlyList<GpoScriptSearchResult> SearchContent(
         IEnumerable<GpoScriptInfo> scripts,
         string query,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        GpoScriptSearchMode mode = GpoScriptSearchMode.Both)
     {
         if (string.IsNullOrWhiteSpace(query))
-        {
             return Array.Empty<GpoScriptSearchResult>();
+
+        var needle = query.Trim();
+        var includeMetadata = mode != GpoScriptSearchMode.ContentOnly;
+        var includeContent = mode != GpoScriptSearchMode.FileNamesAndPaths;
+
+        var byPath = scripts
+            .GroupBy(script => script.FullPath, StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.ToArray())
+            .ToArray();
+
+        var result = new List<GpoScriptSearchResult>();
+
+        if (includeMetadata)
+        {
+            // Search every file name/path individually. Grouping by content hash
+            // here would report the wrong file if two differently named scripts
+            // happen to contain identical bytes.
+            // This mode never needs to read file contents over SYSVOL.
+            foreach (var pathGroup in byPath)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var matched = pathGroup.FirstOrDefault(script =>
+                    script.FileName.Contains(needle, StringComparison.CurrentCultureIgnoreCase) ||
+                    script.Parameters.Contains(needle, StringComparison.CurrentCultureIgnoreCase) ||
+                    script.FullPath.Contains(needle, StringComparison.CurrentCultureIgnoreCase));
+                if (matched is null)
+                    continue;
+
+                result.Add(new GpoScriptSearchResult
+                {
+                    Scripts = pathGroup,
+                    Identity = "METADATA|" + matched.FullPath,
+                    LineNumber = 0,
+                    MatchType = GetMetadataMatchType(matched, needle),
+                    LineText = BuildMetadataMatchText(matched, needle)
+                });
+            }
         }
 
-        var needle =
-            query.Trim();
-
-        var physicalFiles =
-            scripts
-                .Where(script =>
-                    script.Exists &&
-                    IsSupportedScriptFile(
-                        script.FullPath))
-                .GroupBy(
-                    script => script.FullPath,
-                    StringComparer.OrdinalIgnoreCase)
-                .Select(group => group.ToArray())
-                .ToArray();
-
-        var contentGroups =
-            new Dictionary<string, List<GpoScriptInfo>>(
-                StringComparer.OrdinalIgnoreCase);
-
-        var documents =
-            new Dictionary<string, string>(
-                StringComparer.OrdinalIgnoreCase);
-
-        foreach (var pathGroup in physicalFiles)
+        if (includeContent)
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            var contentGroups = new Dictionary<string, List<GpoScriptInfo>>(StringComparer.OrdinalIgnoreCase);
+            var documents = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
-            var representative =
-                pathGroup[0];
-
-            byte[] bytes;
-
-            try
+            foreach (var pathGroup in byPath)
             {
-                bytes =
-                    File.ReadAllBytes(
-                        representative.FullPath);
-            }
-            catch
-            {
-                continue;
-            }
+                cancellationToken.ThrowIfCancellationRequested();
+                var representative = pathGroup[0];
+                if (!representative.Exists || !IsSupportedScriptFile(representative.FullPath))
+                    continue;
 
-            var hash =
-                Convert.ToHexString(
-                    SHA256.HashData(
-                        bytes));
-
-            if (!contentGroups.TryGetValue(
-                    hash,
-                    out var copies))
-            {
-                copies =
-                    new List<GpoScriptInfo>();
-
-                contentGroups[hash] =
-                    copies;
-            }
-
-            copies.AddRange(
-                pathGroup);
-
-            if (!documents.ContainsKey(
-                    hash))
-            {
                 try
                 {
-                    documents[hash] =
-                        ReadDocument(
-                            representative.FullPath)
-                        .Text;
-                }
-                catch
-                {
-                    documents[hash] =
-                        string.Empty;
-                }
-            }
-        }
-
-        var result =
-            new List<GpoScriptSearchResult>();
-
-        foreach (var pair in contentGroups)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            var copies =
-                pair.Value
-                    .OrderBy(
-                        item => item.GpoName,
-                        StringComparer.CurrentCultureIgnoreCase)
-                    .ThenBy(
-                        item => item.Scope,
-                        StringComparer.OrdinalIgnoreCase)
-                    .ThenBy(
-                        item => item.EventName,
-                        StringComparer.OrdinalIgnoreCase)
-                    .ToArray();
-
-            var representative =
-                copies[0];
-
-            var metadataMatch =
-                copies.FirstOrDefault(script =>
-                    script.FileName.Contains(
-                        needle,
-                        StringComparison.CurrentCultureIgnoreCase) ||
-                    script.Parameters.Contains(
-                        needle,
-                        StringComparison.CurrentCultureIgnoreCase) ||
-                    script.FullPath.Contains(
-                        needle,
-                        StringComparison.CurrentCultureIgnoreCase));
-
-            if (metadataMatch is not null)
-            {
-                result.Add(
-                    new GpoScriptSearchResult
+                    var bytes = File.ReadAllBytes(representative.FullPath);
+                    var hash = Convert.ToHexString(SHA256.HashData(bytes));
+                    if (!contentGroups.TryGetValue(hash, out var copies))
                     {
-                        Scripts =
-                            copies,
-                        Identity =
-                            pair.Key,
-                        LineNumber =
-                            0,
-                        LineText =
-                            BuildMetadataMatchText(
-                                metadataMatch,
-                                needle)
-                    });
-            }
-
-            var text =
-                documents.TryGetValue(
-                    pair.Key,
-                    out var cachedText)
-                    ? cachedText
-                    : string.Empty;
-
-            if (string.IsNullOrEmpty(
-                    text))
-            {
-                continue;
-            }
-
-            var lines =
-                text
-                    .Replace(
-                        "\r\n",
-                        "\n",
-                        StringComparison.Ordinal)
-                    .Replace(
-                        "\r",
-                        "\n",
-                        StringComparison.Ordinal)
-                    .Split('\n');
-
-            for (var lineIndex = 0;
-                 lineIndex < lines.Length;
-                 lineIndex++)
-            {
-                if (!lines[lineIndex].Contains(
-                        needle,
-                        StringComparison.CurrentCultureIgnoreCase))
+                        copies = new List<GpoScriptInfo>();
+                        contentGroups[hash] = copies;
+                    }
+                    copies.AddRange(pathGroup);
+                    if (!documents.ContainsKey(hash))
+                    {
+                        var (encoding, bomLength, _) = DetectEncoding(bytes, representative.FullPath);
+                        documents[hash] = encoding.GetString(bytes, bomLength, bytes.Length - bomLength);
+                    }
+                }
+                catch (IOException)
+                {
+                    // A temporarily inaccessible remote SYSVOL file is not a match.
+                    continue;
+                }
+                catch (UnauthorizedAccessException)
                 {
                     continue;
                 }
-
-                result.Add(
-                    new GpoScriptSearchResult
-                    {
-                        Scripts =
-                            copies,
-                        Identity =
-                            pair.Key,
-                        LineNumber =
-                            lineIndex + 1,
-                        LineText =
-                            lines[lineIndex].Trim()
-                    });
             }
-        }
 
-        // Missing script references cannot be content-hashed, but their
-        // metadata is still useful for searches such as ".vbs".
-        foreach (var script in scripts.Where(item =>
-                     !item.Exists))
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-
-            if (!script.FileName.Contains(
-                    needle,
-                    StringComparison.CurrentCultureIgnoreCase) &&
-                !script.Parameters.Contains(
-                    needle,
-                    StringComparison.CurrentCultureIgnoreCase) &&
-                !script.FullPath.Contains(
-                    needle,
-                    StringComparison.CurrentCultureIgnoreCase))
+            foreach (var pair in contentGroups)
             {
-                continue;
-            }
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!documents.TryGetValue(pair.Key, out var text) || text.Length == 0)
+                    continue;
 
-            result.Add(
-                new GpoScriptSearchResult
+                var copies = pair.Value
+                    .OrderBy(item => item.GpoName, StringComparer.CurrentCultureIgnoreCase)
+                    .ThenBy(item => item.Scope, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(item => item.EventName, StringComparer.OrdinalIgnoreCase)
+                    .ToArray();
+
+                var lines = text.Replace("\r\n", "\n", StringComparison.Ordinal)
+                    .Replace("\r", "\n", StringComparison.Ordinal)
+                    .Split('\n');
+
+                for (var index = 0; index < lines.Length; index++)
                 {
-                    Scripts =
-                        new[] { script },
-                    Identity =
-                        "MISSING|" +
-                        script.FullPath,
-                    LineNumber =
-                        0,
-                    LineText =
-                        BuildMetadataMatchText(
-                            script,
-                            needle)
-                });
+                    if (!lines[index].Contains(needle, StringComparison.CurrentCultureIgnoreCase))
+                        continue;
+
+                    result.Add(new GpoScriptSearchResult
+                    {
+                        Scripts = copies,
+                        Identity = pair.Key,
+                        LineNumber = index + 1,
+                        MatchType = "Content",
+                        LineText = lines[index].Trim()
+                    });
+                }
+            }
         }
 
         return result
-            .OrderBy(
-                item => item.FileName,
-                StringComparer.CurrentCultureIgnoreCase)
-            .ThenBy(
-                item => item.LineNumber)
-            .ThenBy(
-                item => item.LineText,
-                StringComparer.CurrentCultureIgnoreCase)
+            .OrderBy(item => item.FileName, StringComparer.CurrentCultureIgnoreCase)
+            .ThenBy(item => item.LineNumber)
+            .ThenBy(item => item.LineText, StringComparer.CurrentCultureIgnoreCase)
             .ToArray();
+    }
+
+    private static string GetMetadataMatchType(
+        GpoScriptInfo script,
+        string needle)
+    {
+        if (script.FileName.Contains(needle, StringComparison.OrdinalIgnoreCase))
+            return "File name";
+        if (script.Parameters.Contains(needle, StringComparison.OrdinalIgnoreCase))
+            return "Parameters";
+        return "Path";
     }
 
     private static string BuildMetadataMatchText(
@@ -402,13 +296,21 @@ public sealed class GpoScriptService
     public GpoScriptDocument ReadDocument(string path)
     {
         var bytes = File.ReadAllBytes(path);
-        var (encoding, bomLength, emitBom) = DetectEncoding(bytes);
+        var (encoding, bomLength, emitBom) = DetectEncoding(bytes, path);
+        var text = encoding.GetString(bytes, bomLength, bytes.Length - bomLength);
+        var newLine = text.Contains("\r\n", StringComparison.Ordinal)
+            ? "\r\n"
+            : text.Contains('\n') ? "\n"
+            : text.Contains('\r') ? "\r" : Environment.NewLine;
 
         return new GpoScriptDocument
         {
-            Text = encoding.GetString(bytes, bomLength, bytes.Length - bomLength),
+            Text = text,
             CodePage = encoding.CodePage,
-            EmitBom = emitBom
+            EmitBom = emitBom,
+            OriginalSha256 = Convert.ToHexString(SHA256.HashData(bytes)),
+            OriginalText = text,
+            NewLine = newLine
         };
     }
 
@@ -447,6 +349,13 @@ public sealed class GpoScriptService
             File.ReadAllBytes(
                 fullPath);
 
+        if (!string.IsNullOrEmpty(document.OriginalSha256) &&
+            !Convert.ToHexString(SHA256.HashData(original)).Equals(
+                document.OriginalSha256, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new IOException("The script changed in SYSVOL after it was opened. Reload it before saving to avoid overwriting someone else's changes.");
+        }
+
         ChangePreviewGuard.Confirm(
             new ChangePreviewRequest(
                 "Save GPO script",
@@ -463,63 +372,99 @@ public sealed class GpoScriptService
             Guid.NewGuid().ToString("N") +
             ".tmp";
 
-        WriteText(
-            temp,
-            document.Text,
-            encoding,
-            document.EmitBom);
+        var stage = "creating staged file";
+        var overwritten = false;
+        var expectedBytes = Array.Empty<byte>();
 
         try
         {
-            File.Copy(
+            var textToWrite =
+                document.Text.Equals(document.OriginalText, StringComparison.Ordinal)
+                    ? document.Text
+                    : NormalizeLineEndings(document.Text, document.NewLine);
+            WriteText(
                 temp,
-                fullPath,
-                overwrite: true);
+                textToWrite,
+                encoding,
+                document.EmitBom);
 
+            expectedBytes = File.ReadAllBytes(temp);
+            if (expectedBytes.AsSpan().SequenceEqual(original))
+            {
+                GpoScriptCacheService.Invalidate(gpo);
+                return;
+            }
+
+            stage = "checking SYSVOL source version";
+            var latest = File.ReadAllBytes(fullPath);
+            if (!latest.AsSpan().SequenceEqual(original))
+                throw new IOException("The source script was modified in SYSVOL while this edit was in progress. Reload it before saving.");
+
+            stage = "writing script to SYSVOL";
+            // Copy can partially overwrite a file before raising an IOException.
+            overwritten = true;
+            File.Copy(temp, fullPath, overwrite: true);
+
+            stage = "verifying script content in SYSVOL";
+            var written = File.ReadAllBytes(fullPath);
+            if (!written.AsSpan().SequenceEqual(expectedBytes))
+                throw new IOException("Post-save byte verification failed: SYSVOL content differs from the edited script.");
+
+            stage = "committing the GPO scripts extension";
             using var policy =
                 new NativeGroupPolicyObject(
                     gpo,
                     domainDistinguishedName);
 
-            var extensionGuid =
-                ScriptsExtensionGuid;
-
+            var extensionGuid = ScriptsExtensionGuid;
             var toolGuid =
-                script.Scope.Equals(
-                    "User",
-                    StringComparison.OrdinalIgnoreCase)
+                script.Scope.Equals("User", StringComparison.OrdinalIgnoreCase)
                     ? UserScriptsToolGuid
                     : MachineScriptsToolGuid;
 
             policy.Save(
-                machine: !script.Scope.Equals(
-                    "User",
-                    StringComparison.OrdinalIgnoreCase),
+                machine: !script.Scope.Equals("User", StringComparison.OrdinalIgnoreCase),
                 add: true,
                 ref extensionGuid,
                 ref toolGuid);
 
-            GpoScriptCacheService.Invalidate(
-                gpo);
-        }
-        catch
-        {
-            File.WriteAllBytes(
-                fullPath,
-                original);
+            stage = "verifying saved script after GPO commit";
+            var finalBytes = File.ReadAllBytes(fullPath);
+            if (!finalBytes.AsSpan().SequenceEqual(expectedBytes))
+                throw new IOException("SYSVOL content changed after the GPO commit.");
 
-            throw;
+            GpoScriptCacheService.Invalidate(gpo);
+        }
+        catch (Exception ex)
+        {
+            string rollback;
+            if (overwritten)
+            {
+                try
+                {
+                    File.WriteAllBytes(fullPath, original);
+                    rollback = File.ReadAllBytes(fullPath).AsSpan().SequenceEqual(original)
+                        ? "Original script restored."
+                        : "WARNING: original script restoration was not verified.";
+                }
+                catch (Exception restoreEx)
+                {
+                    rollback = "WARNING: original script could not be restored: " + restoreEx.Message;
+                }
+            }
+            else
+            {
+                rollback = "Original script was not overwritten.";
+            }
+
+            throw new IOException(
+                $"Cannot save '{script.FileName}' at stage '{stage}'. {rollback} " +
+                $"Path: {fullPath}. Original error: {ex.Message}", ex);
         }
         finally
         {
-            try
-            {
-                File.Delete(
-                    temp);
-            }
-            catch
-            {
-            }
+            try { File.Delete(temp); }
+            catch { /* Preserve the primary save error. */ }
         }
     }
 
@@ -563,6 +508,8 @@ public sealed class GpoScriptService
                 {
                     GpoId = gpo.Id,
                     GpoName = gpo.DisplayName,
+                    GpoComputerEnabled = gpo.ComputerEnabled,
+                    GpoUserEnabled = gpo.UserEnabled,
                     DomainName = gpo.DomainName,
                     Scope = scope,
                     EventName = entry.EventName,
@@ -603,6 +550,8 @@ public sealed class GpoScriptService
             {
                 GpoId = gpo.Id,
                 GpoName = gpo.DisplayName,
+                GpoComputerEnabled = gpo.ComputerEnabled,
+                GpoUserEnabled = gpo.UserEnabled,
                 DomainName = gpo.DomainName,
                 Scope = scope,
                 EventName = DetectEventName(root, path),
@@ -733,12 +682,13 @@ public sealed class GpoScriptService
     private static string ReadText(string path)
     {
         var bytes = File.ReadAllBytes(path);
-        var (encoding, bomLength, _) = DetectEncoding(bytes);
+        var (encoding, bomLength, _) = DetectEncoding(bytes, path);
         return encoding.GetString(bytes, bomLength, bytes.Length - bomLength);
     }
 
     private static (Encoding Encoding, int BomLength, bool EmitBom) DetectEncoding(
-        byte[] bytes)
+        byte[] bytes,
+        string? path = null)
     {
         if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE)
             return (new UnicodeEncoding(false, true), 2, true);
@@ -751,15 +701,46 @@ public sealed class GpoScriptService
             return (new UTF8Encoding(true), 3, true);
 
         var sample = bytes.Take(Math.Min(bytes.Length, 256)).ToArray();
-        var oddZeros = sample
-            .Where((value, index) => index % 2 == 1 && value == 0)
-            .Count();
-
+        var oddZeros = sample.Where((value, index) => index % 2 == 1 && value == 0).Count();
         if (oddZeros > 12)
             return (new UnicodeEncoding(false, false), 0, false);
 
+        // An invalid UTF-8 byte stream is usually a legacy Windows ANSI script.
+        // Detect strictly; silently replacing undecodable bytes loses BAT/CMD text.
+        var validUtf8 = true;
+        try
+        {
+            _ = new UTF8Encoding(false, true).GetString(bytes);
+        }
+        catch (DecoderFallbackException)
+        {
+            validUtf8 = false;
+        }
+
+        var ext = Path.GetExtension(path ?? string.Empty);
+        var batchScript = ext.Equals(".bat", StringComparison.OrdinalIgnoreCase) ||
+                          ext.Equals(".cmd", StringComparison.OrdinalIgnoreCase);
+
+        if (!validUtf8 || (batchScript && bytes.All(value => value <= 0x7F)))
+        {
+            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+            return (Encoding.GetEncoding(checked((int)GetACP())), 0, false);
+        }
+
         return (new UTF8Encoding(false), 0, false);
     }
+
+    private static string NormalizeLineEndings(string text, string newLine)
+    {
+        var normalized = text.Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace("\r", "\n", StringComparison.Ordinal);
+        return newLine == "\n"
+            ? normalized
+            : normalized.Replace("\n", newLine, StringComparison.Ordinal);
+    }
+
+    [DllImport("kernel32.dll")]
+    private static extern uint GetACP();
 
     private static void WriteText(
         string path,

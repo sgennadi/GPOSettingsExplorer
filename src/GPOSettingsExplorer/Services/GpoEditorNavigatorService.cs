@@ -44,10 +44,19 @@ public sealed class GpoEditorNavigatorService
     public bool CanNavigateExactly(
         PolicySettingInfo setting)
     {
-        return setting.Extension.Equals(
-            "SecuritySettings",
-            StringComparison.OrdinalIgnoreCase);
+        // Only Security Options rows have a stable, matching name in MMC.
+        // Generic entries such as "Audit Setting" must never be opened as
+        // an unrelated Security Option because their extension name matches.
+        return setting.Extension.Equals("SecuritySettings", StringComparison.OrdinalIgnoreCase) &&
+               setting.Category.Contains("Security Options", StringComparison.OrdinalIgnoreCase) &&
+               !string.IsNullOrWhiteSpace(setting.SettingName) &&
+               !setting.SettingName.Equals("Security option", StringComparison.OrdinalIgnoreCase);
     }
+
+    private static bool CanNavigateToSection(PolicySettingInfo setting) =>
+        setting.Extension.Equals("SecuritySettings", StringComparison.OrdinalIgnoreCase) ||
+        setting.Extension.Equals("AuditSettings", StringComparison.OrdinalIgnoreCase) ||
+        setting.Extension.Equals("RegistrySettings", StringComparison.OrdinalIgnoreCase);
 
     public async Task<bool> OpenAtSettingAsync(
         GpoInfo gpo,
@@ -61,8 +70,7 @@ public sealed class GpoEditorNavigatorService
                 gpo,
                 domainDistinguishedName);
 
-        if (!CanNavigateExactly(
-                setting))
+        if (!CanNavigateExactly(setting) && !CanNavigateToSection(setting))
         {
             return false;
         }
@@ -129,7 +137,7 @@ public sealed class GpoEditorNavigatorService
                    "Unable to start the Group Policy Management Editor.");
     }
 
-    private static bool Navigate(
+    private bool Navigate(
         Process process,
         PolicySettingInfo setting,
         IProgress<string>? progress,
@@ -225,11 +233,30 @@ public sealed class GpoEditorNavigatorService
             current,
             doubleClick: false);
 
-        Thread.Sleep(
-            700);
+        if (!CanNavigateExactly(setting))
+        {
+            progress?.Report("Opened the closest supported MMC category. Exact row navigation is not available for this setting type.");
+            return false;
+        }
+
+        Thread.Sleep(450);
+
+        progress?.Report("Trying an exact name match in the native MMC list view...");
+
+        var candidates = BuildRowCandidates(setting);
+        if (TryOpenNativeListViewSetting(
+                process,
+                setting,
+                candidates,
+                cancellationToken,
+                out var nativeDiagnostics))
+        {
+            progress?.Report("Exact setting opened through the native MMC list view.");
+            return true;
+        }
 
         progress?.Report(
-            "Searching the MMC result pane for the exact setting...");
+            "Searching visible MMC settings through UI Automation...");
 
         var row =
             FindSettingRow(
@@ -243,25 +270,8 @@ public sealed class GpoEditorNavigatorService
             progress?.Report(
                 "UI Automation exposed no matching row. Trying native MMC list view...");
 
-            var candidates =
-                BuildRowCandidates(
-                    setting);
-
-            if (TryOpenNativeListViewSetting(
-                    process,
-                    setting,
-                    candidates,
-                    cancellationToken,
-                    out var nativeDiagnostics))
-            {
-                progress?.Report(
-                    "Exact setting opened through the native MMC list view.");
-
-                return true;
-            }
-
             progress?.Report(
-                "MMC opened the target policy node but did not expose a matching row.");
+                "MMC opened the target policy category but did not find an exact row; no other policy was opened.");
 
             CrashLogService.Write(
                 $"MMC exact navigation miss: {setting.SettingName}",
@@ -381,34 +391,48 @@ public sealed class GpoEditorNavigatorService
         PolicySettingInfo setting)
     {
         var scope =
-            setting.Scope.Equals(
-                "User",
-                StringComparison.OrdinalIgnoreCase)
+            setting.Scope.Equals("User", StringComparison.OrdinalIgnoreCase)
                 ? "User Configuration"
                 : "Computer Configuration";
 
-        if (setting.Extension.Equals(
-                "RegistrySettings",
-                StringComparison.OrdinalIgnoreCase))
+        if (setting.Extension.Equals("RegistrySettings", StringComparison.OrdinalIgnoreCase))
         {
-            return new[]
-            {
-                scope,
-                "Preferences",
-                "Windows Settings",
-                "Registry"
-            };
+            // registry.pol / Extra Registry Settings are Administrative Templates,
+            // NOT Group Policy Preferences Registry items.
+            return new[] { scope, "Policies", "Administrative Templates" };
         }
 
-        return new[]
+        var security = new List<string>
         {
-            scope,
-            "Policies",
-            "Windows Settings",
-            "Security Settings",
-            "Local Policies",
-            "Security Options"
+            scope, "Policies", "Windows Settings", "Security Settings"
         };
+
+        if (setting.Extension.Equals("AuditSettings", StringComparison.OrdinalIgnoreCase) ||
+            setting.Category.Contains("Advanced Audit", StringComparison.OrdinalIgnoreCase))
+        {
+            security.Add("Advanced Audit Policy Configuration");
+            security.Add("Audit Policies");
+            return security;
+        }
+
+        if (setting.Category.Contains("Account Policies", StringComparison.OrdinalIgnoreCase))
+        {
+            security.Add("Account Policies");
+            return security;
+        }
+
+        if (setting.Category.Contains("Local Policies", StringComparison.OrdinalIgnoreCase))
+        {
+            security.Add("Local Policies");
+            if (setting.Category.Contains("Security Options", StringComparison.OrdinalIgnoreCase))
+                security.Add("Security Options");
+            else if (setting.Category.Contains("Audit Policy", StringComparison.OrdinalIgnoreCase))
+                security.Add("Audit Policy");
+            else if (setting.Category.Contains("User Rights Assignment", StringComparison.OrdinalIgnoreCase))
+                security.Add("User Rights Assignment");
+        }
+
+        return security;
     }
 
     private static AutomationElement? FindTreeItem(
@@ -468,77 +492,26 @@ public sealed class GpoEditorNavigatorService
         DateTime deadline,
         CancellationToken cancellationToken)
     {
-        var candidates =
-            BuildRowCandidates(
-                setting);
-
+        var candidates = BuildRowCandidates(setting);
         if (candidates.Count == 0)
-        {
             return null;
-        }
 
-        var rowCondition =
-            new OrCondition(
-                new PropertyCondition(
-                    AutomationElement.ControlTypeProperty,
-                    ControlType.ListItem),
-                new PropertyCondition(
-                    AutomationElement.ControlTypeProperty,
-                    ControlType.DataItem));
+        var rowCondition = new OrCondition(
+            new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.ListItem),
+            new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.DataItem));
 
-        while (DateTime.UtcNow < deadline)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
+        cancellationToken.ThrowIfCancellationRequested();
+        var visible = FindVisibleRow(window, candidates, rowCondition);
+        if (visible is not null) return visible;
 
-            var visible =
-                FindVisibleRow(
-                    window,
-                    candidates,
-                    rowCondition);
+        var byText = FindRowByText(window, candidates);
+        if (byText is not null) return byText;
 
-            if (visible is not null)
-            {
-                return visible;
-            }
+        var virtualized = FindVirtualizedRow(window, candidates);
+        if (virtualized is not null) return virtualized;
 
-            var byText =
-                FindRowByText(
-                    window,
-                    candidates);
-
-            if (byText is not null)
-            {
-                return byText;
-            }
-
-            var virtualized =
-                FindVirtualizedRow(
-                    window,
-                    candidates);
-
-            if (virtualized is not null)
-            {
-                return virtualized;
-            }
-
-            var scrolled =
-                FindRowByScrolling(
-                    window,
-                    candidates,
-                    rowCondition,
-                    deadline,
-                    cancellationToken);
-
-            if (scrolled is not null)
-            {
-                return scrolled;
-            }
-
-            Thread.Sleep(
-                180);
-        }
-
-        return null;
+        // Single bounded pass, no repeated jump-to-top / scroll-to-bottom loops.
+        return FindRowByScrolling(window, candidates, rowCondition, deadline, cancellationToken);
     }
 
     private static string BuildNavigationMissDetails(
@@ -680,6 +653,11 @@ public sealed class GpoEditorNavigatorService
         AddCandidate(
             result,
             setting.SettingName);
+
+        // Security Options must match the displayed setting name, not a
+        // commonly shared registry key/value or a fuzzy partial prefix.
+        if (setting.Extension.Equals("SecuritySettings", StringComparison.OrdinalIgnoreCase))
+            return result;
 
         AddCandidate(
             result,
@@ -1103,7 +1081,7 @@ public sealed class GpoEditorNavigatorService
             }
 
             for (var page = 0;
-                 page < 80 &&
+                 page < 12 &&
                  DateTime.UtcNow < deadline;
                  page++)
             {
@@ -1256,88 +1234,20 @@ public sealed class GpoEditorNavigatorService
         string actual,
         string expected)
     {
-        var normalizedActual =
-            NormalizeUiText(
-                actual);
-
-        var normalizedExpected =
-            NormalizeUiText(
-                expected);
-
-        if (normalizedActual.Length == 0 ||
-            normalizedExpected.Length == 0)
-        {
+        var actualText = NormalizeUiText(actual);
+        var expectedText = NormalizeUiText(expected);
+        if (actualText.Length == 0 || expectedText.Length == 0)
             return false;
-        }
 
-        if (normalizedActual.Equals(
-                normalizedExpected,
-                StringComparison.CurrentCultureIgnoreCase) ||
-            normalizedActual.StartsWith(
-                normalizedExpected,
-                StringComparison.CurrentCultureIgnoreCase) ||
-            normalizedActual.Contains(
-                normalizedExpected,
-                StringComparison.CurrentCultureIgnoreCase))
-        {
+        if (actualText.Equals(expectedText, StringComparison.CurrentCultureIgnoreCase))
             return true;
-        }
 
-        var actualPrefix =
-            normalizedActual
-                .TrimEnd(
-                    '.')
-                .TrimEnd();
-
-        var expectedPrefix =
-            normalizedExpected
-                .TrimEnd(
-                    '.')
-                .TrimEnd();
-
-        if (actualPrefix.Length >= 24 &&
-            normalizedExpected.StartsWith(
-                actualPrefix,
-                StringComparison.CurrentCultureIgnoreCase))
-        {
-            return true;
-        }
-
-        if (expectedPrefix.Length >= 24 &&
-            normalizedActual.StartsWith(
-                expectedPrefix,
-                StringComparison.CurrentCultureIgnoreCase))
-        {
-            return true;
-        }
-
-        var common =
-            0;
-
-        var max =
-            Math.Min(
-                normalizedActual.Length,
-                normalizedExpected.Length);
-
-        while (common < max &&
-               char.ToUpperInvariant(
-                   normalizedActual[common]) ==
-               char.ToUpperInvariant(
-                   normalizedExpected[common]))
-        {
-            common++;
-        }
-
-        var shorter =
-            Math.Min(
-                normalizedActual.Length,
-                normalizedExpected.Length);
-
-        return common >= 28 &&
-               common >=
-               (int)Math.Ceiling(
-                   shorter *
-                   0.75);
+        // MMC may show a shortened long heading ending in an ellipsis.
+        // A shared prefix without an ellipsis is NOT proof of an exact setting.
+        var prefix = actualText.TrimEnd('.');
+        return actualText.EndsWith("...", StringComparison.Ordinal) &&
+               prefix.Length >= 28 &&
+               expectedText.StartsWith(prefix, StringComparison.CurrentCultureIgnoreCase);
     }
 
     private static string NormalizeUiText(
@@ -1532,7 +1442,8 @@ public sealed class GpoEditorNavigatorService
                         '.')
                     .TrimEnd();
 
-            if (trimmed.Length >= 28 &&
+            if (firstColumn.EndsWith("...", StringComparison.Ordinal) &&
+                trimmed.Length >= 28 &&
                 target.StartsWith(
                     trimmed,
                     StringComparison.CurrentCultureIgnoreCase))

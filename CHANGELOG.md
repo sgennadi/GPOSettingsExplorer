@@ -4,6 +4,24 @@
 
 - No unreleased changes yet.
 
+## 0.4.4 - 2026-10-08
+
+- GPO Scripts search now supports **Content only**, **File names & paths**, and **Both**; the result grid identifies the match type and line number.
+- Filename-only searches no longer read every script from SYSVOL, and scripts with identical contents but different filenames are identified correctly.
+- BAT/CMD/PS1 and other script edits keep the editor open while saving. If backup, SYSVOL write, or the Group Policy API commit fails, the edited text remains in the window for retry.
+- Saving requires WRITE ENABLED; the editor makes READ ONLY restrictions visible rather than closing without an actionable explanation.
+- Save checks the source script's SHA-256 against the originally opened version, retains original code page/BOM/line endings, verifies the SYSVOL write byte-for-byte, logs the exact failing stage and reports whether a rollback succeeded.
+- MMC exact navigation now uses strict matching and bounded native-first lookup. Non-Security-Option settings are no longer opened as unrelated Security Options.
+- Audit and raw registry settings route to Advanced Audit Policy and Administrative Templates rather than unrelated nodes; audit subcategory names are extracted for searching.
+- Bumped the settings-index cache schema to rebuild old generic Audit Setting results.
+- Global colored WPF styling centralizes accent/status colors and prevents data grid column headings from collapsing into vertical letters using DPI-aware measurement of minimum header widths.
+- Added regression tests for script search modes, duplicate-content file-name matching, script line endings, and MMC navigation.
+- Added a full AvalonEdit script editor with centralized syntax colors for BAT, CMD, PS1, PSM1 and PSD1, plus built-in highlighting for supported JS/VBS/HTML-based scripts.
+- Colored GPO rows (disabled, partial scope), script file types and missing/unassigned/inactive scripts. Syntax diagnostics are color-coded by severity, with text labels for accessibility.
+- Added non-executing PowerShell AST syntax checking and basic BAT/CMD static validation (missing/duplicate labels, pasted Markdown fences). Checks run on demand and before saving.
+- Expanded script editing: Find Next, Replace, Replace All, Ctrl+S/F/H/G shortcuts, F3/F7, goto line, comment/uncomment, indent/outdent, Undo/Redo, configurable whitespace, word wrap, line numbers, zoom, and local-file export.
+- Safeguarded in-place editing: unsaved-change confirmation, retry after failed SYSVOL writes without losing editor text, active-window change previews, toolbars that remain accessible at high DPI, and a revised script cache schema that preserves GPO scope statuses.
+
 ## 0.4.3 - 2026-10-08
 
 - Fixed native MMC exact navigation opening the wrong Security Option after the correct target row was found.

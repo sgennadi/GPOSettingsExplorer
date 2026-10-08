@@ -1,6 +1,31 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
+    <SolidColorBrush x:Key="UiAccentBrush" Color="#1666A6"/>
+    <SolidColorBrush x:Key="UiAccentSoftBrush" Color="#E9F3FC"/>
+    <SolidColorBrush x:Key="UiSuccessBrush" Color="#18794E"/>
+    <SolidColorBrush x:Key="UiWarningBrush" Color="#A76400"/>
+    <SolidColorBrush x:Key="UiErrorBrush" Color="#B42318"/>
+    <SolidColorBrush x:Key="UiMutedBrush" Color="#596779"/>
+    <SolidColorBrush x:Key="UiSurfaceBrush" Color="#EFF3F8"/>
+
+    <!-- Semantic colors are centralized here; no per-window palettes. -->
+    <SolidColorBrush x:Key="UiDisabledRowBrush" Color="#EDF0F3"/>
+    <SolidColorBrush x:Key="UiPartialRowBrush" Color="#FFF7E7"/>
+    <SolidColorBrush x:Key="UiMissingRowBrush" Color="#FFF0EE"/>
+    <SolidColorBrush x:Key="UiUnassignedRowBrush" Color="#F5F6F8"/>
+    <SolidColorBrush x:Key="UiFileBatchBrush" Color="#1762A3"/>
+    <SolidColorBrush x:Key="UiFileCmdBrush" Color="#076C78"/>
+    <SolidColorBrush x:Key="UiFilePowerShellBrush" Color="#7443AC"/>
+    <SolidColorBrush x:Key="UiFileVbsBrush" Color="#A35C15"/>
+    <SolidColorBrush x:Key="UiFileJavaScriptBrush" Color="#A66A00"/>
+    <SolidColorBrush x:Key="UiFileOtherBrush" Color="#566477"/>
+    <SolidColorBrush x:Key="UiScriptCommentBrush" Color="#24834D"/>
+    <SolidColorBrush x:Key="UiScriptStringBrush" Color="#9A4E16"/>
+    <SolidColorBrush x:Key="UiScriptKeywordBrush" Color="#245BBB"/>
+    <SolidColorBrush x:Key="UiScriptVariableBrush" Color="#8450B2"/>
+    <SolidColorBrush x:Key="UiScriptNumberBrush" Color="#0B7484"/>
+
     <!--
         Compact native Windows-oriented styling.
         All dimensions are device-independent pixels (DIPs), so WPF scales them
@@ -31,6 +56,25 @@
         <Setter Property="HorizontalContentAlignment" Value="Center"/>
         <Setter Property="UseLayoutRounding" Value="True"/>
         <Setter Property="SnapsToDevicePixels" Value="True"/>
+    </Style>
+
+    <Style x:Key="UiPrimaryButton" TargetType="{x:Type Button}"
+           BasedOn="{StaticResource {x:Type Button}}">
+        <Setter Property="Background" Value="{StaticResource UiAccentBrush}"/>
+        <Setter Property="Foreground" Value="White"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+    </Style>
+
+    <Style x:Key="UiWriteModeToggle" TargetType="{x:Type ToggleButton}">
+        <Setter Property="Padding" Value="10,5"/>
+        <Setter Property="MinHeight" Value="28"/>
+        <Setter Property="Foreground" Value="{StaticResource UiSuccessBrush}"/>
+        <Style.Triggers>
+            <Trigger Property="IsChecked" Value="True">
+                <Setter Property="Foreground" Value="{StaticResource UiWarningBrush}"/>
+                <Setter Property="FontWeight" Value="SemiBold"/>
+            </Trigger>
+        </Style.Triggers>
     </Style>
 
     <Style TargetType="{x:Type TextBox}">
@@ -85,6 +129,12 @@
         <Setter Property="MinHeight" Value="29"/>
         <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
         <Setter Property="VerticalContentAlignment" Value="Stretch"/>
+        <Style.Triggers>
+            <Trigger Property="IsSelected" Value="True">
+                <Setter Property="Foreground" Value="{StaticResource UiAccentBrush}"/>
+                <Setter Property="FontWeight" Value="SemiBold"/>
+            </Trigger>
+        </Style.Triggers>
     </Style>
 
     <Style TargetType="{x:Type DataGrid}">
@@ -96,6 +146,7 @@
         <Setter Property="CanUserResizeColumns" Value="True"/>
         <Setter Property="CanUserReorderColumns" Value="True"/>
         <Setter Property="CanUserSortColumns" Value="True"/>
+        <Setter Property="MinColumnWidth" Value="90"/>
         <Setter Property="SelectionMode" Value="Single"/>
         <Setter Property="SelectionUnit" Value="FullRow"/>
         <Setter Property="GridLinesVisibility" Value="Horizontal"/>
@@ -110,19 +161,162 @@
         <Setter Property="SnapsToDevicePixels" Value="True"/>
     </Style>
 
+    <!-- GPO states: disabled both scopes = grey; only one scope = amber. -->
+    <Style x:Key="UiGpoRowStyle" TargetType="{x:Type DataGridRow}">
+        <Style.Triggers>
+            <MultiDataTrigger>
+                <MultiDataTrigger.Conditions>
+                    <Condition Binding="{Binding ComputerEnabled}" Value="False"/>
+                    <Condition Binding="{Binding UserEnabled}" Value="False"/>
+                </MultiDataTrigger.Conditions>
+                <Setter Property="Background" Value="{StaticResource UiDisabledRowBrush}"/>
+                <Setter Property="Foreground" Value="{StaticResource UiMutedBrush}"/>
+            </MultiDataTrigger>
+            <MultiDataTrigger>
+                <MultiDataTrigger.Conditions>
+                    <Condition Binding="{Binding ComputerEnabled}" Value="True"/>
+                    <Condition Binding="{Binding UserEnabled}" Value="False"/>
+                </MultiDataTrigger.Conditions>
+                <Setter Property="Background" Value="{StaticResource UiPartialRowBrush}"/>
+            </MultiDataTrigger>
+            <MultiDataTrigger>
+                <MultiDataTrigger.Conditions>
+                    <Condition Binding="{Binding ComputerEnabled}" Value="False"/>
+                    <Condition Binding="{Binding UserEnabled}" Value="True"/>
+                </MultiDataTrigger.Conditions>
+                <Setter Property="Background" Value="{StaticResource UiPartialRowBrush}"/>
+            </MultiDataTrigger>
+            <Trigger Property="IsSelected" Value="True">
+                <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/>
+                <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.HighlightTextBrushKey}}"/>
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="UiPolicyRowStyle" TargetType="{x:Type DataGridRow}">
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding State}" Value="Disabled">
+                <Setter Property="Background" Value="{StaticResource UiDisabledRowBrush}"/>
+                <Setter Property="Foreground" Value="{StaticResource UiMutedBrush}"/>
+            </DataTrigger>
+            <DataTrigger Binding="{Binding State}" Value="Not Configured">
+                <Setter Property="Background" Value="{StaticResource UiDisabledRowBrush}"/>
+                <Setter Property="Foreground" Value="{StaticResource UiMutedBrush}"/>
+            </DataTrigger>
+            <Trigger Property="IsSelected" Value="True">
+                <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/>
+                <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.HighlightTextBrushKey}}"/>
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="UiScriptRowStyle" TargetType="{x:Type DataGridRow}">
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding Referenced}" Value="False">
+                <Setter Property="Background" Value="{StaticResource UiUnassignedRowBrush}"/>
+            </DataTrigger>
+            <DataTrigger Binding="{Binding ScopeDisabled}" Value="True">
+                <Setter Property="Background" Value="{StaticResource UiPartialRowBrush}"/>
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Exists}" Value="False">
+                <Setter Property="Background" Value="{StaticResource UiMissingRowBrush}"/>
+                <Setter Property="Foreground" Value="{StaticResource UiErrorBrush}"/>
+            </DataTrigger>
+            <Trigger Property="IsSelected" Value="True">
+                <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/>
+                <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.HighlightTextBrushKey}}"/>
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="UiScriptTypeTextStyle" TargetType="{x:Type TextBlock}">
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="TextWrapping" Value="NoWrap"/>
+        <Setter Property="Foreground" Value="{StaticResource UiFileOtherBrush}"/>
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding Type}" Value="BAT">
+                <Setter Property="Foreground" Value="{StaticResource UiFileBatchBrush}"/>
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Type}" Value="CMD">
+                <Setter Property="Foreground" Value="{StaticResource UiFileCmdBrush}"/>
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Type}" Value="PS1">
+                <Setter Property="Foreground" Value="{StaticResource UiFilePowerShellBrush}"/>
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Type}" Value="PSM1">
+                <Setter Property="Foreground" Value="{StaticResource UiFilePowerShellBrush}"/>
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Type}" Value="PSD1">
+                <Setter Property="Foreground" Value="{StaticResource UiFilePowerShellBrush}"/>
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Type}" Value="VBS">
+                <Setter Property="Foreground" Value="{StaticResource UiFileVbsBrush}"/>
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Type}" Value="JS">
+                <Setter Property="Foreground" Value="{StaticResource UiFileJavaScriptBrush}"/>
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="UiScriptDiagnosticRowStyle" TargetType="{x:Type DataGridRow}">
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding Severity}" Value="Error">
+                <Setter Property="Background" Value="{StaticResource UiMissingRowBrush}"/>
+                <Setter Property="Foreground" Value="{StaticResource UiErrorBrush}"/>
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Severity}" Value="Warning">
+                <Setter Property="Background" Value="{StaticResource UiPartialRowBrush}"/>
+                <Setter Property="Foreground" Value="{StaticResource UiWarningBrush}"/>
+            </DataTrigger>
+            <Trigger Property="IsSelected" Value="True">
+                <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/>
+                <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.HighlightTextBrushKey}}"/>
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="UiScriptStatusTextStyle" TargetType="{x:Type TextBlock}">
+        <Setter Property="TextWrapping" Value="NoWrap"/>
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding ScopeDisabled}" Value="True">
+                <Setter Property="Foreground" Value="{StaticResource UiWarningBrush}"/>
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Exists}" Value="False">
+                <Setter Property="Foreground" Value="{StaticResource UiErrorBrush}"/>
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="UiScriptMatchTextStyle" TargetType="{x:Type TextBlock}">
+        <Setter Property="TextWrapping" Value="NoWrap"/>
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding MatchType}" Value="Content">
+                <Setter Property="Foreground" Value="{StaticResource UiSuccessBrush}"/>
+            </DataTrigger>
+            <DataTrigger Binding="{Binding MatchType}" Value="File name">
+                <Setter Property="Foreground" Value="{StaticResource UiAccentBrush}"/>
+            </DataTrigger>
+            <DataTrigger Binding="{Binding MatchType}" Value="Parameters">
+                <Setter Property="Foreground" Value="{StaticResource UiWarningBrush}"/>
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+
     <DataTemplate x:Key="WrappingColumnHeaderTemplate">
         <TextBlock Text="{Binding}"
-                   TextWrapping="Wrap"
+                   TextWrapping="NoWrap"
                    TextTrimming="None"/>
     </DataTemplate>
 
     <Style TargetType="{x:Type DataGridColumnHeader}">
+        <Setter Property="Background" Value="{StaticResource UiSurfaceBrush}"/>
         <Setter Property="Padding" Value="6,4"/>
         <Setter Property="MinHeight" Value="28"/>
         <Setter Property="HorizontalContentAlignment" Value="Left"/>
         <Setter Property="VerticalContentAlignment" Value="Center"/>
         <Setter Property="ContentTemplate"
                 Value="{StaticResource WrappingColumnHeaderTemplate}"/>
+        <Setter Property="ToolTip" Value="{Binding Content, RelativeSource={RelativeSource Self}}"/>
     </Style>
 
     <Style TargetType="{x:Type DataGridCell}">

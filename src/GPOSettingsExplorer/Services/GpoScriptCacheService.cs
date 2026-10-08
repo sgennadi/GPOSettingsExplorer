@@ -12,7 +12,8 @@ public static class GpoScriptCacheService
         string DomainName,
         string DomainController,
         long ModificationUtcTicks,
-        IReadOnlyList<GpoScriptInfo> Scripts);
+        IReadOnlyList<GpoScriptInfo> Scripts,
+        int FormatVersion);
 
     private static readonly JsonSerializerOptions JsonOptions =
         new()
@@ -47,6 +48,7 @@ public static class GpoScriptCacheService
                     JsonOptions);
 
             if (snapshot is null ||
+                snapshot.FormatVersion != 2 ||
                 snapshot.GpoId !=
                 gpo.Id ||
                 !snapshot.DomainName.Equals(
@@ -92,7 +94,8 @@ public static class GpoScriptCacheService
                         gpo.DomainName),
                     ModificationTicks(
                         gpo),
-                    scripts);
+                    scripts,
+                    FormatVersion: 2);
 
             var path =
                 CachePath(

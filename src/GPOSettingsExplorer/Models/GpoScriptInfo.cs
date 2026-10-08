@@ -12,6 +12,13 @@ public sealed class GpoScriptInfo
     public string Parameters { get; init; } = string.Empty;
     public string FullPath { get; init; } = string.Empty;
     public string SourceIni { get; init; } = string.Empty;
+    public bool GpoComputerEnabled { get; init; }
+    public bool GpoUserEnabled { get; init; }
+    public bool ScopeDisabled => Scope.Equals("User", StringComparison.OrdinalIgnoreCase)
+        ? !GpoUserEnabled : !GpoComputerEnabled;
+    public string StatusText => !Exists ? "Missing file" :
+        ScopeDisabled ? "Inactive GPO scope" :
+        !Referenced ? "Unassigned" : "Assigned / active";
     public bool Referenced { get; init; }
     public bool Exists { get; init; }
     public long Size { get; init; }
@@ -29,6 +36,13 @@ public sealed class GpoScriptInfo
         Referenced ? Order.ToString() : string.Empty;
 }
 
+public enum GpoScriptSearchMode
+{
+    ContentOnly,
+    FileNamesAndPaths,
+    Both
+}
+
 public sealed class GpoScriptSearchResult
 {
     public IReadOnlyList<GpoScriptInfo> Scripts { get; init; } =
@@ -37,11 +51,13 @@ public sealed class GpoScriptSearchResult
     public string Identity { get; init; } = string.Empty;
     public int LineNumber { get; init; }
     public string LineText { get; init; } = string.Empty;
+    public string MatchType { get; init; } = string.Empty;
 
     public GpoScriptInfo Script =>
         Scripts.FirstOrDefault() ?? new GpoScriptInfo();
 
     public string FileName => Script.FileName;
+    public string Type => Script.Type;
     public string FullPath => Script.FullPath;
 
     public int CopyCount =>
@@ -62,4 +78,7 @@ public sealed class GpoScriptDocument
     public string Text { get; set; } = string.Empty;
     public int CodePage { get; init; }
     public bool EmitBom { get; init; }
+    public string OriginalSha256 { get; init; } = string.Empty;
+    public string NewLine { get; init; } = Environment.NewLine;
+    public string OriginalText { get; init; } = string.Empty;
 }

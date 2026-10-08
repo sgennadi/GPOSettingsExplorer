@@ -4,6 +4,11 @@ using GPOSettingsExplorer.Services;
 var tests = new (string Name, Action Body)[]
 {
     ("Script sanitizer removes Markdown fences", TestScriptSanitizer),
+    ("BAT diagnostics detect broken labels", TestBatchSyntaxDiagnostics),
+    ("AvalonEdit BAT and PowerShell syntax definitions load", TestScriptHighlighting),
+    ("PowerShell syntax parser reports malformed code without running it", TestPowerShellSyntaxDiagnostics),
+    ("Script searches distinguish content and file metadata", TestScriptSearchModes),
+    ("MMC navigation does not confuse audit and registry with security options", TestMmcNavigationRouting),
     ("Domain connection pins LDAP and SYSVOL", TestDomainConnectionPaths),
     ("DPAPI current-user round trip", TestDpapiRoundTrip),
     ("GPP XML cache refreshes after file change", TestGppXmlCache),
@@ -75,6 +80,166 @@ static void TestScriptSanitizer()
             "@echo off",
             StringComparison.Ordinal),
         "Script contents were lost.");
+}
+
+static void TestScriptSearchModes()
+{
+    var root = Path.Combine(Path.GetTempPath(), "GPOSE-search-" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(root);
+    try
+    {
+        var nameMatch = Path.Combine(root, "sample.bat");
+        var bodyMatch = Path.Combine(root, "content.cmd");
+        File.WriteAllText(nameMatch, "@echo off\r\necho hello\r\n");
+        File.WriteAllText(bodyMatch, "@echo off\r\necho bat appears in the script body\r\n");
+
+        var scripts = new[] { nameMatch, bodyMatch }
+            .Select(path => new GpoScriptInfo
+            {
+                GpoId = Guid.NewGuid(),
+                GpoName = "Test GPO",
+                DomainName = "example.test",
+                Scope = "Computer",
+                FileName = Path.GetFileName(path),
+                FullPath = path,
+                Exists = true
+            })
+            .ToArray();
+        var service = new GpoScriptService();
+
+        var contents = service.SearchContent(
+            scripts, "bat", mode: GpoScriptSearchMode.ContentOnly);
+        Assert(contents.Count == 1 &&
+               contents[0].FileName == "content.cmd" &&
+               contents[0].MatchType == "Content" &&
+               contents[0].LineNumber > 0,
+            "Content-only search matched a file extension or missed a body match.");
+
+        var names = service.SearchContent(
+            scripts, "bat", mode: GpoScriptSearchMode.FileNamesAndPaths);
+        Assert(names.Count == 1 &&
+               names[0].FileName == "sample.bat" &&
+               names[0].MatchType == "File name" &&
+               names[0].LineNumber == 0,
+            "File name/path search included body-only matches.");
+
+        var combined = service.SearchContent(
+            scripts, "bat", mode: GpoScriptSearchMode.Both);
+        Assert(combined.Count == 2 &&
+               combined.Any(x => x.MatchType == "Content") &&
+               combined.Any(x => x.MatchType == "File name"),
+            "Combined search did not return both kinds of matches.");
+
+        var edited = service.ReadDocument(nameMatch);
+        Assert(!string.IsNullOrWhiteSpace(edited.OriginalSha256),
+            "Script editor did not capture the original file checksum.");
+        Assert(edited.NewLine == "\r\n",
+            "The script's CRLF line endings were not detected correctly.");
+
+        var otherNameSameBody = Path.Combine(root, "other-script.cmd");
+        File.Copy(nameMatch, otherNameSameBody);
+        var alternate = new GpoScriptInfo
+        {
+            GpoId = Guid.NewGuid(),
+            GpoName = "A first alphabetically",
+            DomainName = "example.test",
+            Scope = "Computer",
+            FileName = "other-script.cmd",
+            FullPath = otherNameSameBody,
+            Exists = true
+        };
+        var collidingContent = scripts.Append(alternate).ToArray();
+        var fileMatches = service.SearchContent(
+            collidingContent, "bat", mode: GpoScriptSearchMode.FileNamesAndPaths);
+        Assert(fileMatches.Count == 1 && fileMatches[0].FileName == "sample.bat",
+            "Metadata search showed a different filename with identical script contents.");
+    }
+    finally
+    {
+        Directory.Delete(root, recursive: true);
+    }
+}
+
+static void TestMmcNavigationRouting()
+{
+    var navigator = new GpoEditorNavigatorService();
+    var security = new PolicySettingInfo
+    {
+        Extension = "SecuritySettings",
+        Scope = "Computer",
+        Category = "Security Settings > Local Policies > Security Options",
+        SettingName = "Network security: LAN Manager authentication level"
+    };
+    Assert(navigator.CanNavigateExactly(security),
+        "Named Security Options should permit exact MMC navigation.");
+    Assert(GpoEditorNavigatorService.NavigationTarget(security).EndsWith(
+        "Local Policies > Security Options", StringComparison.Ordinal),
+        "Security Options opened the wrong policy tree.");
+
+    var audit = new PolicySettingInfo
+    {
+        Extension = "AuditSettings",
+        Scope = "Computer",
+        Category = "AuditSettings",
+        SettingName = "Audit Setting"
+    };
+    Assert(!navigator.CanNavigateExactly(audit),
+        "A generic Audit Setting must never open an unrelated Security Option.");
+    Assert(GpoEditorNavigatorService.NavigationTarget(audit).Contains(
+        "Advanced Audit Policy Configuration", StringComparison.Ordinal),
+        "Audit settings did not route to Advanced Audit Policy.");
+
+    var registry = new PolicySettingInfo
+    {
+        Extension = "RegistrySettings",
+        Scope = "Computer",
+        Category = "Registry > Extra Registry Settings",
+        SettingName = "Registry: foo"
+    };
+    var target = GpoEditorNavigatorService.NavigationTarget(registry);
+    Assert(!navigator.CanNavigateExactly(registry) &&
+           target.Contains("Administrative Templates", StringComparison.Ordinal) &&
+           !target.Contains("Preferences", StringComparison.Ordinal),
+        "registry.pol was incorrectly routed to GPP Preferences.");
+}
+
+static void TestBatchSyntaxDiagnostics()
+{
+    var source = "goto :absent\r\n:present\r\ngoto present\r\n";
+    var messages = ScriptSyntaxService.CheckBatch(source);
+    Assert(messages.Count(x => x.Message.Contains("absent", StringComparison.OrdinalIgnoreCase)) == 1,
+        "Unresolved BAT label was not detected.");
+    Assert(!messages.Any(x => x.Message.Contains("present", StringComparison.OrdinalIgnoreCase)),
+        "A defined BAT label was flagged as missing.");
+
+    var markdown = new string((char)96, 3) + "bat\r\n@echo off\r\n" +
+        new string((char)96, 3);
+    Assert(ScriptSyntaxService.CheckBatch(markdown).Count(
+        x => x.Severity == ScriptDiagnosticSeverity.Error) == 2,
+        "Markdown fence syntax errors were not detected.");
+}
+
+static void TestScriptHighlighting()
+{
+    Assert(ScriptSyntaxHighlightingService.ForFile("deploy.bat") is not null,
+        "Batch syntax highlighter could not be loaded.");
+    Assert(ScriptSyntaxHighlightingService.ForFile("startup.cmd") is not null,
+        "CMD syntax highlighter could not be loaded.");
+    Assert(ScriptSyntaxHighlightingService.ForFile("policy.ps1") is not null,
+        "PowerShell syntax highlighter could not be loaded.");
+}
+
+static void TestPowerShellSyntaxDiagnostics()
+{
+    const string invalid = "if ($true) { Write-Output 'missing brace' ";
+    var diagnostics = ScriptSyntaxService.Analyze(invalid, "startup.ps1");
+    Assert(diagnostics.Any(x => x.Severity == ScriptDiagnosticSeverity.Error),
+        "PowerShell AST parser failed to detect a missing closing brace.");
+
+    // Parser.ParseFile must never execute script statements; only parse source text.
+    var valid = ScriptSyntaxService.Analyze("Write-Output 'safe'\r\n", "startup.ps1");
+    Assert(!valid.Any(x => x.Severity == ScriptDiagnosticSeverity.Error),
+        "The PowerShell parser rejected valid source text.");
 }
 
 static void TestDomainConnectionPaths()

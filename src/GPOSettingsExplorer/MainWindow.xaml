@@ -44,6 +44,7 @@
                         Click="Connection_Click"/>
 
                 <ToggleButton x:Name="WriteModeToggle"
+                              Style="{StaticResource UiWriteModeToggle}"
                               Content="Safe mode: READ ONLY"
                               Checked="WriteModeToggle_Changed"
                               Unchecked="WriteModeToggle_Changed"
@@ -55,6 +56,7 @@
                          KeyDown="GlobalSearchBox_KeyDown"/>
 
                 <Button Content="Search"
+                        Style="{StaticResource UiPrimaryButton}"
                         Click="GlobalSearch_Click"/>
 
                 <Button Content="Diagnostics"
@@ -118,6 +120,7 @@
                                    Foreground="DimGray"/>
                     </StackPanel>
                     <DataGrid x:Name="GpoGrid"
+                              RowStyle="{StaticResource UiGpoRowStyle}"
                               MouseDoubleClick="GpoGrid_MouseDoubleClick"
                               SelectionChanged="GpoGrid_SelectionChanged">
                         <DataGrid.Columns>
@@ -145,7 +148,7 @@
                         <Button Content="Export CSV" Click="ExportSettingsCsv_Click"/>
                         <TextBlock x:Name="SettingsCountText" Margin="16,0,0,0" VerticalAlignment="Center" Foreground="DimGray"/>
                     </WrapPanel>
-                    <DataGrid x:Name="SettingsGrid" MouseDoubleClick="EditSetting_MouseDoubleClick">
+                    <DataGrid x:Name="SettingsGrid" RowStyle="{StaticResource UiPolicyRowStyle}" MouseDoubleClick="EditSetting_MouseDoubleClick">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="GPO" Binding="{Binding GpoName}" Width="1.4*"/>
                             <DataGridTextColumn Header="Scope" Binding="{Binding Scope}" Width="90"/>
@@ -188,6 +191,7 @@
                     </WrapPanel>
 
                     <DataGrid x:Name="GpoScriptsGrid"
+                              RowStyle="{StaticResource UiScriptRowStyle}"
                               Grid.Row="1"
                               MouseDoubleClick="GpoScriptsGrid_MouseDoubleClick">
                         <DataGrid.Columns>
@@ -208,7 +212,12 @@
                                                 Width="1.1*"/>
                             <DataGridTextColumn Header="Type"
                                                 Binding="{Binding Type}"
+                                                ElementStyle="{StaticResource UiScriptTypeTextStyle}"
                                                 Width="70"/>
+                            <DataGridTextColumn Header="Status"
+                                                Binding="{Binding StatusText}"
+                                                ElementStyle="{StaticResource UiScriptStatusTextStyle}"
+                                                Width="175"/>
                             <DataGridTextColumn Header="Parameters"
                                                 Binding="{Binding Parameters}"
                                                 Width="1.2*"/>
@@ -235,18 +244,19 @@
                             BorderThickness="0,1,0,0"
                             Padding="0,6,0,0">
                         <WrapPanel>
-                            <TextBlock Text="Search file contents:"
+                            <TextBlock Text="Find in scripts:"
                                        VerticalAlignment="Center"/>
                             <TextBox x:Name="GpoScriptContentSearchBox"
                                      Width="300"/>
                             <ComboBox x:Name="GpoScriptSearchScopeCombo"
                                       Width="120"/>
                             <Button Content="Find"
+                                    Style="{StaticResource UiPrimaryButton}"
                                     Click="SearchGpoScriptContent_Click"/>
                             <TextBlock x:Name="GpoScriptSearchCountText"
                                        Margin="14,0,0,0"
                                        VerticalAlignment="Center"
-                                       Foreground="DimGray"/>
+                                       Foreground="{StaticResource UiMutedBrush}"/>
                         </WrapPanel>
                     </Border>
 
@@ -257,9 +267,17 @@
                             <DataGridTextColumn Header="File"
                                                 Binding="{Binding FileName}"
                                                 Width="1.2*"/>
+                            <DataGridTextColumn Header="Type"
+                                                Binding="{Binding Type}"
+                                                ElementStyle="{StaticResource UiScriptTypeTextStyle}"
+                                                Width="90"/>
                             <DataGridTextColumn Header="Line"
                                                 Binding="{Binding LineNumber}"
                                                 Width="65"/>
+                            <DataGridTextColumn Header="Match type"
+                                                Binding="{Binding MatchType}"
+                                                ElementStyle="{StaticResource UiScriptMatchTextStyle}"
+                                                Width="140"/>
                             <DataGridTextColumn Header="Match"
                                                 Binding="{Binding LineText}"
                                                 Width="3*"/>

@@ -23,6 +23,14 @@ Available packages:
 
 The builds are self-contained. A separate .NET runtime installation is not required.
 
+### Script editor and visual status colors (0.4.4)
+
+The GPO Scripts tab provides a rich, portable AvalonEdit editor with syntax colors for BAT/CMD and PowerShell scripts, plus supported JS/VBS/HTML script definitions. Colors come from the shared UiStyle / WindowsCompact.xaml palette. Script-file extensions are colored by type; disabled or partially active GPO scopes, missing files and unassigned scripts have clear visual and textual status indicators.
+
+The editor provides line numbers, word wrap, visible tabs/spaces, adjustable font size, find/replace/replace all, Undo/Redo, goto line, comment/uncomment, indent/outdent, keyboard shortcuts, and export to a local copy. The syntax check uses the PowerShell AST parser **without executing script content**. BAT/CMD supports useful static warnings such as unresolved and duplicate labels, but this is not a full CMD interpreter. Diagnostics can be opened by line.
+
+Saving still requires explicitly enabling WRITE mode, creates a GPO backup, previews the change, verifies the SYSVOL file bytes, and reports save/rollback errors without discarding the edited text. Test on an isolated GPO before editing production scripts.
+
 ## Main features
 
 ### GPO management
