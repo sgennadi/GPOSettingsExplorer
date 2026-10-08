@@ -4,6 +4,14 @@
 
 - No unreleased changes yet.
 
+## 0.4.2 - 2026-10-08
+
+- Added a native Win32 SysListView32 fallback for exact MMC Security Options navigation on Windows Server builds where UI Automation exposes the policy tree but no result rows.
+- The fallback reads MMC ListView row and subitem text directly from the MMC process, matches the requested policy, scrolls to the row, selects it, and double-clicks it to open the exact setting.
+- Exact-navigation diagnostics now include the native SysListView32 row inventory when both UI Automation and native matching fail, making future MMC-version differences directly diagnosable.
+- Targeted the field case where "Network security: LAN Manager authentication level" / LmCompatibilityLevel opened Security Options but produced an empty "Visible MMC rows" diagnostic on Windows Server 2022.
+
+
 ## 0.4.1 - 2026-10-08
 
 - Fixed Security & Delegation failures when GPMC exposes a stale/deleted trustee property as FileNotFoundException or another non-COM exception. Unresolvable trustee properties are now isolated instead of aborting the complete permission list.
