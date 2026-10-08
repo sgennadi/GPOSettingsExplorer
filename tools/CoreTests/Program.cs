@@ -205,7 +205,7 @@ static void TestMmcNavigationRouting()
 
 static void TestBatchSyntaxDiagnostics()
 {
-    var source = "goto absent\r\n:present\r\ngoto present\r\n";
+    var source = "goto :absent\r\n:present\r\ngoto present\r\n";
     var messages = ScriptSyntaxService.CheckBatch(source);
     Assert(messages.Count(x => x.Message.Contains("absent", StringComparison.OrdinalIgnoreCase)) == 1,
         "Unresolved BAT label was not detected.");
