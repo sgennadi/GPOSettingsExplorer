@@ -129,7 +129,7 @@ public static class ScriptSyntaxService
             // never passed to Invoke-Expression or executed as a script.
             File.WriteAllText(temp, text, new UTF8Encoding(false));
             var encodedPath = Convert.ToBase64String(Encoding.Unicode.GetBytes(temp));
-            var command = $"""
+            var command = $$"""
                 $ErrorActionPreference = 'Stop'
                 $path = [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('{{encodedPath}}'))
                 $tokens = $null
