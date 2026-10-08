@@ -425,14 +425,21 @@ public sealed class GpoScriptService
     public GpoScriptDocument ReadDocument(string path)
     {
         var bytes = File.ReadAllBytes(path);
-        var (encoding, bomLength, emitBom) = DetectEncoding(bytes);
+        var (encoding, bomLength, emitBom) = DetectEncoding(bytes, path);
+        var text = encoding.GetString(bytes, bomLength, bytes.Length - bomLength);
+        var newLine = text.Contains("\r\n", StringComparison.Ordinal)
+            ? "\r\n"
+            : text.Contains('\n') ? "\n"
+            : text.Contains('\r') ? "\r" : Environment.NewLine;
 
         return new GpoScriptDocument
         {
-            Text = encoding.GetString(bytes, bomLength, bytes.Length - bomLength),
+            Text = text,
             CodePage = encoding.CodePage,
             EmitBom = emitBom,
-            OriginalSha256 = Convert.ToHexString(SHA256.HashData(bytes))
+            OriginalSha256 = Convert.ToHexString(SHA256.HashData(bytes)),
+            OriginalText = text,
+            NewLine = newLine
         };
     }
 
@@ -500,9 +507,13 @@ public sealed class GpoScriptService
 
         try
         {
+            var textToWrite =
+                document.Text.Equals(document.OriginalText, StringComparison.Ordinal)
+                    ? document.Text
+                    : NormalizeLineEndings(document.Text, document.NewLine);
             WriteText(
                 temp,
-                document.Text,
+                textToWrite,
                 encoding,
                 document.EmitBom);
 
@@ -519,8 +530,9 @@ public sealed class GpoScriptService
                 throw new IOException("The source script was modified in SYSVOL while this edit was in progress. Reload it before saving.");
 
             stage = "writing script to SYSVOL";
-            File.Copy(temp, fullPath, overwrite: true);
+            // Copy can partially overwrite a file before raising an IOException.
             overwritten = true;
+            File.Copy(temp, fullPath, overwrite: true);
 
             stage = "verifying script content in SYSVOL";
             var written = File.ReadAllBytes(fullPath);
@@ -795,12 +807,13 @@ public sealed class GpoScriptService
     private static string ReadText(string path)
     {
         var bytes = File.ReadAllBytes(path);
-        var (encoding, bomLength, _) = DetectEncoding(bytes);
+        var (encoding, bomLength, _) = DetectEncoding(bytes, path);
         return encoding.GetString(bytes, bomLength, bytes.Length - bomLength);
     }
 
     private static (Encoding Encoding, int BomLength, bool EmitBom) DetectEncoding(
-        byte[] bytes)
+        byte[] bytes,
+        string? path = null)
     {
         if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE)
             return (new UnicodeEncoding(false, true), 2, true);
@@ -813,15 +826,46 @@ public sealed class GpoScriptService
             return (new UTF8Encoding(true), 3, true);
 
         var sample = bytes.Take(Math.Min(bytes.Length, 256)).ToArray();
-        var oddZeros = sample
-            .Where((value, index) => index % 2 == 1 && value == 0)
-            .Count();
-
+        var oddZeros = sample.Where((value, index) => index % 2 == 1 && value == 0).Count();
         if (oddZeros > 12)
             return (new UnicodeEncoding(false, false), 0, false);
 
+        // An invalid UTF-8 byte stream is usually a legacy Windows ANSI script.
+        // Detect strictly; silently replacing undecodable bytes loses BAT/CMD text.
+        var validUtf8 = true;
+        try
+        {
+            _ = new UTF8Encoding(false, true).GetString(bytes);
+        }
+        catch (DecoderFallbackException)
+        {
+            validUtf8 = false;
+        }
+
+        var ext = Path.GetExtension(path ?? string.Empty);
+        var batchScript = ext.Equals(".bat", StringComparison.OrdinalIgnoreCase) ||
+                          ext.Equals(".cmd", StringComparison.OrdinalIgnoreCase);
+
+        if (!validUtf8 || (batchScript && bytes.All(value => value <= 0x7F)))
+        {
+            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+            return (Encoding.GetEncoding(checked((int)GetACP())), 0, false);
+        }
+
         return (new UTF8Encoding(false), 0, false);
     }
+
+    private static string NormalizeLineEndings(string text, string newLine)
+    {
+        var normalized = text.Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Replace("\r", "\n", StringComparison.Ordinal);
+        return newLine == "\n"
+            ? normalized
+            : normalized.Replace("\n", newLine, StringComparison.Ordinal);
+    }
+
+    [DllImport("kernel32.dll")]
+    private static extern uint GetACP();
 
     private static void WriteText(
         string path,
