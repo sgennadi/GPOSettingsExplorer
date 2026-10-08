@@ -217,7 +217,12 @@ public partial class MainWindow
                 gpo.DisplayName,
                 $"Trustee: {editor.Trustee}; Permission: {editor.SelectedLevel}; Backup: {backup}");
 
+            _gpoCapabilities.Remove(
+                gpo.Id);
+
             await LoadPermissionsAsync();
+            await UpdateSecurityCapabilityAsync(
+                gpo);
             StatusText.Text = "GPO permission added";
         }
         catch (Exception ex)
@@ -331,7 +336,12 @@ public partial class MainWindow
                 before: selected.PermissionDisplay,
                 after: editor.SelectedLevel.ToString());
 
+            _gpoCapabilities.Remove(
+                gpo.Id);
+
             await LoadPermissionsAsync();
+            await UpdateSecurityCapabilityAsync(
+                gpo);
             StatusText.Text = "GPO permission changed";
         }
         catch (Exception ex)
@@ -407,7 +417,12 @@ public partial class MainWindow
                 before: selected.PermissionDisplay,
                 after: "<Removed>");
 
+            _gpoCapabilities.Remove(
+                gpo.Id);
+
             await LoadPermissionsAsync();
+            await UpdateSecurityCapabilityAsync(
+                gpo);
             StatusText.Text = "GPO permission removed";
         }
         catch (Exception ex)
