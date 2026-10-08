@@ -110,14 +110,14 @@
     <Style TargetType="{x:Type TabItem}">
         <Setter Property="Padding" Value="9,4"/>
         <Setter Property="MinHeight" Value="29"/>
+        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        <Setter Property="VerticalContentAlignment" Value="Stretch"/>
         <Style.Triggers>
             <Trigger Property="IsSelected" Value="True">
                 <Setter Property="Foreground" Value="{StaticResource UiAccentBrush}"/>
                 <Setter Property="FontWeight" Value="SemiBold"/>
             </Trigger>
         </Style.Triggers>
-        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
-        <Setter Property="VerticalContentAlignment" Value="Stretch"/>
     </Style>
 
     <Style TargetType="{x:Type DataGrid}">
