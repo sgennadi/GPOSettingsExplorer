@@ -1457,6 +1457,19 @@ public sealed class GpmService
             return rows;
         }
 
+        if (extensionType.Equals(
+                "AuditSettings",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            rows.AddRange(
+                ParseAdvancedAuditSettings(
+                    extension,
+                    scopeName,
+                    gpo));
+
+            return rows;
+        }
+
         var candidates = extension
             .Descendants()
             .Where(e =>
@@ -1469,6 +1482,10 @@ public sealed class GpmService
                         StringComparison.OrdinalIgnoreCase)))
             .Where(e => !e.Ancestors().Any(a => a.Name.LocalName == "Policy"))
             .Where(e => !e.DescendantsAndSelf().Any(a => a.Name.LocalName == "Policy"))
+            .Where(e =>
+                !ShouldSkipGenericCandidate(
+                    extensionType,
+                    e))
             .Where(IsGenericSettingCandidate)
             .ToArray();
 
@@ -1549,6 +1566,419 @@ public sealed class GpmService
         }
 
         return rows;
+    }
+
+    private static IEnumerable<PolicySettingInfo> ParseAdvancedAuditSettings(
+        XElement extension,
+        string scopeName,
+        GpoInfo gpo)
+    {
+        foreach (var audit in extension
+                     .Descendants()
+                     .Where(element =>
+                         element.Name.LocalName.Equals(
+                             "AuditSetting",
+                             StringComparison.OrdinalIgnoreCase)))
+        {
+            var subcategory =
+                FirstNonEmpty(
+                    GetDirectOrAttributeValue(
+                        audit,
+                        "SubcategoryName"),
+                    FindNamedValue(
+                        audit,
+                        "SubcategoryName"),
+                    GetDirectOrAttributeValue(
+                        audit,
+                        "Name"),
+                    FindNamedValue(
+                        audit,
+                        "Name"));
+
+            if (string.IsNullOrWhiteSpace(
+                    subcategory))
+            {
+                continue;
+            }
+
+            var category =
+                FirstNonEmpty(
+                    GetDirectOrAttributeValue(
+                        audit,
+                        "CategoryName"),
+                    FindNamedValue(
+                        audit,
+                        "CategoryName"),
+                    ResolveAdvancedAuditCategory(
+                        subcategory));
+
+            var rawValue =
+                FirstNonEmpty(
+                    GetDirectOrAttributeValue(
+                        audit,
+                        "SettingValue"),
+                    FindNamedValue(
+                        audit,
+                        "SettingValue"),
+                    GetDirectOrAttributeValue(
+                        audit,
+                        "Value"),
+                    FindNamedValue(
+                        audit,
+                        "Value"));
+
+            var policyTarget =
+                FirstNonEmpty(
+                    GetDirectOrAttributeValue(
+                        audit,
+                        "PolicyTarget"),
+                    FindNamedValue(
+                        audit,
+                        "PolicyTarget"));
+
+            var value =
+                FormatAdvancedAuditValue(
+                    rawValue);
+
+            if (!string.IsNullOrWhiteSpace(
+                    policyTarget))
+            {
+                value =
+                    string.IsNullOrWhiteSpace(
+                        value)
+                        ? $"Policy target: {policyTarget}"
+                        : $"{value}; Policy target: {policyTarget}";
+            }
+
+            yield return new PolicySettingInfo
+            {
+                GpoId =
+                    gpo.Id,
+                GpoName =
+                    gpo.DisplayName,
+                Scope =
+                    scopeName,
+                Extension =
+                    "AuditSettings",
+                Category =
+                    string.IsNullOrWhiteSpace(
+                        category)
+                        ? "Security Settings > Advanced Audit Policy Configuration > Audit Policies"
+                        : $"Security Settings > Advanced Audit Policy Configuration > Audit Policies > {category}",
+                SettingName =
+                    subcategory,
+                State =
+                    "Configured",
+                Value =
+                    value,
+                RegistryKey =
+                    string.Empty,
+                RegistryValue =
+                    string.Empty
+            };
+        }
+    }
+
+    private static string FormatAdvancedAuditValue(
+        string rawValue)
+    {
+        if (!int.TryParse(
+                rawValue,
+                out var value))
+        {
+            return rawValue;
+        }
+
+        return value switch
+        {
+            0 =>
+                "No auditing",
+            1 =>
+                "Success",
+            2 =>
+                "Failure",
+            3 =>
+                "Success and Failure",
+            _ =>
+                rawValue
+        };
+    }
+
+    private static string ResolveAdvancedAuditCategory(
+        string subcategory)
+    {
+        var name =
+            subcategory.Trim();
+
+        if (AdvancedAuditAccountLogon.Contains(
+                name))
+        {
+            return "Account Logon";
+        }
+
+        if (AdvancedAuditAccountManagement.Contains(
+                name))
+        {
+            return "Account Management";
+        }
+
+        if (AdvancedAuditDetailedTracking.Contains(
+                name))
+        {
+            return "Detailed Tracking";
+        }
+
+        if (AdvancedAuditDirectoryServiceAccess.Contains(
+                name))
+        {
+            return "DS Access";
+        }
+
+        if (AdvancedAuditLogonLogoff.Contains(
+                name))
+        {
+            return "Logon/Logoff";
+        }
+
+        if (AdvancedAuditObjectAccess.Contains(
+                name))
+        {
+            return "Object Access";
+        }
+
+        if (AdvancedAuditPolicyChange.Contains(
+                name))
+        {
+            return "Policy Change";
+        }
+
+        if (AdvancedAuditPrivilegeUse.Contains(
+                name))
+        {
+            return "Privilege Use";
+        }
+
+        if (AdvancedAuditSystem.Contains(
+                name))
+        {
+            return "System";
+        }
+
+        if (AdvancedAuditGlobalObjectAccess.Contains(
+                name))
+        {
+            return "Global Object Access Auditing";
+        }
+
+        return string.Empty;
+    }
+
+    private static readonly HashSet<string> AdvancedAuditAccountLogon =
+        new(
+            new[]
+            {
+                "Credential Validation",
+                "Kerberos Authentication Service",
+                "Kerberos Service Ticket Operations",
+                "Other Account Logon Events"
+            },
+            StringComparer.CurrentCultureIgnoreCase);
+
+    private static readonly HashSet<string> AdvancedAuditAccountManagement =
+        new(
+            new[]
+            {
+                "Application Group Management",
+                "Computer Account Management",
+                "Distribution Group Management",
+                "Other Account Management Events",
+                "Security Group Management",
+                "User Account Management"
+            },
+            StringComparer.CurrentCultureIgnoreCase);
+
+    private static readonly HashSet<string> AdvancedAuditDetailedTracking =
+        new(
+            new[]
+            {
+                "DPAPI Activity",
+                "Plug and Play Events",
+                "Process Creation",
+                "Process Termination",
+                "RPC Events",
+                "Token Right Adjusted Events"
+            },
+            StringComparer.CurrentCultureIgnoreCase);
+
+    private static readonly HashSet<string> AdvancedAuditDirectoryServiceAccess =
+        new(
+            new[]
+            {
+                "Detailed Directory Service Replication",
+                "Directory Service Access",
+                "Directory Service Changes",
+                "Directory Service Replication"
+            },
+            StringComparer.CurrentCultureIgnoreCase);
+
+    private static readonly HashSet<string> AdvancedAuditLogonLogoff =
+        new(
+            new[]
+            {
+                "Account Lockout",
+                "Group Membership",
+                "IPsec Extended Mode",
+                "IPsec Main Mode",
+                "IPsec Quick Mode",
+                "Logoff",
+                "Logon",
+                "Network Policy Server",
+                "Other Logon/Logoff Events",
+                "Special Logon",
+                "User / Device Claims"
+            },
+            StringComparer.CurrentCultureIgnoreCase);
+
+    private static readonly HashSet<string> AdvancedAuditObjectAccess =
+        new(
+            new[]
+            {
+                "Application Generated",
+                "Certification Services",
+                "Central Access Policy Staging",
+                "Detailed File Share",
+                "File Share",
+                "File System",
+                "Filtering Platform Connection",
+                "Filtering Platform Packet Drop",
+                "Handle Manipulation",
+                "Kernel Object",
+                "Other Object Access Events",
+                "Registry",
+                "Removable Storage",
+                "SAM"
+            },
+            StringComparer.CurrentCultureIgnoreCase);
+
+    private static readonly HashSet<string> AdvancedAuditPolicyChange =
+        new(
+            new[]
+            {
+                "Audit Policy Change",
+                "Authentication Policy Change",
+                "Authorization Policy Change",
+                "Filtering Platform Policy Change",
+                "MPSSVC Rule-Level Policy Change",
+                "Other Policy Change Events"
+            },
+            StringComparer.CurrentCultureIgnoreCase);
+
+    private static readonly HashSet<string> AdvancedAuditPrivilegeUse =
+        new(
+            new[]
+            {
+                "Non Sensitive Privilege Use",
+                "Other Privilege Use Events",
+                "Sensitive Privilege Use"
+            },
+            StringComparer.CurrentCultureIgnoreCase);
+
+    private static readonly HashSet<string> AdvancedAuditSystem =
+        new(
+            new[]
+            {
+                "IPsec Driver",
+                "Other System Events",
+                "Security State Change",
+                "Security System Extension",
+                "System Integrity"
+            },
+            StringComparer.CurrentCultureIgnoreCase);
+
+    private static readonly HashSet<string> AdvancedAuditGlobalObjectAccess =
+        new(
+            new[]
+            {
+                "File System",
+                "Registry"
+            },
+            StringComparer.CurrentCultureIgnoreCase);
+
+    private static bool ShouldSkipGenericCandidate(
+        string extensionType,
+        XElement element)
+    {
+        if (!extensionType.Equals(
+                "SoftwareInstallationSettings",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var localName =
+            element.Name.LocalName;
+
+        if (localName.Equals(
+                "Trustee",
+                StringComparison.OrdinalIgnoreCase) ||
+            localName.Equals(
+                "TrusteePermissions",
+                StringComparison.OrdinalIgnoreCase) ||
+            localName.Equals(
+                "TrusteeAuditing",
+                StringComparison.OrdinalIgnoreCase) ||
+            localName.Equals(
+                "Applicability",
+                StringComparison.OrdinalIgnoreCase) ||
+            localName.Equals(
+                "Permission",
+                StringComparison.OrdinalIgnoreCase) ||
+            localName.Equals(
+                "Permissions",
+                StringComparison.OrdinalIgnoreCase) ||
+            localName.Equals(
+                "Auditing",
+                StringComparison.OrdinalIgnoreCase) ||
+            localName.Equals(
+                "SecurityDescriptor",
+                StringComparison.OrdinalIgnoreCase) ||
+            localName.Equals(
+                "Owner",
+                StringComparison.OrdinalIgnoreCase) ||
+            localName.Equals(
+                "Group",
+                StringComparison.OrdinalIgnoreCase) ||
+            localName.Equals(
+                "Type",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return element.Ancestors()
+            .TakeWhile(
+                ancestor =>
+                    ancestor !=
+                    element.Document?.Root)
+            .Any(
+                ancestor =>
+                {
+                    var name =
+                        ancestor.Name.LocalName;
+
+                    return name.Contains(
+                               "Trustee",
+                               StringComparison.OrdinalIgnoreCase) ||
+                           name.Contains(
+                               "Permission",
+                               StringComparison.OrdinalIgnoreCase) ||
+                           name.Contains(
+                               "Audit",
+                               StringComparison.OrdinalIgnoreCase) ||
+                           name.Contains(
+                               "SecurityDescriptor",
+                               StringComparison.OrdinalIgnoreCase);
+                });
     }
 
     private static IEnumerable<PolicySettingInfo> ParseRegistrySettings(
