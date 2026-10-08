@@ -1944,8 +1944,7 @@ public sealed class GpoEditorNavigatorService
             Marshal.StructureToPtr(
                 value,
                 local,
-                deleteOld:
-                    false);
+                false);
 
             var bytes =
                 new byte[
