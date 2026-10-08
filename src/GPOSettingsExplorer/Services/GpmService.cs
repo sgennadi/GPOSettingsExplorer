@@ -1470,6 +1470,19 @@ public sealed class GpmService
             return rows;
         }
 
+        if (extensionType.Equals(
+                "SoftwareInstallationSettings",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            rows.AddRange(
+                ParseSoftwareInstallationSettings(
+                    extension,
+                    scopeName,
+                    gpo));
+
+            return rows;
+        }
+
         var candidates = extension
             .Descendants()
             .Where(e =>
@@ -1482,10 +1495,6 @@ public sealed class GpmService
                         StringComparison.OrdinalIgnoreCase)))
             .Where(e => !e.Ancestors().Any(a => a.Name.LocalName == "Policy"))
             .Where(e => !e.DescendantsAndSelf().Any(a => a.Name.LocalName == "Policy"))
-            .Where(e =>
-                !ShouldSkipGenericCandidate(
-                    extensionType,
-                    e))
             .Where(IsGenericSettingCandidate)
             .ToArray();
 
@@ -1566,6 +1575,120 @@ public sealed class GpmService
         }
 
         return rows;
+    }
+
+    private static IEnumerable<PolicySettingInfo> ParseSoftwareInstallationSettings(
+        XElement extension,
+        string scopeName,
+        GpoInfo gpo)
+    {
+        foreach (var application in extension
+                     .Descendants()
+                     .Where(element =>
+                         element.Name.LocalName.Equals(
+                             "MsiApplication",
+                             StringComparison.OrdinalIgnoreCase)))
+        {
+            var name =
+                FirstNonEmpty(
+                    ChildValue(
+                        application,
+                        "Name"),
+                    DescendantValue(
+                        application,
+                        "Name"));
+
+            var path =
+                FirstNonEmpty(
+                    ChildValue(
+                        application,
+                        "Path"),
+                    DescendantValue(
+                        application,
+                        "Path"));
+
+            var deployment =
+                FirstNonEmpty(
+                    ChildValue(
+                        application,
+                        "DeploymentType"),
+                    DescendantValue(
+                        application,
+                        "DeploymentType"),
+                    ChildValue(
+                        application,
+                        "DeploymentState"),
+                    DescendantValue(
+                        application,
+                        "DeploymentState"));
+
+            var version =
+                FirstNonEmpty(
+                    ChildValue(
+                        application,
+                        "Version"),
+                    DescendantValue(
+                        application,
+                        "Version"));
+
+            if (string.IsNullOrWhiteSpace(
+                    name) &&
+                string.IsNullOrWhiteSpace(
+                    path))
+            {
+                continue;
+            }
+
+            var valueParts =
+                new List<string>();
+
+            if (!string.IsNullOrWhiteSpace(
+                    path))
+            {
+                valueParts.Add(
+                    path);
+            }
+
+            if (!string.IsNullOrWhiteSpace(
+                    version))
+            {
+                valueParts.Add(
+                    $"Version {version}");
+            }
+
+            yield return new PolicySettingInfo
+            {
+                GpoId =
+                    gpo.Id,
+                GpoName =
+                    gpo.DisplayName,
+                Scope =
+                    scopeName,
+                Extension =
+                    "SoftwareInstallationSettings",
+                Category =
+                    "Software Settings > Software installation",
+                SettingName =
+                    FirstNonEmpty(
+                        name,
+                        Path.GetFileName(
+                            path),
+                        "Software package"),
+                State =
+                    string.IsNullOrWhiteSpace(
+                        deployment)
+                        ? "Configured"
+                        : deployment,
+                Value =
+                    string.Join(
+                        "; ",
+                        valueParts),
+                RegistryKey =
+                    string.Empty,
+                RegistryValue =
+                    string.Empty
+            };
+        }
     }
 
     private static IEnumerable<PolicySettingInfo> ParseAdvancedAuditSettings(
@@ -1709,6 +1832,15 @@ public sealed class GpmService
     {
         var name =
             subcategory.Trim();
+
+        if (name.StartsWith(
+                "Audit ",
+                StringComparison.CurrentCultureIgnoreCase))
+        {
+            name =
+                name[
+                    "Audit ".Length..];
+        }
 
         if (AdvancedAuditAccountLogon.Contains(
                 name))
@@ -1903,83 +2035,6 @@ public sealed class GpmService
                 "Registry"
             },
             StringComparer.CurrentCultureIgnoreCase);
-
-    private static bool ShouldSkipGenericCandidate(
-        string extensionType,
-        XElement element)
-    {
-        if (!extensionType.Equals(
-                "SoftwareInstallationSettings",
-                StringComparison.OrdinalIgnoreCase))
-        {
-            return false;
-        }
-
-        var localName =
-            element.Name.LocalName;
-
-        if (localName.Equals(
-                "Trustee",
-                StringComparison.OrdinalIgnoreCase) ||
-            localName.Equals(
-                "TrusteePermissions",
-                StringComparison.OrdinalIgnoreCase) ||
-            localName.Equals(
-                "TrusteeAuditing",
-                StringComparison.OrdinalIgnoreCase) ||
-            localName.Equals(
-                "Applicability",
-                StringComparison.OrdinalIgnoreCase) ||
-            localName.Equals(
-                "Permission",
-                StringComparison.OrdinalIgnoreCase) ||
-            localName.Equals(
-                "Permissions",
-                StringComparison.OrdinalIgnoreCase) ||
-            localName.Equals(
-                "Auditing",
-                StringComparison.OrdinalIgnoreCase) ||
-            localName.Equals(
-                "SecurityDescriptor",
-                StringComparison.OrdinalIgnoreCase) ||
-            localName.Equals(
-                "Owner",
-                StringComparison.OrdinalIgnoreCase) ||
-            localName.Equals(
-                "Group",
-                StringComparison.OrdinalIgnoreCase) ||
-            localName.Equals(
-                "Type",
-                StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        return element.Ancestors()
-            .TakeWhile(
-                ancestor =>
-                    ancestor !=
-                    element.Document?.Root)
-            .Any(
-                ancestor =>
-                {
-                    var name =
-                        ancestor.Name.LocalName;
-
-                    return name.Contains(
-                               "Trustee",
-                               StringComparison.OrdinalIgnoreCase) ||
-                           name.Contains(
-                               "Permission",
-                               StringComparison.OrdinalIgnoreCase) ||
-                           name.Contains(
-                               "Audit",
-                               StringComparison.OrdinalIgnoreCase) ||
-                           name.Contains(
-                               "SecurityDescriptor",
-                               StringComparison.OrdinalIgnoreCase);
-                });
-    }
 
     private static IEnumerable<PolicySettingInfo> ParseRegistrySettings(
         XElement extension,
