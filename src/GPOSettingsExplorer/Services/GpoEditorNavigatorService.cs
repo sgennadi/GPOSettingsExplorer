@@ -1419,7 +1419,9 @@ public sealed class GpoEditorNavigatorService
         IntPtr listView,
         string policyName)
     {
-        var name = MmcPolicyNameMatcher.Normalize(policyName);
+        // Native LVFINDINFO searches the literal MMC row text. Do not
+        // remove ampersands or normalize internal spaces for this lookup.
+        var name = policyName.Trim();
         if (string.IsNullOrWhiteSpace(name))
             return -1;
 
