@@ -211,6 +211,16 @@ public sealed class GpoEditorNavigatorService
 
         if (row is null)
         {
+            progress?.Report(
+                "MMC opened the target policy node but did not expose a matching row.");
+
+            CrashLogService.Write(
+                $"MMC exact navigation miss: {setting.SettingName}",
+                BuildNavigationMissDetails(
+                    window,
+                    setting,
+                    candidates));
+
             return false;
         }
 
@@ -478,6 +488,136 @@ public sealed class GpoEditorNavigatorService
         }
 
         return null;
+    }
+
+    private static string BuildNavigationMissDetails(
+        AutomationElement window,
+        PolicySettingInfo setting,
+        IReadOnlyList<string> candidates)
+    {
+        var builder =
+            new System.Text.StringBuilder();
+
+        builder.AppendLine(
+            $"Setting: {setting.SettingName}");
+
+        builder.AppendLine(
+            $"Extension: {setting.Extension}");
+
+        builder.AppendLine(
+            $"Scope: {setting.Scope}");
+
+        builder.AppendLine(
+            $"Registry key: {setting.RegistryKey}");
+
+        builder.AppendLine(
+            $"Registry value: {setting.RegistryValue}");
+
+        builder.AppendLine(
+            "Candidates:");
+
+        foreach (var candidate in candidates)
+        {
+            builder.AppendLine(
+                "  - " +
+                candidate);
+        }
+
+        builder.AppendLine(
+            "Visible MMC rows:");
+
+        try
+        {
+            var rowCondition =
+                new OrCondition(
+                    new PropertyCondition(
+                        AutomationElement.ControlTypeProperty,
+                        ControlType.ListItem),
+                    new PropertyCondition(
+                        AutomationElement.ControlTypeProperty,
+                        ControlType.DataItem));
+
+            var rows =
+                window.FindAll(
+                    TreeScope.Descendants,
+                    rowCondition);
+
+            var count =
+                0;
+
+            foreach (AutomationElement row in rows)
+            {
+                if (count++ >=
+                    80)
+                {
+                    break;
+                }
+
+                var names =
+                    new List<string>();
+
+                try
+                {
+                    AddDiagnosticName(
+                        names,
+                        row.Current.Name);
+
+                    var descendants =
+                        row.FindAll(
+                            TreeScope.Descendants,
+                            System.Windows.Automation.Condition.TrueCondition);
+
+                    foreach (AutomationElement descendant in descendants)
+                    {
+                        AddDiagnosticName(
+                            names,
+                            descendant.Current.Name);
+                    }
+                }
+                catch (Exception ex)
+                    when (!IsFatal(
+                        ex))
+                {
+                }
+
+                if (names.Count >
+                    0)
+                {
+                    builder.AppendLine(
+                        "  - " +
+                        string.Join(
+                            " | ",
+                            names.Distinct(
+                                StringComparer.CurrentCultureIgnoreCase)));
+                }
+            }
+        }
+        catch (Exception ex)
+            when (!IsFatal(
+                ex))
+        {
+            builder.AppendLine(
+                $"  <unable to enumerate rows: {ex.Message}>");
+        }
+
+        return builder.ToString();
+    }
+
+    private static void AddDiagnosticName(
+        ICollection<string> names,
+        string? value)
+    {
+        var normalized =
+            NormalizeUiText(
+                value
+                ?? string.Empty);
+
+        if (!string.IsNullOrWhiteSpace(
+                normalized))
+        {
+            names.Add(
+                normalized);
+        }
     }
 
     private static IReadOnlyList<string> BuildRowCandidates(
