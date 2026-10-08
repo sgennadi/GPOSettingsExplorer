@@ -194,10 +194,12 @@
                                                 Binding="{Binding Parameters}"
                                                 Width="1.2*"/>
                             <DataGridCheckBoxColumn Header="Referenced"
-                                                    Binding="{Binding Referenced}"
+                                                    Binding="{Binding Referenced, Mode=OneWay}"
+                                                    IsReadOnly="True"
                                                     Width="85"/>
                             <DataGridCheckBoxColumn Header="Exists"
-                                                    Binding="{Binding Exists}"
+                                                    Binding="{Binding Exists, Mode=OneWay}"
+                                                    IsReadOnly="True"
                                                     Width="65"/>
                             <DataGridTextColumn Header="Modified"
                                                 Binding="{Binding Modified, StringFormat={}{0:yyyy-MM-dd HH:mm}}"
@@ -316,9 +318,12 @@
                             <DataGridTextColumn Header="Description" Binding="{Binding DsnDescription}" Width="1.4*"/>
                             <DataGridTextColumn Header="User" Binding="{Binding UserName}" Width="1.1*"/>
                             <DataGridTextColumn Header="Attributes" Binding="{Binding AttributesPreview}" Width="2*"/>
-                            <DataGridCheckBoxColumn Header="Legacy credential" Binding="{Binding HasStoredCredential}" Width="110"/>
-                            <DataGridCheckBoxColumn Header="Item disabled" Binding="{Binding Disabled}" Width="90"/>
-                            <DataGridCheckBoxColumn Header="Targeting" Binding="{Binding HasFilters}" Width="75"/>
+                            <DataGridCheckBoxColumn Header="Legacy credential" Binding="{Binding HasStoredCredential, Mode=OneWay}" IsReadOnly="True"
+                                                    Width="110"/>
+                            <DataGridCheckBoxColumn Header="Item disabled" Binding="{Binding Disabled, Mode=OneWay}" IsReadOnly="True"
+                                                    Width="90"/>
+                            <DataGridCheckBoxColumn Header="Targeting" Binding="{Binding HasFilters, Mode=OneWay}" IsReadOnly="True"
+                                                    Width="75"/>
                         </DataGrid.Columns>
                     </DataGrid>
                 </DockPanel>
@@ -385,7 +390,8 @@
                                                 Binding="{Binding PlanGuid}"
                                                 Width="260"/>
                             <DataGridCheckBoxColumn Header="Default"
-                                                    Binding="{Binding SetAsDefault}"
+                                                    Binding="{Binding SetAsDefault, Mode=OneWay}"
+                                                    IsReadOnly="True"
                                                     Width="75"/>
                             <DataGridTextColumn Header="Sleep AC"
                                                 Binding="{Binding SleepAfterAc}"
@@ -400,10 +406,12 @@
                                                 Binding="{Binding DisplayOffDc}"
                                                 Width="85"/>
                             <DataGridCheckBoxColumn Header="Item disabled"
-                                                    Binding="{Binding Disabled}"
+                                                    Binding="{Binding Disabled, Mode=OneWay}"
+                                                    IsReadOnly="True"
                                                     Width="90"/>
                             <DataGridCheckBoxColumn Header="Targeting"
-                                                    Binding="{Binding HasFilters}"
+                                                    Binding="{Binding HasFilters, Mode=OneWay}"
+                                                    IsReadOnly="True"
                                                     Width="75"/>
                         </DataGrid.Columns>
                     </DataGrid>
@@ -442,10 +450,13 @@
                             <DataGridTextColumn Header="Action" Binding="{Binding ActionDisplay}" Width="85"/>
                             <DataGridTextColumn Header="Type" Binding="{Binding VariableTypeDisplay}" Width="85"/>
                             <DataGridTextColumn Header="Value" Binding="{Binding Value}" Width="2*"/>
-                            <DataGridCheckBoxColumn Header="Partial PATH" Binding="{Binding PartialPath}" Width="90"/>
+                            <DataGridCheckBoxColumn Header="Partial PATH" Binding="{Binding PartialPath, Mode=OneWay}" IsReadOnly="True"
+                                                    Width="90"/>
                             <DataGridTextColumn Header="Description" Binding="{Binding Description}" Width="1.4*"/>
-                            <DataGridCheckBoxColumn Header="Disabled" Binding="{Binding Disabled}" Width="75"/>
-                            <DataGridCheckBoxColumn Header="Targeting" Binding="{Binding HasFilters}" Width="75"/>
+                            <DataGridCheckBoxColumn Header="Disabled" Binding="{Binding Disabled, Mode=OneWay}" IsReadOnly="True"
+                                                    Width="75"/>
+                            <DataGridCheckBoxColumn Header="Targeting" Binding="{Binding HasFilters, Mode=OneWay}" IsReadOnly="True"
+                                                    Width="75"/>
                         </DataGrid.Columns>
                     </DataGrid>
                 </DockPanel>
@@ -483,12 +494,18 @@
                             <DataGridTextColumn Header="Type" Binding="{Binding KindDisplay}" Width="1.4*"/>
                             <DataGridTextColumn Header="Name" Binding="{Binding DisplayName}" Width="1.5*"/>
                             <DataGridTextColumn Header="Hidden files" Binding="{Binding HiddenFilesDisplay}" Width="1.2*"/>
-                            <DataGridCheckBoxColumn Header="Hide extensions" Binding="{Binding HideFileExtensions}" Width="100"/>
-                            <DataGridCheckBoxColumn Header="Protected OS files" Binding="{Binding ShowSuperHidden}" Width="110"/>
-                            <DataGridCheckBoxColumn Header="Check boxes" Binding="{Binding UseCheckBoxes}" Width="85"/>
-                            <DataGridCheckBoxColumn Header="Sharing Wizard" Binding="{Binding UseSharingWizard}" Width="100"/>
-                            <DataGridCheckBoxColumn Header="Item disabled" Binding="{Binding Disabled}" Width="90"/>
-                            <DataGridCheckBoxColumn Header="Targeting" Binding="{Binding HasFilters}" Width="75"/>
+                            <DataGridCheckBoxColumn Header="Hide extensions" Binding="{Binding HideFileExtensions, Mode=OneWay}" IsReadOnly="True"
+                                                    Width="100"/>
+                            <DataGridCheckBoxColumn Header="Protected OS files" Binding="{Binding ShowSuperHidden, Mode=OneWay}" IsReadOnly="True"
+                                                    Width="110"/>
+                            <DataGridCheckBoxColumn Header="Check boxes" Binding="{Binding UseCheckBoxes, Mode=OneWay}" IsReadOnly="True"
+                                                    Width="85"/>
+                            <DataGridCheckBoxColumn Header="Sharing Wizard" Binding="{Binding UseSharingWizard, Mode=OneWay}" IsReadOnly="True"
+                                                    Width="100"/>
+                            <DataGridCheckBoxColumn Header="Item disabled" Binding="{Binding Disabled, Mode=OneWay}" IsReadOnly="True"
+                                                    Width="90"/>
+                            <DataGridCheckBoxColumn Header="Targeting" Binding="{Binding HasFilters, Mode=OneWay}" IsReadOnly="True"
+                                                    Width="75"/>
                         </DataGrid.Columns>
                     </DataGrid>
                 </DockPanel>
@@ -549,10 +566,12 @@
                                                 Binding="{Binding LongDateFormat}"
                                                 Width="1.8*"/>
                             <DataGridCheckBoxColumn Header="Item disabled"
-                                                    Binding="{Binding Disabled}"
+                                                    Binding="{Binding Disabled, Mode=OneWay}"
+                                                    IsReadOnly="True"
                                                     Width="90"/>
                             <DataGridCheckBoxColumn Header="Targeting"
-                                                    Binding="{Binding HasFilters}"
+                                                    Binding="{Binding HasFilters, Mode=OneWay}"
+                                                    IsReadOnly="True"
                                                     Width="75"/>
                         </DataGrid.Columns>
                     </DataGrid>
@@ -590,9 +609,12 @@
                             <DataGridTextColumn Header="1st failure" Binding="{Binding FirstFailure}" Width="120"/>
                             <DataGridTextColumn Header="2nd failure" Binding="{Binding SecondFailure}" Width="120"/>
                             <DataGridTextColumn Header="3rd failure" Binding="{Binding ThirdFailure}" Width="120"/>
-                            <DataGridCheckBoxColumn Header="Disabled" Binding="{Binding Disabled}" Width="75"/>
-                            <DataGridCheckBoxColumn Header="Targeting" Binding="{Binding HasFilters}" Width="75"/>
-                            <DataGridCheckBoxColumn Header="Legacy credential" Binding="{Binding HasStoredCredential}" Width="110"/>
+                            <DataGridCheckBoxColumn Header="Disabled" Binding="{Binding Disabled, Mode=OneWay}" IsReadOnly="True"
+                                                    Width="75"/>
+                            <DataGridCheckBoxColumn Header="Targeting" Binding="{Binding HasFilters, Mode=OneWay}" IsReadOnly="True"
+                                                    Width="75"/>
+                            <DataGridCheckBoxColumn Header="Legacy credential" Binding="{Binding HasStoredCredential, Mode=OneWay}" IsReadOnly="True"
+                                                    Width="110"/>
                         </DataGrid.Columns>
                     </DataGrid>
                 </DockPanel>
@@ -625,13 +647,17 @@
                             <DataGridTextColumn Header="Drive" Binding="{Binding DriveDisplay}" Width="100"/>
                             <DataGridTextColumn Header="Path" Binding="{Binding Path}" Width="1.8*"/>
                             <DataGridTextColumn Header="Label" Binding="{Binding Label}" Width="1.1*"/>
-                            <DataGridCheckBoxColumn Header="Reconnect" Binding="{Binding Persistent}" Width="85"/>
+                            <DataGridCheckBoxColumn Header="Reconnect" Binding="{Binding Persistent, Mode=OneWay}" IsReadOnly="True"
+                                                    Width="85"/>
                             <DataGridTextColumn Header="Connect as" Binding="{Binding UserName}" Width="1.1*"/>
                             <DataGridTextColumn Header="This drive" Binding="{Binding ThisDriveVisibility}" Width="90"/>
                             <DataGridTextColumn Header="All drives" Binding="{Binding AllDrivesVisibility}" Width="90"/>
-                            <DataGridCheckBoxColumn Header="Disabled" Binding="{Binding Disabled}" Width="75"/>
-                            <DataGridCheckBoxColumn Header="Targeting" Binding="{Binding HasFilters}" Width="75"/>
-                            <DataGridCheckBoxColumn Header="Legacy credential" Binding="{Binding HasStoredCredential}" Width="110"/>
+                            <DataGridCheckBoxColumn Header="Disabled" Binding="{Binding Disabled, Mode=OneWay}" IsReadOnly="True"
+                                                    Width="75"/>
+                            <DataGridCheckBoxColumn Header="Targeting" Binding="{Binding HasFilters, Mode=OneWay}" IsReadOnly="True"
+                                                    Width="75"/>
+                            <DataGridCheckBoxColumn Header="Legacy credential" Binding="{Binding HasStoredCredential, Mode=OneWay}" IsReadOnly="True"
+                                                    Width="110"/>
                         </DataGrid.Columns>
                     </DataGrid>
                 </DockPanel>
@@ -672,8 +698,10 @@
                             <DataGridTextColumn Header="Value name" Binding="{Binding ValueName}" Width="1.1*"/>
                             <DataGridTextColumn Header="Type" Binding="{Binding ValueType}" Width="105"/>
                             <DataGridTextColumn Header="Value" Binding="{Binding ValueData}" Width="1.5*"/>
-                            <DataGridCheckBoxColumn Header="Disabled" Binding="{Binding Disabled}" Width="75"/>
-                            <DataGridCheckBoxColumn Header="Targeting" Binding="{Binding HasFilters}" Width="75"/>
+                            <DataGridCheckBoxColumn Header="Disabled" Binding="{Binding Disabled, Mode=OneWay}" IsReadOnly="True"
+                                                    Width="75"/>
+                            <DataGridCheckBoxColumn Header="Targeting" Binding="{Binding HasFilters, Mode=OneWay}" IsReadOnly="True"
+                                                    Width="75"/>
                         </DataGrid.Columns>
                     </DataGrid>
                 </DockPanel>
@@ -714,8 +742,10 @@
                             <DataGridTextColumn Header="Target" Binding="{Binding TargetPath}" Width="1.7*"/>
                             <DataGridTextColumn Header="Arguments" Binding="{Binding Arguments}" Width="1.1*"/>
                             <DataGridTextColumn Header="Icon" Binding="{Binding IconPath}" Width="1.1*"/>
-                            <DataGridCheckBoxColumn Header="Disabled" Binding="{Binding Disabled}" Width="75"/>
-                            <DataGridCheckBoxColumn Header="Targeting" Binding="{Binding HasFilters}" Width="75"/>
+                            <DataGridCheckBoxColumn Header="Disabled" Binding="{Binding Disabled, Mode=OneWay}" IsReadOnly="True"
+                                                    Width="75"/>
+                            <DataGridCheckBoxColumn Header="Targeting" Binding="{Binding HasFilters, Mode=OneWay}" IsReadOnly="True"
+                                                    Width="75"/>
                         </DataGrid.Columns>
                     </DataGrid>
                 </DockPanel>
@@ -755,11 +785,16 @@
                                     <DataGridTextColumn Header="Action" Binding="{Binding ActionDisplay}" Width="85"/>
                                     <DataGridTextColumn Header="Source" Binding="{Binding FromPath}" Width="1.6*"/>
                                     <DataGridTextColumn Header="Target" Binding="{Binding TargetPath}" Width="1.7*"/>
-                                    <DataGridCheckBoxColumn Header="Read-only" Binding="{Binding ReadOnly}" Width="80"/>
-                                    <DataGridCheckBoxColumn Header="Archive" Binding="{Binding Archive}" Width="75"/>
-                                    <DataGridCheckBoxColumn Header="Hidden" Binding="{Binding Hidden}" Width="70"/>
-                                    <DataGridCheckBoxColumn Header="Disabled" Binding="{Binding Disabled}" Width="75"/>
-                                    <DataGridCheckBoxColumn Header="Targeting" Binding="{Binding HasFilters}" Width="75"/>
+                                    <DataGridCheckBoxColumn Header="Read-only" Binding="{Binding ReadOnly, Mode=OneWay}" IsReadOnly="True"
+                                                    Width="80"/>
+                                    <DataGridCheckBoxColumn Header="Archive" Binding="{Binding Archive, Mode=OneWay}" IsReadOnly="True"
+                                                    Width="75"/>
+                                    <DataGridCheckBoxColumn Header="Hidden" Binding="{Binding Hidden, Mode=OneWay}" IsReadOnly="True"
+                                                    Width="70"/>
+                                    <DataGridCheckBoxColumn Header="Disabled" Binding="{Binding Disabled, Mode=OneWay}" IsReadOnly="True"
+                                                    Width="75"/>
+                                    <DataGridCheckBoxColumn Header="Targeting" Binding="{Binding HasFilters, Mode=OneWay}" IsReadOnly="True"
+                                                    Width="75"/>
                                 </DataGrid.Columns>
                             </DataGrid>
                         </DockPanel>
@@ -796,14 +831,22 @@
                                     <DataGridTextColumn Header="Name" Binding="{Binding DisplayName}" Width="1.2*"/>
                                     <DataGridTextColumn Header="Action" Binding="{Binding ActionDisplay}" Width="85"/>
                                     <DataGridTextColumn Header="Path" Binding="{Binding Path}" Width="2.1*"/>
-                                    <DataGridCheckBoxColumn Header="Read-only" Binding="{Binding ReadOnly}" Width="80"/>
-                                    <DataGridCheckBoxColumn Header="Archive" Binding="{Binding Archive}" Width="75"/>
-                                    <DataGridCheckBoxColumn Header="Hidden" Binding="{Binding Hidden}" Width="70"/>
-                                    <DataGridCheckBoxColumn Header="Delete files" Binding="{Binding DeleteFiles}" Width="90"/>
-                                    <DataGridCheckBoxColumn Header="Delete subfolders" Binding="{Binding DeleteSubFolders}" Width="110"/>
-                                    <DataGridCheckBoxColumn Header="Delete folder" Binding="{Binding DeleteFolder}" Width="90"/>
-                                    <DataGridCheckBoxColumn Header="Disabled" Binding="{Binding Disabled}" Width="75"/>
-                                    <DataGridCheckBoxColumn Header="Targeting" Binding="{Binding HasFilters}" Width="75"/>
+                                    <DataGridCheckBoxColumn Header="Read-only" Binding="{Binding ReadOnly, Mode=OneWay}" IsReadOnly="True"
+                                                    Width="80"/>
+                                    <DataGridCheckBoxColumn Header="Archive" Binding="{Binding Archive, Mode=OneWay}" IsReadOnly="True"
+                                                    Width="75"/>
+                                    <DataGridCheckBoxColumn Header="Hidden" Binding="{Binding Hidden, Mode=OneWay}" IsReadOnly="True"
+                                                    Width="70"/>
+                                    <DataGridCheckBoxColumn Header="Delete files" Binding="{Binding DeleteFiles, Mode=OneWay}" IsReadOnly="True"
+                                                    Width="90"/>
+                                    <DataGridCheckBoxColumn Header="Delete subfolders" Binding="{Binding DeleteSubFolders, Mode=OneWay}" IsReadOnly="True"
+                                                    Width="110"/>
+                                    <DataGridCheckBoxColumn Header="Delete folder" Binding="{Binding DeleteFolder, Mode=OneWay}" IsReadOnly="True"
+                                                    Width="90"/>
+                                    <DataGridCheckBoxColumn Header="Disabled" Binding="{Binding Disabled, Mode=OneWay}" IsReadOnly="True"
+                                                    Width="75"/>
+                                    <DataGridCheckBoxColumn Header="Targeting" Binding="{Binding HasFilters, Mode=OneWay}" IsReadOnly="True"
+                                                    Width="75"/>
                                 </DataGrid.Columns>
                             </DataGrid>
                         </DockPanel>
@@ -871,20 +914,25 @@
                                                         Binding="{Binding AccountDescription}"
                                                         Width="1.5*"/>
                                     <DataGridCheckBoxColumn Header="Account disabled"
-                                                            Binding="{Binding AccountDisabled}"
-                                                            Width="105"/>
+                                                            Binding="{Binding AccountDisabled, Mode=OneWay}"
+                                                            IsReadOnly="True"
+                                                    Width="105"/>
                                     <DataGridCheckBoxColumn Header="Never expires"
-                                                            Binding="{Binding PasswordNeverExpires}"
-                                                            Width="100"/>
+                                                            Binding="{Binding PasswordNeverExpires, Mode=OneWay}"
+                                                            IsReadOnly="True"
+                                                    Width="100"/>
                                     <DataGridCheckBoxColumn Header="Legacy credential"
-                                                            Binding="{Binding HasStoredCredential}"
-                                                            Width="110"/>
+                                                            Binding="{Binding HasStoredCredential, Mode=OneWay}"
+                                                            IsReadOnly="True"
+                                                    Width="110"/>
                                     <DataGridCheckBoxColumn Header="Item disabled"
-                                                            Binding="{Binding Disabled}"
-                                                            Width="90"/>
+                                                            Binding="{Binding Disabled, Mode=OneWay}"
+                                                            IsReadOnly="True"
+                                                    Width="90"/>
                                     <DataGridCheckBoxColumn Header="Targeting"
-                                                            Binding="{Binding HasFilters}"
-                                                            Width="75"/>
+                                                            Binding="{Binding HasFilters, Mode=OneWay}"
+                                                            IsReadOnly="True"
+                                                    Width="75"/>
                                 </DataGrid.Columns>
                             </DataGrid>
                         </DockPanel>
@@ -947,17 +995,21 @@
                                                         Binding="{Binding MembersPreview}"
                                                         Width="2*"/>
                                     <DataGridCheckBoxColumn Header="Delete users"
-                                                            Binding="{Binding DeleteAllUsers}"
-                                                            Width="90"/>
+                                                            Binding="{Binding DeleteAllUsers, Mode=OneWay}"
+                                                            IsReadOnly="True"
+                                                    Width="90"/>
                                     <DataGridCheckBoxColumn Header="Delete groups"
-                                                            Binding="{Binding DeleteAllGroups}"
-                                                            Width="95"/>
+                                                            Binding="{Binding DeleteAllGroups, Mode=OneWay}"
+                                                            IsReadOnly="True"
+                                                    Width="95"/>
                                     <DataGridCheckBoxColumn Header="Item disabled"
-                                                            Binding="{Binding Disabled}"
-                                                            Width="90"/>
+                                                            Binding="{Binding Disabled, Mode=OneWay}"
+                                                            IsReadOnly="True"
+                                                    Width="90"/>
                                     <DataGridCheckBoxColumn Header="Targeting"
-                                                            Binding="{Binding HasFilters}"
-                                                            Width="75"/>
+                                                            Binding="{Binding HasFilters, Mode=OneWay}"
+                                                            IsReadOnly="True"
+                                                    Width="75"/>
                                 </DataGrid.Columns>
                             </DataGrid>
                         </DockPanel>
@@ -1032,16 +1084,20 @@
                                                 Binding="{Binding Location}"
                                                 Width="1.1*"/>
                             <DataGridCheckBoxColumn Header="Default"
-                                                    Binding="{Binding DefaultPrinter}"
+                                                    Binding="{Binding DefaultPrinter, Mode=OneWay}"
+                                                    IsReadOnly="True"
                                                     Width="75"/>
                             <DataGridCheckBoxColumn Header="Legacy credential"
-                                                    Binding="{Binding HasStoredCredential}"
+                                                    Binding="{Binding HasStoredCredential, Mode=OneWay}"
+                                                    IsReadOnly="True"
                                                     Width="110"/>
                             <DataGridCheckBoxColumn Header="Item disabled"
-                                                    Binding="{Binding Disabled}"
+                                                    Binding="{Binding Disabled, Mode=OneWay}"
+                                                    IsReadOnly="True"
                                                     Width="90"/>
                             <DataGridCheckBoxColumn Header="Targeting"
-                                                    Binding="{Binding HasFilters}"
+                                                    Binding="{Binding HasFilters, Mode=OneWay}"
+                                                    IsReadOnly="True"
                                                     Width="75"/>
                         </DataGrid.Columns>
                     </DataGrid>
@@ -1121,13 +1177,16 @@
                                                 Binding="{Binding TriggerSummary}"
                                                 Width="1.8*"/>
                             <DataGridCheckBoxColumn Header="Enabled"
-                                                    Binding="{Binding TaskEnabled}"
+                                                    Binding="{Binding TaskEnabled, Mode=OneWay}"
+                                                    IsReadOnly="True"
                                                     Width="70"/>
                             <DataGridCheckBoxColumn Header="Legacy credential"
-                                                    Binding="{Binding HasStoredCredential}"
+                                                    Binding="{Binding HasStoredCredential, Mode=OneWay}"
+                                                    IsReadOnly="True"
                                                     Width="110"/>
                             <DataGridCheckBoxColumn Header="Targeting"
-                                                    Binding="{Binding HasFilters}"
+                                                    Binding="{Binding HasFilters, Mode=OneWay}"
+                                                    IsReadOnly="True"
                                                     Width="75"/>
                         </DataGrid.Columns>
                     </DataGrid>
@@ -1186,19 +1245,24 @@
                                                 Binding="{Binding AbeDisplay}"
                                                 Width="90"/>
                             <DataGridCheckBoxColumn Header="All regular"
-                                                    Binding="{Binding AllRegular}"
+                                                    Binding="{Binding AllRegular, Mode=OneWay}"
+                                                    IsReadOnly="True"
                                                     Width="80"/>
                             <DataGridCheckBoxColumn Header="All hidden"
-                                                    Binding="{Binding AllHidden}"
+                                                    Binding="{Binding AllHidden, Mode=OneWay}"
+                                                    IsReadOnly="True"
                                                     Width="80"/>
                             <DataGridCheckBoxColumn Header="Admin drives"
-                                                    Binding="{Binding AllAdminDrive}"
+                                                    Binding="{Binding AllAdminDrive, Mode=OneWay}"
+                                                    IsReadOnly="True"
                                                     Width="85"/>
                             <DataGridCheckBoxColumn Header="Disabled"
-                                                    Binding="{Binding Disabled}"
+                                                    Binding="{Binding Disabled, Mode=OneWay}"
+                                                    IsReadOnly="True"
                                                     Width="75"/>
                             <DataGridCheckBoxColumn Header="Targeting"
-                                                    Binding="{Binding HasFilters}"
+                                                    Binding="{Binding HasFilters, Mode=OneWay}"
+                                                    IsReadOnly="True"
                                                     Width="75"/>
                         </DataGrid.Columns>
                     </DataGrid>
@@ -1269,10 +1333,12 @@
                                                 Binding="{Binding Description}"
                                                 Width="1.3*"/>
                             <DataGridCheckBoxColumn Header="Disabled"
-                                                    Binding="{Binding Disabled}"
+                                                    Binding="{Binding Disabled, Mode=OneWay}"
+                                                    IsReadOnly="True"
                                                     Width="75"/>
                             <DataGridCheckBoxColumn Header="Targeting"
-                                                    Binding="{Binding HasFilters}"
+                                                    Binding="{Binding HasFilters, Mode=OneWay}"
+                                                    IsReadOnly="True"
                                                     Width="75"/>
                         </DataGrid.Columns>
                     </DataGrid>
@@ -1342,9 +1408,12 @@
                             <DataGridTextColumn Header="Target" Binding="{Binding TargetName}" Width="1.2*"/>
                             <DataGridTextColumn Header="Type" Binding="{Binding TargetType}" Width="90"/>
                             <DataGridTextColumn Header="Order" Binding="{Binding Order}" Width="70"/>
-                            <DataGridCheckBoxColumn Header="Enabled" Binding="{Binding Enabled}" Width="80"/>
-                            <DataGridCheckBoxColumn Header="Enforced" Binding="{Binding Enforced}" Width="80"/>
-                            <DataGridCheckBoxColumn Header="Block inheritance" Binding="{Binding BlockInheritance}" Width="120"/>
+                            <DataGridCheckBoxColumn Header="Enabled" Binding="{Binding Enabled, Mode=OneWay}" IsReadOnly="True"
+                                                    Width="80"/>
+                            <DataGridCheckBoxColumn Header="Enforced" Binding="{Binding Enforced, Mode=OneWay}" IsReadOnly="True"
+                                                    Width="80"/>
+                            <DataGridCheckBoxColumn Header="Block inheritance" Binding="{Binding BlockInheritance, Mode=OneWay}" IsReadOnly="True"
+                                                    Width="120"/>
                             <DataGridTextColumn Header="Target DN" Binding="{Binding TargetDn}" Width="2.2*"/>
                         </DataGrid.Columns>
                     </DataGrid>
@@ -1376,8 +1445,10 @@
                             <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="140"/>
                             <DataGridTextColumn Header="Trustee" Binding="{Binding TrusteeDisplay}" Width="1.5*"/>
                             <DataGridTextColumn Header="Permission" Binding="{Binding PermissionDisplay}" Width="1.7*"/>
-                            <DataGridCheckBoxColumn Header="Inherited" Binding="{Binding Inherited}" Width="80"/>
-                            <DataGridCheckBoxColumn Header="Denied" Binding="{Binding Denied}" Width="70"/>
+                            <DataGridCheckBoxColumn Header="Inherited" Binding="{Binding Inherited, Mode=OneWay}" IsReadOnly="True"
+                                                    Width="80"/>
+                            <DataGridCheckBoxColumn Header="Denied" Binding="{Binding Denied, Mode=OneWay}" IsReadOnly="True"
+                                                    Width="70"/>
                             <DataGridTextColumn Header="SID" Binding="{Binding TrusteeSid}" Width="1.5*"/>
                             <DataGridTextColumn Header="Directory path" Binding="{Binding TrusteeDsPath}" Width="2*"/>
                         </DataGrid.Columns>
