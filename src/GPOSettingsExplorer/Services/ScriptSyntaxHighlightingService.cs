@@ -58,7 +58,7 @@ internal static class ScriptSyntaxHighlightingService
 
     private static string PowerShellDefinition() => $"""
         <SyntaxDefinition name="GPO PowerShell" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
-        {CommonColors()}
+        {{CommonColors()}}
           <RuleSet ignoreCase="true">
             <Span color="Comment" multiline="true" begin="&lt;#" end="#&gt;"/>
             <Span color="Comment" begin="#"/>
