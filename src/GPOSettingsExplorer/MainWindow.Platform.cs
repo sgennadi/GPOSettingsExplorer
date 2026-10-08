@@ -22,6 +22,8 @@ public partial class MainWindow
     private readonly UpdateCheckStateService _updateCheckStateService =
         new();
 
+    private string? _pendingUpdatePackage;
+
 
     private void Connection_Click(
         object sender,
@@ -557,30 +559,22 @@ public partial class MainWindow
                 return;
             }
 
-            var answer =
-                MessageBox.Show(
-                    this,
-                    $"GPO Settings Explorer {update.TagName} is available.\n\nCurrent version: {update.CurrentVersion}\nLatest version: {update.LatestVersion}\n\nDownload and install it now?",
-                    "Update Available",
-                    MessageBoxButton.YesNo,
-                    MessageBoxImage.Question);
+            SetBusy(
+                false);
 
-            if (answer !=
-                MessageBoxResult.Yes)
-            {
-                if (!string.IsNullOrWhiteSpace(
-                        update.ReleaseUrl))
+            var window =
+                new UpdateAvailableWindow(
+                    update)
                 {
-                    Process.Start(
-                        new ProcessStartInfo
-                        {
-                            FileName =
-                                update.ReleaseUrl,
-                            UseShellExecute =
-                                true
-                        });
-                }
+                    Owner =
+                        this
+                };
 
+            if (window.ShowDialog() !=
+                    true ||
+                window.Choice ==
+                UpdateInstallChoice.Later)
+            {
                 return;
             }
 
@@ -607,6 +601,24 @@ public partial class MainWindow
                     update,
                     progress);
 
+            if (window.Choice ==
+                UpdateInstallChoice.InstallOnExit)
+            {
+                _pendingUpdatePackage =
+                    package;
+
+                UpdateButton.Content =
+                    $"Install {update.TagName} on exit";
+
+                UpdateButton.ToolTip =
+                    "The verified update package will be installed when GPO Settings Explorer closes.";
+
+                StatusText.Text =
+                    $"Update {update.TagName} is ready and will install on exit";
+
+                return;
+            }
+
             StatusText.Text =
                 "Starting updater...";
 
@@ -614,31 +626,18 @@ public partial class MainWindow
                 "Installing update";
 
             UpdateButton.ToolTip =
-                "The application will restart after the update is installed.";
+                "The application will restart after the staged update is installed.";
 
             UpdateService.StageInstallerAndRestart(
                 package);
+
+            _pendingUpdatePackage =
+                null;
 
             Application.Current.Shutdown();
         }
         catch (Exception ex)
         {
-            var log =
-                CrashLogService.Write(
-                    "Check/apply update",
-                    ex);
-
-            MessageBox.Show(
-                this,
-                ex.Message +
-                (string.IsNullOrWhiteSpace(
-                    log)
-                    ? string.Empty
-                    : $"\n\nDiagnostic log:\n{log}"),
-                "Update",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
-
             UpdateButton.Content =
                 "Check updates";
 
@@ -647,6 +646,12 @@ public partial class MainWindow
 
             StatusText.Text =
                 "Update failed";
+
+            ErrorDialog.Show(
+                this,
+                "Update",
+                "The update could not be checked, downloaded, verified or staged.",
+                ex);
         }
         finally
         {
