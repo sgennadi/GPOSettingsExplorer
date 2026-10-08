@@ -4,6 +4,9 @@ using GPOSettingsExplorer.Services;
 var tests = new (string Name, Action Body)[]
 {
     ("Script sanitizer removes Markdown fences", TestScriptSanitizer),
+    ("BAT diagnostics detect broken labels", TestBatchSyntaxDiagnostics),
+    ("AvalonEdit BAT and PowerShell syntax definitions load", TestScriptHighlighting),
+    ("PowerShell syntax parser reports malformed code without running it", TestPowerShellSyntaxDiagnostics),
     ("Script searches distinguish content and file metadata", TestScriptSearchModes),
     ("MMC navigation does not confuse audit and registry with security options", TestMmcNavigationRouting),
     ("Domain connection pins LDAP and SYSVOL", TestDomainConnectionPaths),
@@ -198,6 +201,45 @@ static void TestMmcNavigationRouting()
            target.Contains("Administrative Templates", StringComparison.Ordinal) &&
            !target.Contains("Preferences", StringComparison.Ordinal),
         "registry.pol was incorrectly routed to GPP Preferences.");
+}
+
+static void TestBatchSyntaxDiagnostics()
+{
+    var source = "goto absent\r\n:present\r\ngoto present\r\n";
+    var messages = ScriptSyntaxService.CheckBatch(source);
+    Assert(messages.Count(x => x.Message.Contains("absent", StringComparison.OrdinalIgnoreCase)) == 1,
+        "Unresolved BAT label was not detected.");
+    Assert(!messages.Any(x => x.Message.Contains("present", StringComparison.OrdinalIgnoreCase)),
+        "A defined BAT label was flagged as missing.");
+
+    var markdown = new string((char)96, 3) + "bat\r\n@echo off\r\n" +
+        new string((char)96, 3);
+    Assert(ScriptSyntaxService.CheckBatch(markdown).Count(
+        x => x.Severity == ScriptDiagnosticSeverity.Error) == 2,
+        "Markdown fence syntax errors were not detected.");
+}
+
+static void TestScriptHighlighting()
+{
+    Assert(ScriptSyntaxHighlightingService.ForFile("deploy.bat") is not null,
+        "Batch syntax highlighter could not be loaded.");
+    Assert(ScriptSyntaxHighlightingService.ForFile("startup.cmd") is not null,
+        "CMD syntax highlighter could not be loaded.");
+    Assert(ScriptSyntaxHighlightingService.ForFile("policy.ps1") is not null,
+        "PowerShell syntax highlighter could not be loaded.");
+}
+
+static void TestPowerShellSyntaxDiagnostics()
+{
+    const string invalid = "if ($true) { Write-Output 'missing brace' ";
+    var diagnostics = ScriptSyntaxService.Analyze(invalid, "startup.ps1");
+    Assert(diagnostics.Any(x => x.Severity == ScriptDiagnosticSeverity.Error),
+        "PowerShell AST parser failed to detect a missing closing brace.");
+
+    // Parser.ParseFile must never execute script statements; only parse source text.
+    var valid = ScriptSyntaxService.Analyze("Write-Output 'safe'\r\n", "startup.ps1");
+    Assert(!valid.Any(x => x.Severity == ScriptDiagnosticSeverity.Error),
+        "The PowerShell parser rejected valid source text.");
 }
 
 static void TestDomainConnectionPaths()
