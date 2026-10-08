@@ -214,6 +214,10 @@
                                                 Binding="{Binding Type}"
                                                 ElementStyle="{StaticResource UiScriptTypeTextStyle}"
                                                 Width="70"/>
+                            <DataGridTextColumn Header="Status"
+                                                Binding="{Binding StatusText}"
+                                                ElementStyle="{StaticResource UiScriptStatusTextStyle}"
+                                                Width="175"/>
                             <DataGridTextColumn Header="Parameters"
                                                 Binding="{Binding Parameters}"
                                                 Width="1.2*"/>
@@ -263,6 +267,10 @@
                             <DataGridTextColumn Header="File"
                                                 Binding="{Binding FileName}"
                                                 Width="1.2*"/>
+                            <DataGridTextColumn Header="Type"
+                                                Binding="{Binding Type}"
+                                                ElementStyle="{StaticResource UiScriptTypeTextStyle}"
+                                                Width="90"/>
                             <DataGridTextColumn Header="Line"
                                                 Binding="{Binding LineNumber}"
                                                 Width="65"/>
