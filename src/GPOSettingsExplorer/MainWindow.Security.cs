@@ -26,10 +26,21 @@ public partial class MainWindow
         object sender,
         System.Windows.Controls.SelectionChangedEventArgs e)
     {
-        if (SecurityTab.IsSelected &&
-            SecurityGpoCombo.SelectedItem is GpoInfo)
+        if (SecurityGpoCombo.SelectedItem
+            is GpoInfo selected)
         {
-            await LoadPermissionsAsync();
+            await UpdateSecurityCapabilityAsync(
+                selected);
+
+            if (SecurityTab.IsSelected)
+            {
+                await LoadPermissionsAsync();
+            }
+        }
+        else
+        {
+            ApplySecurityCapability(
+                null);
         }
     }
 
