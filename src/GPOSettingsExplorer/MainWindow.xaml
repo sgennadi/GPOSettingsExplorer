@@ -1492,6 +1492,7 @@
                             <Button Content="Restore selected" Click="RestoreBackup_Click"/>
                             <Button Content="Import into GPO..." Click="ImportBackup_Click"/>
                             <Button Content="Generate report" Click="BackupReport_Click"/>
+                            <Button Content="Compare with current" Click="CompareBackupWithCurrent_Click"/>
                             <Button Content="Delete backup" Click="DeleteBackup_Click"/>
                             <TextBlock x:Name="BackupCountText"
                                        Margin="16,0,0,0"
