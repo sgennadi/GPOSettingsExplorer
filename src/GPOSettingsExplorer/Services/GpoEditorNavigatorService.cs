@@ -137,7 +137,7 @@ public sealed class GpoEditorNavigatorService
                    "Unable to start the Group Policy Management Editor.");
     }
 
-    private static bool Navigate(
+    private bool Navigate(
         Process process,
         PolicySettingInfo setting,
         IProgress<string>? progress,
