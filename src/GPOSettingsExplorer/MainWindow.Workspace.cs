@@ -24,6 +24,10 @@ public partial class MainWindow
     private bool _workspaceInitialized;
     private bool _workspaceApplied;
 
+    private readonly HashSet<string> _restoredWorkspaceControls =
+        new(
+            StringComparer.OrdinalIgnoreCase);
+
     private void InitializeWorkspaceUi()
     {
         _workspaceState =
@@ -160,6 +164,8 @@ public partial class MainWindow
         }
 
         RestoreGridLayout();
+        RestoreNamedControlState(
+            this);
     }
 
     private void MainWindow_Closing(
@@ -249,7 +255,11 @@ public partial class MainWindow
                 GridColumnWidths =
                     CaptureGridWidths(),
                 GridSorts =
-                    CaptureGridSorts()
+                    CaptureGridSorts(),
+                TextValues =
+                    CaptureTextValues(),
+                ComboValues =
+                    CaptureComboValues()
             };
 
         _workspaceState =
@@ -447,6 +457,128 @@ public partial class MainWindow
         return result;
     }
 
+    private Dictionary<string, string> CaptureTextValues()
+    {
+        var result =
+            new Dictionary<string, string>(
+                StringComparer.OrdinalIgnoreCase);
+
+        foreach (var textBox in EnumerateNamedControls<TextBox>(
+                     this))
+        {
+            result[
+                textBox.Name] =
+                textBox.Text;
+        }
+
+        return result;
+    }
+
+    private Dictionary<string, string> CaptureComboValues()
+    {
+        var result =
+            new Dictionary<string, string>(
+                StringComparer.OrdinalIgnoreCase);
+
+        foreach (var combo in EnumerateNamedControls<ComboBox>(
+                     this))
+        {
+            if (combo.SelectedItem
+                    is string value &&
+                !string.IsNullOrWhiteSpace(
+                    value))
+            {
+                result[
+                    combo.Name] =
+                    value;
+            }
+        }
+
+        return result;
+    }
+
+    private void ScheduleWorkspaceControlRestore()
+    {
+        if (!_workspaceInitialized)
+        {
+            return;
+        }
+
+        _ =
+            Dispatcher.BeginInvoke(
+                new Action(
+                    () =>
+                    {
+                        var root =
+                            MainTabs.SelectedContent
+                            as DependencyObject
+                            ?? MainTabs;
+
+                        RestoreNamedControlState(
+                            root);
+
+                        RestoreGridLayout();
+                    }),
+                System.Windows.Threading.DispatcherPriority.ContextIdle);
+    }
+
+    private void RestoreNamedControlState(
+        DependencyObject root)
+    {
+        foreach (var textBox in EnumerateNamedControls<TextBox>(
+                     root))
+        {
+            if (_restoredWorkspaceControls.Contains(
+                    textBox.Name) ||
+                !_workspaceState.TextValues.TryGetValue(
+                    textBox.Name,
+                    out var value))
+            {
+                continue;
+            }
+
+            textBox.Text =
+                value;
+
+            _restoredWorkspaceControls.Add(
+                textBox.Name);
+        }
+
+        foreach (var combo in EnumerateNamedControls<ComboBox>(
+                     root))
+        {
+            if (_restoredWorkspaceControls.Contains(
+                    combo.Name) ||
+                !_workspaceState.ComboValues.TryGetValue(
+                    combo.Name,
+                    out var value))
+            {
+                continue;
+            }
+
+            var match =
+                combo.Items
+                    .Cast<object>()
+                    .FirstOrDefault(
+                        item =>
+                            item is string text &&
+                            text.Equals(
+                                value,
+                                StringComparison.CurrentCultureIgnoreCase));
+
+            if (match is null)
+            {
+                continue;
+            }
+
+            combo.SelectedItem =
+                match;
+
+            _restoredWorkspaceControls.Add(
+                combo.Name);
+        }
+    }
+
     private void RestoreGridLayout()
     {
         foreach (var grid in EnumerateNamedDataGrids(
@@ -506,6 +638,33 @@ public partial class MainWindow
             }
             catch
             {
+            }
+        }
+    }
+
+    private static IEnumerable<T> EnumerateNamedControls<T>(
+        DependencyObject root)
+        where T : FrameworkElement
+    {
+        if (root is T control &&
+            !string.IsNullOrWhiteSpace(
+                control.Name))
+        {
+            yield return control;
+        }
+
+        foreach (var child in LogicalTreeHelper.GetChildren(
+                     root))
+        {
+            if (child is not DependencyObject dependency)
+            {
+                continue;
+            }
+
+            foreach (var nested in EnumerateNamedControls<T>(
+                         dependency))
+            {
+                yield return nested;
             }
         }
     }
