@@ -19,19 +19,37 @@ public sealed class SemanticXmlDiffService
 
     public IReadOnlyList<SemanticDiffRow> Compare(
         string leftXml,
-        string rightXml)
+        string rightXml) =>
+        CompareDocuments(
+            XDocument.Load(
+                leftXml,
+                LoadOptions.None),
+            XDocument.Load(
+                rightXml,
+                LoadOptions.None));
+
+    public IReadOnlyList<SemanticDiffRow> CompareText(
+        string leftXml,
+        string rightXml) =>
+        CompareDocuments(
+            XDocument.Parse(
+                leftXml,
+                LoadOptions.None),
+            XDocument.Parse(
+                rightXml,
+                LoadOptions.None));
+
+    private static IReadOnlyList<SemanticDiffRow> CompareDocuments(
+        XDocument leftDocument,
+        XDocument rightDocument)
     {
         var left =
             Flatten(
-                XDocument.Load(
-                    leftXml,
-                    LoadOptions.None));
+                leftDocument);
 
         var right =
             Flatten(
-                XDocument.Load(
-                    rightXml,
-                    LoadOptions.None));
+                rightDocument);
 
         return left.Keys
             .Union(
