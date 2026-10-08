@@ -160,6 +160,58 @@ public partial class MainWindow
         });
     }
 
+    private void ViewAuditEntry_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        ShowSelectedAuditEntry();
+    }
+
+    private void AuditGrid_MouseDoubleClick(
+        object sender,
+        System.Windows.Input.MouseButtonEventArgs e)
+    {
+        ShowSelectedAuditEntry();
+    }
+
+    private void ShowSelectedAuditEntry()
+    {
+        if (AuditGrid.SelectedItem
+            is not AuditEntryInfo entry)
+        {
+            return;
+        }
+
+        var canRestore =
+            !string.IsNullOrWhiteSpace(
+                ExtractBackupPath(
+                    entry.Details));
+
+        var window =
+            new AuditEntryWindow(
+                entry,
+                canRestore
+                    ? async () =>
+                    {
+                        var backup =
+                            await ResolveSelectedAuditBackupAsync();
+
+                        if (backup is not null)
+                        {
+                            await RestoreGpoBackupAsync(
+                                backup,
+                                "Audit entry details");
+                        }
+                    }
+                    : null)
+            {
+                Owner =
+                    this
+            };
+
+        window.ShowDialog();
+    }
+
     private async void OpenAuditBackup_Click(
         object sender,
         RoutedEventArgs e)

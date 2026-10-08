@@ -43,6 +43,7 @@ public partial class MainWindow : Window
         _wmiView.Filter = FilterWmi;
 
         InitializeSecurityUi();
+        InitializeWorkspaceUi();
     }
 
     private async void MainWindow_Loaded(object sender, RoutedEventArgs e)
@@ -74,6 +75,8 @@ public partial class MainWindow : Window
 
             DomainText.Text = _domainContext.DomainName;
             ServerText.Text = _domainContext.ConnectedServer;
+
+            _gpoCapabilities.Clear();
 
             if (!_gpmService.IsAvailable)
             {
@@ -150,6 +153,8 @@ public partial class MainWindow : Window
                 }
             }
 
+            RestoreWorkspaceAfterRefresh();
+
             if (!_gpmService.IsAvailable)
             {
                 StatusText.Text = "Ready";
@@ -218,6 +223,9 @@ public partial class MainWindow : Window
 
         try
         {
+            MarkGpoRecent(
+                selected.Id);
+
             _gpmService.OpenEditor(selected, _domainContext.DomainDistinguishedName);
         }
         catch (Exception ex)
@@ -242,6 +250,9 @@ public partial class MainWindow : Window
 
         try
         {
+            MarkGpoRecent(
+                gpo.Id);
+
             _gpmService.OpenEditor(gpo, _domainContext.DomainDistinguishedName);
         }
         catch (Exception ex)
@@ -647,6 +658,12 @@ public partial class MainWindow : Window
     private bool FilterGpo(object item)
     {
         if (item is not GpoInfo gpo)
+        {
+            return false;
+        }
+
+        if (!MatchesGpoQuickFilter(
+                gpo))
         {
             return false;
         }

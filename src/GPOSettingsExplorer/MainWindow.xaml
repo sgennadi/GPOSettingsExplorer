@@ -7,7 +7,8 @@
         WindowStartupLocation="CenterScreen"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True"
-        Loaded="MainWindow_Loaded">
+        Loaded="MainWindow_Loaded"
+        Closing="MainWindow_Closing">
     <DockPanel>
         <Border DockPanel.Dock="Top"
                 Padding="8,6"
@@ -83,27 +84,45 @@
 
         <TabControl x:Name="MainTabs"
                     SelectionChanged="MainTabs_SelectionChanged">
-            <TabItem Header="GPOs">
+            <TabItem x:Name="GposTab"
+                     Header="GPOs">
                 <DockPanel Margin="6">
-                    <WrapPanel DockPanel.Dock="Top">
-                        <TextBlock Text="Search:" VerticalAlignment="Center"/>
-                        <TextBox x:Name="GpoSearchBox" Width="340" TextChanged="GpoSearchBox_TextChanged"/>
-                        <Button Content="New GPO..." Click="NewGpo_Click"/>
-                        <Button Content="Copy GPO..." Click="CopyGpo_Click"/>
-                        <Button Content="Rename" Click="RenameGpo_Click"/>
-                        <Button Content="Delete" Click="DeleteGpo_Click"/>
-                        <Button Content="Open editor" Click="OpenGpoEditor_Click"/>
-                        <Button Content="Backup selected" Click="BackupSelectedGpo_Click"/>
-                        <Button Content="Build settings index" Click="BuildSettingsIndex_Click"/>
-                        <Separator Width="12"/>
-                        <Button Content="Toggle Computer" Click="ToggleComputerScope_Click"/>
-                        <Button Content="Toggle User" Click="ToggleUserScope_Click"/>
-                        <Separator Width="12"/>
-                        <Button Content="Assign WMI filter" Click="AssignWmiFilter_Click"/>
-                        <Button Content="Remove WMI filter" Click="RemoveWmiFilter_Click"/>
-                    </WrapPanel>
-                    <DataGrid x:Name="GpoGrid" MouseDoubleClick="GpoGrid_MouseDoubleClick">
+                    <StackPanel DockPanel.Dock="Top">
+                        <WrapPanel>
+                            <TextBlock Text="Search:" VerticalAlignment="Center"/>
+                            <TextBox x:Name="GpoSearchBox" Width="300" TextChanged="GpoSearchBox_TextChanged"/>
+                            <TextBlock Text="View:" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                            <ComboBox x:Name="GpoQuickFilterCombo"
+                                      Width="115"
+                                      SelectionChanged="GpoQuickFilterCombo_SelectionChanged"/>
+                            <Button x:Name="FavoriteGpoButton"
+                                    Content="★ Favorite"
+                                    Click="ToggleFavoriteGpo_Click"/>
+                            <Button Content="New GPO..." Click="NewGpo_Click"/>
+                            <Button Content="Copy GPO..." Click="CopyGpo_Click"/>
+                            <Button x:Name="RenameGpoButton" Content="Rename" Click="RenameGpo_Click"/>
+                            <Button x:Name="DeleteGpoButton" Content="Delete" Click="DeleteGpo_Click"/>
+                            <Button Content="Open editor" Click="OpenGpoEditor_Click"/>
+                            <Button Content="Backup selected" Click="BackupSelectedGpo_Click"/>
+                            <Button Content="Build settings index" Click="BuildSettingsIndex_Click"/>
+                            <Separator Width="12"/>
+                            <Button x:Name="ToggleComputerButton" Content="Toggle Computer" Click="ToggleComputerScope_Click"/>
+                            <Button x:Name="ToggleUserButton" Content="Toggle User" Click="ToggleUserScope_Click"/>
+                            <Separator Width="12"/>
+                            <Button x:Name="AssignWmiButton" Content="Assign WMI filter" Click="AssignWmiFilter_Click"/>
+                            <Button x:Name="RemoveWmiButton" Content="Remove WMI filter" Click="RemoveWmiFilter_Click"/>
+                        </WrapPanel>
+                        <TextBlock x:Name="SelectedGpoAccessText"
+                                   Margin="4,2,4,4"
+                                   TextWrapping="Wrap"
+                                   Foreground="DimGray"/>
+                    </StackPanel>
+                    <DataGrid x:Name="GpoGrid"
+                              MouseDoubleClick="GpoGrid_MouseDoubleClick"
+                              SelectionChanged="GpoGrid_SelectionChanged">
                         <DataGrid.Columns>
+                            <DataGridTextColumn Header="★" Binding="{Binding FavoriteMark}" Width="42"/>
+                            <DataGridTextColumn Header="Recent" Binding="{Binding RecentMark}" Width="62"/>
                             <DataGridTextColumn Header="GPO" Binding="{Binding DisplayName}" Width="2*"/>
                             <DataGridTextColumn Header="Scope" Binding="{Binding ScopeState}" Width="150"/>
                             <DataGridTextColumn Header="WMI Filter" Binding="{Binding WmiFilterName}" Width="1.3*"/>
@@ -1431,10 +1450,10 @@
                                   SelectionChanged="SecurityGpoCombo_SelectionChanged"/>
                         <Button Content="Refresh" Click="RefreshSecurity_Click"/>
                         <Separator Width="12"/>
-                        <Button Content="Add Security Filter..." Click="AddSecurityFilter_Click"/>
-                        <Button Content="Add Delegation..." Click="AddDelegation_Click"/>
-                        <Button Content="Change..." Click="ChangePermission_Click"/>
-                        <Button Content="Remove" Click="RemovePermission_Click"/>
+                        <Button x:Name="AddSecurityFilterButton" Content="Add Security Filter..." Click="AddSecurityFilter_Click"/>
+                        <Button x:Name="AddDelegationButton" Content="Add Delegation..." Click="AddDelegation_Click"/>
+                        <Button x:Name="ChangePermissionButton" Content="Change..." Click="ChangePermission_Click"/>
+                        <Button x:Name="RemovePermissionButton" Content="Remove" Click="RemovePermission_Click"/>
                         <Separator Width="12"/>
                         <TextBlock Text="Search:" VerticalAlignment="Center"/>
                         <TextBox x:Name="PermissionSearchBox" Width="230" TextChanged="PermissionSearchBox_TextChanged"/>
@@ -1473,6 +1492,7 @@
                             <Button Content="Restore selected" Click="RestoreBackup_Click"/>
                             <Button Content="Import into GPO..." Click="ImportBackup_Click"/>
                             <Button Content="Generate report" Click="BackupReport_Click"/>
+                            <Button Content="Compare with current" Click="CompareBackupWithCurrent_Click"/>
                             <Button Content="Delete backup" Click="DeleteBackup_Click"/>
                             <TextBlock x:Name="BackupCountText"
                                        Margin="16,0,0,0"
@@ -1495,7 +1515,7 @@
                 </DockPanel>
             </TabItem>
 
-            <TabItem Header="Audit Log" Loaded="AuditTab_Loaded">
+            <TabItem x:Name="AuditTab" Header="Audit Log" Loaded="AuditTab_Loaded">
                 <DockPanel Margin="6">
                     <StackPanel DockPanel.Dock="Top" Orientation="Vertical">
                         <WrapPanel>
@@ -1504,6 +1524,7 @@
                             <Button Content="Refresh" Click="RefreshAudit_Click"/>
                             <Button Content="Open folder" Click="OpenAuditFolder_Click"/>
                             <Button Content="Export CSV" Click="ExportAuditCsv_Click"/>
+                            <Button Content="View details" Click="ViewAuditEntry_Click"/>
                             <Button Content="Open linked backup" Click="OpenAuditBackup_Click"/>
                             <Button Content="Restore linked backup" Click="RestoreAuditBackup_Click"/>
                             <TextBlock Text="Search:" VerticalAlignment="Center" Margin="12,0,0,0"/>
@@ -1517,7 +1538,8 @@
                         </WrapPanel>
                     </StackPanel>
 
-                    <DataGrid x:Name="AuditGrid">
+                    <DataGrid x:Name="AuditGrid"
+                              MouseDoubleClick="AuditGrid_MouseDoubleClick">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="Time" Binding="{Binding Timestamp, StringFormat={}{0:yyyy-MM-dd HH:mm:ss zzz}}" Width="190"/>
                             <DataGridTextColumn Header="User" Binding="{Binding User}" Width="170"/>
@@ -1533,7 +1555,7 @@
                 </DockPanel>
             </TabItem>
 
-            <TabItem Header="Compare &amp; Conflicts">
+            <TabItem x:Name="CompareTab" Header="Compare &amp; Conflicts">
                 <Grid Margin="6">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto"/>

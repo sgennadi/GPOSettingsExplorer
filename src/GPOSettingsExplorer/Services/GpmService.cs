@@ -98,6 +98,54 @@ public sealed class GpmService
         return settings;
     }
 
+    public string GenerateXmlReport(
+        string domainName,
+        Guid gpoId)
+    {
+        dynamic gpm =
+            CreateGpm();
+
+        dynamic constants =
+            gpm.GetConstants();
+
+        dynamic domain =
+            GetDomain(
+                gpm,
+                constants,
+                domainName);
+
+        dynamic gpo =
+            domain.GetGPO(
+                gpoId.ToString(
+                    "B"));
+
+        var temp =
+            Path.Combine(
+                Path.GetTempPath(),
+                $"GPOSettingsExplorer-report-{Guid.NewGuid():N}.xml");
+
+        try
+        {
+            gpo.GenerateReportToFile(
+                constants.ReportXML,
+                temp);
+
+            return File.ReadAllText(
+                temp);
+        }
+        finally
+        {
+            try
+            {
+                File.Delete(
+                    temp);
+            }
+            catch
+            {
+            }
+        }
+    }
+
     public void OpenEditor(
         GpoInfo gpo,
         string domainDistinguishedName)

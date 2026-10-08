@@ -27,6 +27,7 @@ public sealed class GpoEditorNavigatorService
         GpoInfo gpo,
         string domainDistinguishedName,
         PolicySettingInfo setting,
+        IProgress<string>? progress = null,
         CancellationToken cancellationToken = default)
     {
         var process =
@@ -48,6 +49,7 @@ public sealed class GpoEditorNavigatorService
                     return Navigate(
                         process,
                         setting,
+                        progress,
                         cancellationToken);
                 }
                 catch (OperationCanceledException)
@@ -104,11 +106,15 @@ public sealed class GpoEditorNavigatorService
     private static bool Navigate(
         Process process,
         PolicySettingInfo setting,
+        IProgress<string>? progress,
         CancellationToken cancellationToken)
     {
         var deadline =
             DateTime.UtcNow.AddSeconds(
                 25);
+
+        progress?.Report(
+            "Waiting for Group Policy Management Editor...");
 
         var window =
             WaitForWindow(
@@ -128,6 +134,9 @@ public sealed class GpoEditorNavigatorService
         SetForegroundWindow(
             process.MainWindowHandle);
 
+        progress?.Report(
+            "Locating the policy tree...");
+
         var tree =
             FindControl(
                 window,
@@ -144,6 +153,9 @@ public sealed class GpoEditorNavigatorService
         foreach (var segment in BuildTreePath(
                      setting))
         {
+            progress?.Report(
+                $"Opening: {segment}");
+
             current =
                 current is null
                     ? FindTreeItem(
@@ -190,6 +202,9 @@ public sealed class GpoEditorNavigatorService
         Thread.Sleep(
             700);
 
+        progress?.Report(
+            "Searching the MMC result pane for the exact setting...");
+
         var row =
             FindSettingRow(
                 window,
@@ -201,6 +216,9 @@ public sealed class GpoEditorNavigatorService
         {
             return false;
         }
+
+        progress?.Report(
+            "Exact setting found. Selecting it...");
 
         TryScrollIntoView(
             row);
@@ -220,7 +238,19 @@ public sealed class GpoEditorNavigatorService
                 doubleClick: true);
         }
 
+        progress?.Report(
+            "Exact setting opened.");
+
         return true;
+    }
+
+    public static string NavigationTarget(
+        PolicySettingInfo setting)
+    {
+        return string.Join(
+            " > ",
+            BuildTreePath(
+                setting));
     }
 
     private static AutomationElement? WaitForWindow(

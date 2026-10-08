@@ -8,7 +8,8 @@ var tests = new (string Name, Action Body)[]
     ("DPAPI current-user round trip", TestDpapiRoundTrip),
     ("GPP XML cache refreshes after file change", TestGppXmlCache),
     ("Script inventory cache invalidates on GPO modification", TestScriptCache),
-    ("Automatic update checks respect 24-hour and retry windows", TestUpdateCheckSchedule)
+    ("Automatic update checks respect 24-hour and retry windows", TestUpdateCheckSchedule),
+    ("Semantic XML diff ignores report timestamps and finds setting changes", TestSemanticXmlDiff)
 };
 
 var failures = new List<string>();
@@ -388,6 +389,39 @@ static void TestUpdateCheckSchedule()
             oldFailureAfterStaleSuccess,
             now),
         "A failed retry older than two hours should be attempted again.");
+}
+
+static void TestSemanticXmlDiff()
+{
+    const string left =
+        "<GPO><GeneratedTime>2026-10-01</GeneratedTime><Policy name=\"A\"><Value>1</Value></Policy></GPO>";
+
+    const string right =
+        "<GPO><GeneratedTime>2026-10-08</GeneratedTime><Policy name=\"A\"><Value>2</Value></Policy></GPO>";
+
+    var rows =
+        new SemanticXmlDiffService()
+            .CompareText(
+                left,
+                right);
+
+    Assert(
+        rows.Any(
+            row =>
+                row.IsDifferent &&
+                row.LeftValue ==
+                "1" &&
+                row.RightValue ==
+                "2"),
+        "Expected semantic diff to report the changed policy value.");
+
+    Assert(
+        !rows.Any(
+            row =>
+                row.Path.Contains(
+                    "GeneratedTime",
+                    StringComparison.OrdinalIgnoreCase)),
+        "Generated report timestamps should not appear in semantic diff output.");
 }
 
 static void Assert(

@@ -107,6 +107,20 @@ public sealed class DiagnosticsWindow : Window
             (_, _) =>
                 OpenLogs();
 
+        var rollback =
+            new Button
+            {
+                Content =
+                    "Rollback last update",
+                IsEnabled =
+                    UpdateService.FindLatestRollbackDirectory()
+                    is not null
+            };
+
+        rollback.Click +=
+            (_, _) =>
+                RollbackLastUpdate();
+
         toolbar.Children.Add(
             refresh);
 
@@ -118,6 +132,9 @@ public sealed class DiagnosticsWindow : Window
 
         toolbar.Children.Add(
             openLogs);
+
+        toolbar.Children.Add(
+            rollback);
 
         _status =
             new TextBlock
@@ -314,6 +331,51 @@ public sealed class DiagnosticsWindow : Window
                 "Create Support Package",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
+        }
+    }
+
+    private void RollbackLastUpdate()
+    {
+        var rollback =
+            UpdateService.FindLatestRollbackDirectory();
+
+        if (rollback is null)
+        {
+            MessageBox.Show(
+                this,
+                "No retained update rollback is available.",
+                "Rollback Update",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+
+            return;
+        }
+
+        if (MessageBox.Show(
+                this,
+                $"Restore the application files saved before the last update?\n\n{rollback}",
+                "Rollback Update",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning) !=
+            MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        try
+        {
+            UpdateService.StageRollbackAndRestart(
+                rollback);
+
+            Application.Current.Shutdown();
+        }
+        catch (Exception ex)
+        {
+            ErrorDialog.Show(
+                this,
+                "Rollback Update",
+                "The previous application version could not be staged for rollback.",
+                ex);
         }
     }
 

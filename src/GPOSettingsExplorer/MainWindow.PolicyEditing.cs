@@ -44,6 +44,9 @@ public partial class MainWindow
             return;
         }
 
+        MarkGpoRecent(
+            gpo.Id);
+
         SetBusy(true, "Loading Administrative Templates...");
 
         try
@@ -73,10 +76,11 @@ public partial class MainWindow
                         setting,
                         canEditBoolean,
                         exactNavigationAvailable,
-                        () => _gpoEditorNavigatorService.OpenAtSettingAsync(
+                        progress => _gpoEditorNavigatorService.OpenAtSettingAsync(
                             gpo,
                             _domainContext.DomainDistinguishedName,
-                            setting))
+                            setting,
+                            progress))
                     {
                         Owner = this
                     };

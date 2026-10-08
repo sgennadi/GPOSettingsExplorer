@@ -202,15 +202,12 @@ public partial class MainWindow
                 StatusText.Text =
                     "INI Files load failed";
 
-                MessageBox.Show(
+                ErrorDialog.Show(
                     this,
-                    BuildRecoverableErrorMessage(
-                        "INI Files could not be loaded. The application will stay open.",
-                        ex,
-                        log),
                     "Load INI Files",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Error);
+                    "INI Files could not be loaded. The application will stay open.",
+                    ex,
+                    log);
             }
         }
         finally
@@ -744,15 +741,12 @@ public partial class MainWindow
         StatusText.Text =
             "INI Files operation failed";
 
-        MessageBox.Show(
+        ErrorDialog.Show(
             this,
-            BuildRecoverableErrorMessage(
-                "The INI Files operation failed. The application will stay open.",
-                ex,
-                log),
             "GPP INI Files",
-            MessageBoxButton.OK,
-            MessageBoxImage.Error);
+            "The INI Files operation failed. The application will stay open.",
+            ex,
+            log);
     }
 
     private static string BuildRecoverableErrorMessage(

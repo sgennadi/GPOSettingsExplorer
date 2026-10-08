@@ -99,23 +99,12 @@ public partial class App : Application
             System.Windows.Input.Mouse.OverrideCursor =
                 null;
 
-            var message =
-                "An unexpected error was caught. The application will stay open.";
-
-            if (!string.IsNullOrWhiteSpace(
-                    path))
-            {
-                message +=
-                    $"\n\nDiagnostic log:\n{path}";
-            }
-
-            MessageBox.Show(
+            ErrorDialog.Show(
                 Current?.MainWindow,
-                message +
-                $"\n\n{e.Exception.Message}",
                 "GPO Settings Explorer",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+                "An unexpected error was caught. The application will stay open.",
+                e.Exception,
+                path);
         }
         catch
         {

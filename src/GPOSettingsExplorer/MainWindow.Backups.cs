@@ -61,6 +61,97 @@ public partial class MainWindow
         }
     }
 
+    private async void CompareBackupWithCurrent_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        if (_domainContext is null ||
+            BackupsGrid.SelectedItem
+                is not GpoBackupInfo backup)
+        {
+            return;
+        }
+
+        var current =
+            _gpos.FirstOrDefault(
+                gpo =>
+                    gpo.Id ==
+                    backup.GpoId);
+
+        if (current is null)
+        {
+            MessageBox.Show(
+                this,
+                "The original GPO is not currently present in the connected domain.",
+                "Compare Backup",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+
+            return;
+        }
+
+        SetBusy(
+            true,
+            "Building semantic backup comparison...");
+
+        try
+        {
+            var backupXmlTask =
+                Task.Run(
+                    () =>
+                        _gpoBackupService.GenerateXmlReport(
+                            backup));
+
+            var currentXmlTask =
+                Task.Run(
+                    () =>
+                        _gpmService.GenerateXmlReport(
+                            _domainContext.DomainName,
+                            current.Id));
+
+            await Task.WhenAll(
+                backupXmlTask,
+                currentXmlTask);
+
+            var rows =
+                await Task.Run(
+                    () =>
+                        new SemanticXmlDiffService()
+                            .CompareText(
+                                backupXmlTask.Result,
+                                currentXmlTask.Result));
+
+            var window =
+                new SemanticDiffWindow(
+                    $"Backup vs Current - {backup.DisplayName}",
+                    rows,
+                    "Backup",
+                    "Current")
+                {
+                    Owner =
+                        this
+                };
+
+            window.ShowDialog();
+
+            StatusText.Text =
+                $"Compared backup with current GPO: {backup.DisplayName}";
+        }
+        catch (Exception ex)
+        {
+            ErrorDialog.Show(
+                this,
+                "Compare Backup",
+                "The backup could not be compared with the current GPO.",
+                ex);
+        }
+        finally
+        {
+            SetBusy(
+                false);
+        }
+    }
+
     private async void RestoreBackup_Click(
         object sender,
         RoutedEventArgs e)

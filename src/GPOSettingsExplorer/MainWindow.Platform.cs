@@ -22,6 +22,8 @@ public partial class MainWindow
     private readonly UpdateCheckStateService _updateCheckStateService =
         new();
 
+    private string? _pendingUpdatePackage;
+
 
     private void Connection_Click(
         object sender,
@@ -87,6 +89,7 @@ public partial class MainWindow
             enabled);
 
         UpdateWriteModeUi();
+        RefreshPermissionAwareUi();
     }
 
     private void UpdateWriteModeUi()
@@ -221,9 +224,71 @@ public partial class MainWindow
         window.ShowDialog();
     }
 
-    private void NavigateToGlobalSearchObject(
-        object target)
+    private async Task NavigateToGlobalSearchObject(
+        object target,
+        bool openExact)
     {
+        if (target is GpoInfo gpo)
+        {
+            MainTabs.SelectedItem =
+                GposTab;
+
+            var selected =
+                _gpos.FirstOrDefault(
+                    item =>
+                        item.Id ==
+                        gpo.Id)
+                ?? gpo;
+
+            GpoGrid.SelectedItem =
+                selected;
+
+            GpoGrid.ScrollIntoView(
+                selected);
+
+            if (openExact)
+            {
+                OpenSelectedGpo();
+            }
+
+            return;
+        }
+
+        if (target is PolicySettingInfo setting)
+        {
+            MainTabs.SelectedItem =
+                AllSettingsTab;
+
+            var selected =
+                _settings.FirstOrDefault(
+                    item =>
+                        item.GpoId ==
+                        setting.GpoId &&
+                        item.Scope.Equals(
+                            setting.Scope,
+                            StringComparison.OrdinalIgnoreCase) &&
+                        item.SettingName.Equals(
+                            setting.SettingName,
+                            StringComparison.CurrentCultureIgnoreCase))
+                ?? setting;
+
+            SettingsGrid.SelectedItem =
+                selected;
+
+            SettingsGrid.ScrollIntoView(
+                selected);
+
+            if (openExact)
+            {
+                MarkGpoRecent(
+                    setting.GpoId);
+
+                await EditSelectedSettingAsync();
+            }
+
+            return;
+        }
+
         foreach (var tabObject in MainTabs.Items)
         {
             if (tabObject is not TabItem tab ||
@@ -253,6 +318,19 @@ public partial class MainWindow
                     target);
 
                 grid.Focus();
+
+                if (openExact)
+                {
+                    MarkRecentFromObject(
+                        target);
+
+                    if (!TryInvokeSourceEditor(
+                            root))
+                    {
+                        StatusText.Text =
+                            "The item was selected in its source tab; no dedicated editor action was found.";
+                    }
+                }
             }
             else
             {
@@ -273,6 +351,66 @@ public partial class MainWindow
             "Global Search",
             MessageBoxButton.OK,
             MessageBoxImage.Information);
+    }
+
+    private void MarkRecentFromObject(
+        object target)
+    {
+        var property =
+            target.GetType()
+                .GetProperty(
+                    "GpoId");
+
+        if (property?.PropertyType ==
+                typeof(Guid) &&
+            property.GetValue(
+                target) is Guid id)
+        {
+            MarkGpoRecent(
+                id);
+        }
+    }
+
+    private static bool TryInvokeSourceEditor(
+        DependencyObject root)
+    {
+        foreach (var child in LogicalTreeHelper.GetChildren(
+                     root))
+        {
+            if (child is Button button)
+            {
+                var text =
+                    Convert.ToString(
+                        button.Content)
+                    ?? string.Empty;
+
+                if (text.Equals(
+                        "Edit",
+                        StringComparison.CurrentCultureIgnoreCase) ||
+                    text.StartsWith(
+                        "Edit ",
+                        StringComparison.CurrentCultureIgnoreCase) ||
+                    text.StartsWith(
+                        "Configure",
+                        StringComparison.CurrentCultureIgnoreCase))
+                {
+                    button.RaiseEvent(
+                        new RoutedEventArgs(
+                            Button.ClickEvent));
+
+                    return true;
+                }
+            }
+
+            if (child is DependencyObject dependency &&
+                TryInvokeSourceEditor(
+                    dependency))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static DataGrid? FindDataGridContaining(
@@ -556,30 +694,22 @@ public partial class MainWindow
                 return;
             }
 
-            var answer =
-                MessageBox.Show(
-                    this,
-                    $"GPO Settings Explorer {update.TagName} is available.\n\nCurrent version: {update.CurrentVersion}\nLatest version: {update.LatestVersion}\n\nDownload and install it now?",
-                    "Update Available",
-                    MessageBoxButton.YesNo,
-                    MessageBoxImage.Question);
+            SetBusy(
+                false);
 
-            if (answer !=
-                MessageBoxResult.Yes)
-            {
-                if (!string.IsNullOrWhiteSpace(
-                        update.ReleaseUrl))
+            var window =
+                new UpdateAvailableWindow(
+                    update)
                 {
-                    Process.Start(
-                        new ProcessStartInfo
-                        {
-                            FileName =
-                                update.ReleaseUrl,
-                            UseShellExecute =
-                                true
-                        });
-                }
+                    Owner =
+                        this
+                };
 
+            if (window.ShowDialog() !=
+                    true ||
+                window.Choice ==
+                UpdateInstallChoice.Later)
+            {
                 return;
             }
 
@@ -606,6 +736,24 @@ public partial class MainWindow
                     update,
                     progress);
 
+            if (window.Choice ==
+                UpdateInstallChoice.InstallOnExit)
+            {
+                _pendingUpdatePackage =
+                    package;
+
+                UpdateButton.Content =
+                    $"Install {update.TagName} on exit";
+
+                UpdateButton.ToolTip =
+                    "The verified update package will be installed when GPO Settings Explorer closes.";
+
+                StatusText.Text =
+                    $"Update {update.TagName} is ready and will install on exit";
+
+                return;
+            }
+
             StatusText.Text =
                 "Starting updater...";
 
@@ -613,31 +761,18 @@ public partial class MainWindow
                 "Installing update";
 
             UpdateButton.ToolTip =
-                "The application will restart after the update is installed.";
+                "The application will restart after the staged update is installed.";
 
             UpdateService.StageInstallerAndRestart(
                 package);
+
+            _pendingUpdatePackage =
+                null;
 
             Application.Current.Shutdown();
         }
         catch (Exception ex)
         {
-            var log =
-                CrashLogService.Write(
-                    "Check/apply update",
-                    ex);
-
-            MessageBox.Show(
-                this,
-                ex.Message +
-                (string.IsNullOrWhiteSpace(
-                    log)
-                    ? string.Empty
-                    : $"\n\nDiagnostic log:\n{log}"),
-                "Update",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
-
             UpdateButton.Content =
                 "Check updates";
 
@@ -646,6 +781,12 @@ public partial class MainWindow
 
             StatusText.Text =
                 "Update failed";
+
+            ErrorDialog.Show(
+                this,
+                "Update",
+                "The update could not be checked, downloaded, verified or staged.",
+                ex);
         }
         finally
         {

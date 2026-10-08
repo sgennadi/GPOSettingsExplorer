@@ -4,6 +4,13 @@ namespace GPOSettingsExplorer.Services;
 
 public static class CrashLogService
 {
+    public static string LogDirectory =>
+        Path.Combine(
+            Environment.GetFolderPath(
+                Environment.SpecialFolder.LocalApplicationData),
+            "GPOSettingsExplorer",
+            "Logs");
+
     public static string Write(
         string context,
         Exception exception)
@@ -11,11 +18,7 @@ public static class CrashLogService
         try
         {
             var directory =
-                Path.Combine(
-                    Environment.GetFolderPath(
-                        Environment.SpecialFolder.LocalApplicationData),
-                    "GPOSettingsExplorer",
-                    "Logs");
+                LogDirectory;
 
             Directory.CreateDirectory(
                 directory);

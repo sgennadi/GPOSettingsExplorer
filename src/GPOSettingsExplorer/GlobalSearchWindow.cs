@@ -9,7 +9,7 @@ public sealed class GlobalSearchWindow : Window
 {
     private readonly GlobalSearchService _service;
     private readonly object _searchOwner;
-    private readonly Action<object> _navigate;
+    private readonly Func<object, bool, Task> _navigate;
     private readonly TextBox _searchBox;
     private readonly DataGrid _grid;
     private readonly TextBlock _count;
@@ -18,7 +18,7 @@ public sealed class GlobalSearchWindow : Window
         GlobalSearchService service,
         object searchOwner,
         string initialQuery,
-        Action<object> navigate)
+        Func<object, bool, Task> navigate)
     {
         _service =
             service;
@@ -119,11 +119,29 @@ public sealed class GlobalSearchWindow : Window
             };
 
         open.Click +=
-            (_, _) =>
-                NavigateSelected();
+            async (_, _) =>
+                await NavigateSelectedAsync(
+                    openExact:
+                        false);
 
         toolbar.Children.Add(
             open);
+
+        var openExact =
+            new Button
+            {
+                Content =
+                    "Open / edit exact"
+            };
+
+        openExact.Click +=
+            async (_, _) =>
+                await NavigateSelectedAsync(
+                    openExact:
+                        true);
+
+        toolbar.Children.Add(
+            openExact);
 
         _count =
             new TextBlock
@@ -193,8 +211,10 @@ public sealed class GlobalSearchWindow : Window
             });
 
         _grid.MouseDoubleClick +=
-            (_, _) =>
-                NavigateSelected();
+            async (_, _) =>
+                await NavigateSelectedAsync(
+                    openExact:
+                        true);
 
         root.Children.Add(
             toolbar);
@@ -278,7 +298,8 @@ public sealed class GlobalSearchWindow : Window
         }
     }
 
-    private void NavigateSelected()
+    private async Task NavigateSelectedAsync(
+        bool openExact)
     {
         if (_grid.SelectedItem
             is not GlobalSearchResult result)
@@ -286,7 +307,13 @@ public sealed class GlobalSearchWindow : Window
             return;
         }
 
-        _navigate(
-            result.Source);
+        await _navigate(
+            result.Source,
+            openExact);
+
+        if (openExact)
+        {
+            Close();
+        }
     }
 }

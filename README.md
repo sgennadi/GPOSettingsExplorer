@@ -14,7 +14,7 @@ Download the latest portable build from:
 
 **[GitHub Releases](https://github.com/sgennadi/GPOSettingsExplorer/releases/latest)**
 
-Current release: **v0.3.3**
+Current release: **v0.4.0**
 
 Available packages:
 
@@ -49,7 +49,12 @@ The builds are self-contained. A separate .NET runtime installation is not requi
 - Global search can locate loaded GPOs, settings, scripts, WMI filters, GPP items, backups and audit entries from one box.
 - Diagnostics can test the connection, GPMC availability, SYSVOL/Central Store access and selected-GPO write access, and can create a support ZIP.
 - The Audit Log can jump to or restore an associated GPO backup.
-- Built-in update checking selects the correct x64 or ARM64 portable release and can stage an in-place portable update.
+- Built-in update checking selects the correct x64 or ARM64 portable release, shows release notes, supports Install now / Install on exit, verifies the package, stages replacement safely, and retains rollback snapshots.
+- Diagnostics can roll back the most recent application update.
+- GPO Favorites and Recent views provide quick access to commonly used policies.
+- Permission-aware controls show confirmed Read/Edit/Security rights for the selected GPO and disable unavailable write actions.
+- Backup vs Current semantic comparison removes XML/report noise and highlights meaningful setting changes.
+- Workspace state persists the selected tab/GPO, filters, window placement, column widths, and sort order across runs.
 
 ### Administrative Templates / ADMX
 
