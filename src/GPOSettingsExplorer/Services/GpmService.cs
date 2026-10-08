@@ -1632,6 +1632,55 @@ public sealed class GpmService
                         "Version"));
 
             if (string.IsNullOrWhiteSpace(
+                    version))
+            {
+                var major =
+                    FirstNonEmpty(
+                        ChildValue(
+                            application,
+                            "MajorVersion"),
+                        DescendantValue(
+                            application,
+                            "MajorVersion"));
+
+                var minor =
+                    FirstNonEmpty(
+                        ChildValue(
+                            application,
+                            "MinorVersion"),
+                        DescendantValue(
+                            application,
+                            "MinorVersion"));
+
+                if (!string.IsNullOrWhiteSpace(
+                        major) ||
+                    !string.IsNullOrWhiteSpace(
+                        minor))
+                {
+                    version =
+                        $"{FirstNonEmpty(major, "0")}.{FirstNonEmpty(minor, "0")}";
+                }
+            }
+
+            var architecture =
+                FirstNonEmpty(
+                    ChildValue(
+                        application,
+                        "Architecture"),
+                    DescendantValue(
+                        application,
+                        "Architecture"));
+
+            var languageId =
+                FirstNonEmpty(
+                    ChildValue(
+                        application,
+                        "LanguageId"),
+                    DescendantValue(
+                        application,
+                        "LanguageId"));
+
+            if (string.IsNullOrWhiteSpace(
                     name) &&
                 string.IsNullOrWhiteSpace(
                     path))
@@ -1654,6 +1703,20 @@ public sealed class GpmService
             {
                 valueParts.Add(
                     $"Version {version}");
+            }
+
+            if (!string.IsNullOrWhiteSpace(
+                    architecture))
+            {
+                valueParts.Add(
+                    $"Architecture {architecture}");
+            }
+
+            if (!string.IsNullOrWhiteSpace(
+                    languageId))
+            {
+                valueParts.Add(
+                    $"Language {languageId}");
             }
 
             yield return new PolicySettingInfo
@@ -1724,6 +1787,10 @@ public sealed class GpmService
                 continue;
             }
 
+            var displayName =
+                NormalizeAdvancedAuditDisplayName(
+                    subcategory);
+
             var category =
                 FirstNonEmpty(
                     GetDirectOrAttributeValue(
@@ -1733,7 +1800,7 @@ public sealed class GpmService
                         audit,
                         "CategoryName"),
                     ResolveAdvancedAuditCategory(
-                        subcategory));
+                        displayName));
 
             var rawValue =
                 FirstNonEmpty(
@@ -1789,7 +1856,7 @@ public sealed class GpmService
                         ? "Security Settings > Advanced Audit Policy Configuration > Audit Policies"
                         : $"Security Settings > Advanced Audit Policy Configuration > Audit Policies > {category}",
                 SettingName =
-                    subcategory,
+                    displayName,
                 State =
                     "Configured",
                 Value =
@@ -1800,6 +1867,24 @@ public sealed class GpmService
                     string.Empty
             };
         }
+    }
+
+    private static string NormalizeAdvancedAuditDisplayName(
+        string value)
+    {
+        var name =
+            value.Trim();
+
+        if (name.StartsWith(
+                "Audit ",
+                StringComparison.CurrentCultureIgnoreCase))
+        {
+            name =
+                name[
+                    "Audit ".Length..];
+        }
+
+        return name;
     }
 
     private static string FormatAdvancedAuditValue(
