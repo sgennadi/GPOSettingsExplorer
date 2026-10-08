@@ -931,6 +931,22 @@ public sealed class GpoEditorNavigatorService
         return false;
     }
 
+    private static bool ElementNameMatches(
+        AutomationElement element,
+        string expected)
+    {
+        try
+        {
+            return TextMatches(
+                element.Current.Name,
+                expected);
+        }
+        catch (ElementNotAvailableException)
+        {
+            return false;
+        }
+    }
+
     private static bool ElementNameMatchesAny(
         AutomationElement element,
         IReadOnlyList<string> candidates)
