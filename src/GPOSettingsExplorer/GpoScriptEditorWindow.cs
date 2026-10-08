@@ -113,6 +113,7 @@ public sealed partial class GpoScriptEditorWindow : Window
 
         _diagnosticGrid = new DataGrid
         {
+            RowStyle = (Style)FindResource("UiScriptDiagnosticRowStyle"),
             ItemsSource = _diagnostics,
             AutoGenerateColumns = false,
             IsReadOnly = true,
