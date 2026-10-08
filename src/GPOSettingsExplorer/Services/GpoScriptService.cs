@@ -138,7 +138,8 @@ public sealed class GpoScriptService
     public IReadOnlyList<GpoScriptSearchResult> SearchContent(
         IEnumerable<GpoScriptInfo> scripts,
         string query,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        GpoScriptSearchMode mode = GpoScriptSearchMode.Both)
     {
         if (string.IsNullOrWhiteSpace(query))
         {
@@ -147,6 +148,9 @@ public sealed class GpoScriptService
 
         var needle =
             query.Trim();
+
+        var includeMetadata = mode != GpoScriptSearchMode.ContentOnly;
+        var includeContent = mode != GpoScriptSearchMode.FileNamesAndPaths;
 
         var physicalFiles =
             scripts
@@ -207,7 +211,7 @@ public sealed class GpoScriptService
             copies.AddRange(
                 pathGroup);
 
-            if (!documents.ContainsKey(
+            if (includeContent && !documents.ContainsKey(
                     hash))
             {
                 try
@@ -249,7 +253,7 @@ public sealed class GpoScriptService
                 copies[0];
 
             var metadataMatch =
-                copies.FirstOrDefault(script =>
+                includeMetadata ? copies.FirstOrDefault(script =>
                     script.FileName.Contains(
                         needle,
                         StringComparison.CurrentCultureIgnoreCase) ||
@@ -258,7 +262,7 @@ public sealed class GpoScriptService
                         StringComparison.CurrentCultureIgnoreCase) ||
                     script.FullPath.Contains(
                         needle,
-                        StringComparison.CurrentCultureIgnoreCase));
+                        StringComparison.CurrentCultureIgnoreCase)) : null;
 
             if (metadataMatch is not null)
             {
@@ -271,11 +275,17 @@ public sealed class GpoScriptService
                             pair.Key,
                         LineNumber =
                             0,
+                        MatchType = GetMetadataMatchType(metadataMatch, needle),
                         LineText =
                             BuildMetadataMatchText(
                                 metadataMatch,
                                 needle)
                     });
+            }
+
+            if (!includeContent)
+            {
+                continue;
             }
 
             var text =
@@ -323,6 +333,7 @@ public sealed class GpoScriptService
                             pair.Key,
                         LineNumber =
                             lineIndex + 1,
+                        MatchType = "Content",
                         LineText =
                             lines[lineIndex].Trim()
                     });
@@ -332,7 +343,7 @@ public sealed class GpoScriptService
         // Missing script references cannot be content-hashed, but their
         // metadata is still useful for searches such as ".vbs".
         foreach (var script in scripts.Where(item =>
-                     !item.Exists))
+                     includeMetadata && !item.Exists))
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -359,6 +370,7 @@ public sealed class GpoScriptService
                         script.FullPath,
                     LineNumber =
                         0,
+                    MatchType = GetMetadataMatchType(script, needle),
                     LineText =
                         BuildMetadataMatchText(
                             script,
@@ -376,6 +388,17 @@ public sealed class GpoScriptService
                 item => item.LineText,
                 StringComparer.CurrentCultureIgnoreCase)
             .ToArray();
+    }
+
+    private static string GetMetadataMatchType(
+        GpoScriptInfo script,
+        string needle)
+    {
+        if (script.FileName.Contains(needle, StringComparison.OrdinalIgnoreCase))
+            return "File name";
+        if (script.Parameters.Contains(needle, StringComparison.OrdinalIgnoreCase))
+            return "Parameters";
+        return "Path";
     }
 
     private static string BuildMetadataMatchText(
@@ -408,7 +431,8 @@ public sealed class GpoScriptService
         {
             Text = encoding.GetString(bytes, bomLength, bytes.Length - bomLength),
             CodePage = encoding.CodePage,
-            EmitBom = emitBom
+            EmitBom = emitBom,
+            OriginalSha256 = Convert.ToHexString(SHA256.HashData(bytes))
         };
     }
 
@@ -447,6 +471,13 @@ public sealed class GpoScriptService
             File.ReadAllBytes(
                 fullPath);
 
+        if (!string.IsNullOrEmpty(document.OriginalSha256) &&
+            !Convert.ToHexString(SHA256.HashData(original)).Equals(
+                document.OriginalSha256, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new IOException("The script changed in SYSVOL after it was opened. Reload it before saving to avoid overwriting someone else's changes.");
+        }
+
         ChangePreviewGuard.Confirm(
             new ChangePreviewRequest(
                 "Save GPO script",
@@ -463,63 +494,94 @@ public sealed class GpoScriptService
             Guid.NewGuid().ToString("N") +
             ".tmp";
 
-        WriteText(
-            temp,
-            document.Text,
-            encoding,
-            document.EmitBom);
+        var stage = "creating staged file";
+        var overwritten = false;
+        var expectedBytes = Array.Empty<byte>();
 
         try
         {
-            File.Copy(
+            WriteText(
                 temp,
-                fullPath,
-                overwrite: true);
+                document.Text,
+                encoding,
+                document.EmitBom);
 
+            expectedBytes = File.ReadAllBytes(temp);
+            if (expectedBytes.AsSpan().SequenceEqual(original))
+            {
+                GpoScriptCacheService.Invalidate(gpo);
+                return;
+            }
+
+            stage = "checking SYSVOL source version";
+            var latest = File.ReadAllBytes(fullPath);
+            if (!latest.AsSpan().SequenceEqual(original))
+                throw new IOException("The source script was modified in SYSVOL while this edit was in progress. Reload it before saving.");
+
+            stage = "writing script to SYSVOL";
+            File.Copy(temp, fullPath, overwrite: true);
+            overwritten = true;
+
+            stage = "verifying script content in SYSVOL";
+            var written = File.ReadAllBytes(fullPath);
+            if (!written.AsSpan().SequenceEqual(expectedBytes))
+                throw new IOException("Post-save byte verification failed: SYSVOL content differs from the edited script.");
+
+            stage = "committing the GPO scripts extension";
             using var policy =
                 new NativeGroupPolicyObject(
                     gpo,
                     domainDistinguishedName);
 
-            var extensionGuid =
-                ScriptsExtensionGuid;
-
+            var extensionGuid = ScriptsExtensionGuid;
             var toolGuid =
-                script.Scope.Equals(
-                    "User",
-                    StringComparison.OrdinalIgnoreCase)
+                script.Scope.Equals("User", StringComparison.OrdinalIgnoreCase)
                     ? UserScriptsToolGuid
                     : MachineScriptsToolGuid;
 
             policy.Save(
-                machine: !script.Scope.Equals(
-                    "User",
-                    StringComparison.OrdinalIgnoreCase),
+                machine: !script.Scope.Equals("User", StringComparison.OrdinalIgnoreCase),
                 add: true,
                 ref extensionGuid,
                 ref toolGuid);
 
-            GpoScriptCacheService.Invalidate(
-                gpo);
-        }
-        catch
-        {
-            File.WriteAllBytes(
-                fullPath,
-                original);
+            stage = "verifying saved script after GPO commit";
+            var finalBytes = File.ReadAllBytes(fullPath);
+            if (!finalBytes.AsSpan().SequenceEqual(expectedBytes))
+                throw new IOException("SYSVOL content changed after the GPO commit.");
 
-            throw;
+            GpoScriptCacheService.Invalidate(gpo);
+        }
+        catch (Exception ex)
+        {
+            string rollback;
+            if (overwritten)
+            {
+                try
+                {
+                    File.WriteAllBytes(fullPath, original);
+                    rollback = File.ReadAllBytes(fullPath).AsSpan().SequenceEqual(original)
+                        ? "Original script restored."
+                        : "WARNING: original script restoration was not verified.";
+                }
+                catch (Exception restoreEx)
+                {
+                    rollback = "WARNING: original script could not be restored: " + restoreEx.Message;
+                }
+            }
+            else
+            {
+                rollback = "Original script was not overwritten.";
+            }
+
+            throw new IOException(
+                $"Cannot save '{script.FileName}' at stage '{stage}'. {rollback} " +
+                $"Path: {fullPath}. Original error: {ex.Message}", ex);
         }
         finally
         {
-            try
-            {
-                File.Delete(
-                    temp);
-            }
-            catch
-            {
-            }
+            try { File.Delete(temp); }
+            catch { /* Preserve the primary save error. */ }
         }
     }
 
