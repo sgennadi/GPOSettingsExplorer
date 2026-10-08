@@ -8,6 +8,15 @@ internal static class UiStyle
     private static readonly FontFamily CodeFont =
         new("Consolas");
 
+    private static Brush ThemeBrush(string key, Brush fallback) =>
+        Application.Current?.TryFindResource(key) as Brush ?? fallback;
+
+    public static Brush AccentBrush => ThemeBrush("UiAccentBrush", SystemColors.HighlightBrush);
+    public static Brush SuccessBrush => ThemeBrush("UiSuccessBrush", Brushes.ForestGreen);
+    public static Brush WarningBrush => ThemeBrush("UiWarningBrush", Brushes.DarkOrange);
+    public static Brush ErrorBrush => ThemeBrush("UiErrorBrush", Brushes.Firebrick);
+    public static Brush MutedBrush => ThemeBrush("UiMutedBrush", SystemColors.GrayTextBrush);
+
     public static FontFamily MonospaceFontFamily =>
         CodeFont;
 
