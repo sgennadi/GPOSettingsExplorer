@@ -237,28 +237,39 @@ public sealed class GpoEditorNavigatorService
         progress?.Report(
             "Searching the MMC result pane for the exact setting...");
 
+        var candidates =
+            BuildRowCandidates(
+                setting);
+
+        // First give UI Automation a short non-scrolling chance. On Windows
+        // Server 2022 the MMC result pane often exposes the tree but not the
+        // list rows, and repeatedly paging that invisible list used to make
+        // the scrollbar jump up/down dozens of times before native fallback.
+        var quickDeadline =
+            DateTime.UtcNow.AddSeconds(
+                2);
+
         var row =
-            FindSettingRow(
+            FindSettingRowWithoutScrolling(
                 window,
-                setting,
-                deadline,
+                candidates,
+                quickDeadline,
                 cancellationToken);
+
+        string nativeDiagnostics =
+            string.Empty;
 
         if (row is null)
         {
             progress?.Report(
-                "UI Automation exposed no matching row. Trying native MMC list view...");
-
-            var candidates =
-                BuildRowCandidates(
-                    setting);
+                "Trying the native MMC list view...");
 
             if (TryOpenNativeListViewSetting(
                     process,
                     setting,
                     candidates,
                     cancellationToken,
-                    out var nativeDiagnostics))
+                    out nativeDiagnostics))
             {
                 progress?.Report(
                     "Exact setting opened through the native MMC list view.");
@@ -266,6 +277,25 @@ public sealed class GpoEditorNavigatorService
                 return true;
             }
 
+            // Native access can be unavailable under some process-integrity
+            // combinations. Only then use a bounded UIA scroll fallback.
+            progress?.Report(
+                "Native row access was unavailable. Trying a short UI Automation scroll fallback...");
+
+            var scrollDeadline =
+                DateTime.UtcNow.AddSeconds(
+                    8);
+
+            row =
+                FindSettingRowByScrollingOnce(
+                    window,
+                    candidates,
+                    scrollDeadline,
+                    cancellationToken);
+        }
+
+        if (row is null)
+        {
             progress?.Report(
                 "MMC opened the target policy node but did not expose a matching row.");
 
@@ -534,17 +564,14 @@ public sealed class GpoEditorNavigatorService
         return null;
     }
 
-    private static AutomationElement? FindSettingRow(
+    private static AutomationElement? FindSettingRowWithoutScrolling(
         AutomationElement window,
-        PolicySettingInfo setting,
+        IReadOnlyList<string> candidates,
         DateTime deadline,
         CancellationToken cancellationToken)
     {
-        var candidates =
-            BuildRowCandidates(
-                setting);
-
-        if (candidates.Count == 0)
+        if (candidates.Count ==
+            0)
         {
             return null;
         }
@@ -558,7 +585,8 @@ public sealed class GpoEditorNavigatorService
                     AutomationElement.ControlTypeProperty,
                     ControlType.DataItem));
 
-        while (DateTime.UtcNow < deadline)
+        while (DateTime.UtcNow <
+               deadline)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -593,24 +621,34 @@ public sealed class GpoEditorNavigatorService
                 return virtualized;
             }
 
-            var scrolled =
-                FindRowByScrolling(
-                    window,
-                    candidates,
-                    rowCondition,
-                    deadline,
-                    cancellationToken);
-
-            if (scrolled is not null)
-            {
-                return scrolled;
-            }
-
             Thread.Sleep(
-                180);
+                120);
         }
 
         return null;
+    }
+
+    private static AutomationElement? FindSettingRowByScrollingOnce(
+        AutomationElement window,
+        IReadOnlyList<string> candidates,
+        DateTime deadline,
+        CancellationToken cancellationToken)
+    {
+        var rowCondition =
+            new OrCondition(
+                new PropertyCondition(
+                    AutomationElement.ControlTypeProperty,
+                    ControlType.ListItem),
+                new PropertyCondition(
+                    AutomationElement.ControlTypeProperty,
+                    ControlType.DataItem));
+
+        return FindRowByScrolling(
+            window,
+            candidates,
+            rowCondition,
+            deadline,
+            cancellationToken);
     }
 
     private static string BuildNavigationMissDetails(
@@ -1175,7 +1213,7 @@ public sealed class GpoEditorNavigatorService
             }
 
             for (var page = 0;
-                 page < 80 &&
+                 page < 12 &&
                  DateTime.UtcNow < deadline;
                  page++)
             {
