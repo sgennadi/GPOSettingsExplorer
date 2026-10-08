@@ -254,6 +254,10 @@ public sealed partial class GpoScriptEditorWindow : Window
         options.Children.Add(whitespace);
         options.Children.Add(lines);
         options.Children.Add(tabs);
+        options.Children.Add(ToolButton("Comment", (_, _) => CommentSelection(true)));
+        options.Children.Add(ToolButton("Uncomment", (_, _) => CommentSelection(false)));
+        options.Children.Add(ToolButton("Indent", (_, _) => ChangeIndent(true)));
+        options.Children.Add(ToolButton("Outdent", (_, _) => ChangeIndent(false)));
         options.Children.Add(ToolButton("Copy all", (_, _) => Clipboard.SetText(_editor.Text)));
         options.Children.Add(ToolButton("Export local copy...", (_, _) => ExportLocalCopy()));
 
