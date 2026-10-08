@@ -7,7 +7,8 @@ var tests = new (string Name, Action Body)[]
     ("Domain connection pins LDAP and SYSVOL", TestDomainConnectionPaths),
     ("DPAPI current-user round trip", TestDpapiRoundTrip),
     ("GPP XML cache refreshes after file change", TestGppXmlCache),
-    ("Script inventory cache invalidates on GPO modification", TestScriptCache)
+    ("Script inventory cache invalidates on GPO modification", TestScriptCache),
+    ("Automatic update checks respect 24-hour and retry windows", TestUpdateCheckSchedule)
 };
 
 var failures = new List<string>();
@@ -306,6 +307,87 @@ static void TestScriptCache()
 
     GpoScriptCacheService.Invalidate(
         gpo);
+}
+
+static void TestUpdateCheckSchedule()
+{
+    var now =
+        new DateTime(
+            2026,
+            10,
+            8,
+            6,
+            0,
+            0,
+            DateTimeKind.Utc);
+
+    var never =
+        new UpdateCheckState(
+            DateTime.MinValue,
+            DateTime.MinValue,
+            string.Empty);
+
+    Assert(
+        UpdateCheckStateService.ShouldCheckAutomatically(
+            never,
+            now),
+        "A machine that never checked should check immediately.");
+
+    var recentSuccess =
+        new UpdateCheckState(
+            now.AddHours(
+                -1),
+            now.AddHours(
+                -1),
+            "v0.3.2");
+
+    Assert(
+        !UpdateCheckStateService.ShouldCheckAutomatically(
+            recentSuccess,
+            now),
+        "A successful check within 24 hours should not repeat.");
+
+    var staleSuccess =
+        new UpdateCheckState(
+            now.AddHours(
+                -25),
+            now.AddHours(
+                -25),
+            "v0.3.2");
+
+    Assert(
+        UpdateCheckStateService.ShouldCheckAutomatically(
+            staleSuccess,
+            now),
+        "A successful check older than 24 hours should repeat.");
+
+    var recentFailureAfterStaleSuccess =
+        new UpdateCheckState(
+            now.AddMinutes(
+                -30),
+            now.AddHours(
+                -25),
+            "v0.3.2");
+
+    Assert(
+        !UpdateCheckStateService.ShouldCheckAutomatically(
+            recentFailureAfterStaleSuccess,
+            now),
+        "A recent failed retry should be throttled for two hours.");
+
+    var oldFailureAfterStaleSuccess =
+        new UpdateCheckState(
+            now.AddHours(
+                -3),
+            now.AddHours(
+                -25),
+            "v0.3.2");
+
+    Assert(
+        UpdateCheckStateService.ShouldCheckAutomatically(
+            oldFailureAfterStaleSuccess,
+            now),
+        "A failed retry older than two hours should be attempted again.");
 }
 
 static void Assert(

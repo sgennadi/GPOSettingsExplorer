@@ -19,6 +19,10 @@ public partial class MainWindow
     private readonly UpdateService _updateService =
         new();
 
+    private readonly UpdateCheckStateService _updateCheckStateService =
+        new();
+
+
     private void Connection_Click(
         object sender,
         RoutedEventArgs e)
@@ -340,6 +344,181 @@ public partial class MainWindow
         return false;
     }
 
+    private async Task CheckForUpdatesAutomaticallyAsync()
+    {
+        if (!_updateCheckStateService.ShouldCheckAutomatically(
+                DateTime.UtcNow))
+        {
+            ApplyStoredUpdateState();
+            return;
+        }
+
+        _updateCheckStateService.MarkAttempt(
+            DateTime.UtcNow);
+
+        try
+        {
+            var update =
+                await _updateService.CheckAsync();
+
+            _updateCheckStateService.MarkSuccessful(
+                DateTime.UtcNow,
+                update.TagName);
+
+            ApplyUpdateState(
+                update,
+                automatic:
+                    true);
+        }
+        catch (Exception ex)
+        {
+            // Startup update checks are intentionally silent. A temporary
+            // internet/GitHub failure must never interrupt AD administration.
+            CrashLogService.Write(
+                "Automatic update check",
+                ex);
+
+            ApplyStoredUpdateState();
+        }
+    }
+
+    private void ApplyStoredUpdateState()
+    {
+        var state =
+            _updateCheckStateService.Load();
+
+        if (string.IsNullOrWhiteSpace(
+                state.LastSeenTag))
+        {
+            UpdateButton.ToolTip =
+                "Checks GitHub Releases for a newer x64/ARM64 portable build.";
+
+            return;
+        }
+
+        var lastChecked =
+            state.LastSuccessfulCheckUtc ==
+            DateTime.MinValue
+                ? string.Empty
+                : $" Last checked: {state.LastSuccessfulCheckUtc.ToLocalTime():g}.";
+
+        if (TryParseReleaseVersion(
+                state.LastSeenTag,
+                out var latest) &&
+            latest >
+            GetCurrentApplicationVersion())
+        {
+            UpdateButton.Content =
+                $"Update {state.LastSeenTag}";
+
+            UpdateButton.ToolTip =
+                $"A newer release was found during the last successful check.{lastChecked} Click to verify and install.";
+
+            return;
+        }
+
+        UpdateButton.ToolTip =
+            $"Last seen release: {state.LastSeenTag}.{lastChecked}";
+    }
+
+    private static Version GetCurrentApplicationVersion()
+    {
+        var version =
+            typeof(MainWindow)
+                .Assembly
+                .GetName()
+                .Version
+            ?? new Version(
+                0,
+                0,
+                0);
+
+        return new Version(
+            Math.Max(
+                0,
+                version.Major),
+            Math.Max(
+                0,
+                version.Minor),
+            Math.Max(
+                0,
+                version.Build));
+    }
+
+    private static bool TryParseReleaseVersion(
+        string tag,
+        out Version version)
+    {
+        var text =
+            tag.Trim();
+
+        if (text.StartsWith(
+                'v') ||
+            text.StartsWith(
+                'V'))
+        {
+            text =
+                text[1..];
+        }
+
+        if (!Version.TryParse(
+                text,
+                out var parsed))
+        {
+            version =
+                new Version(
+                    0,
+                    0,
+                    0);
+
+            return false;
+        }
+
+        version =
+            new Version(
+                Math.Max(
+                    0,
+                    parsed.Major),
+                Math.Max(
+                    0,
+                    parsed.Minor),
+                Math.Max(
+                    0,
+                    parsed.Build));
+
+        return true;
+    }
+
+    private void ApplyUpdateState(
+        UpdateInfo update,
+        bool automatic)
+    {
+        if (update.IsUpdateAvailable)
+        {
+            UpdateButton.Content =
+                $"Update {update.TagName}";
+
+            UpdateButton.ToolTip =
+                automatic
+                    ? $"A newer version is available. Current: {update.CurrentVersion}; latest: {update.LatestVersion}. Click to review and install."
+                    : $"Current: {update.CurrentVersion}; latest: {update.LatestVersion}.";
+
+            if (automatic)
+            {
+                StatusText.Text =
+                    $"Update {update.TagName} is available";
+            }
+
+            return;
+        }
+
+        UpdateButton.Content =
+            "Up to date";
+
+        UpdateButton.ToolTip =
+            $"GPO Settings Explorer {update.CurrentVersion} is current. Last checked: {DateTime.Now:g}.";
+    }
+
     private async void CheckUpdates_Click(
         object sender,
         RoutedEventArgs e)
@@ -350,14 +529,23 @@ public partial class MainWindow
 
         try
         {
+            _updateCheckStateService.MarkAttempt(
+                DateTime.UtcNow);
+
             var update =
                 await _updateService.CheckAsync();
 
+            _updateCheckStateService.MarkSuccessful(
+                DateTime.UtcNow,
+                update.TagName);
+
+            ApplyUpdateState(
+                update,
+                automatic:
+                    false);
+
             if (!update.IsUpdateAvailable)
             {
-                UpdateButton.Content =
-                    "Up to date";
-
                 MessageBox.Show(
                     this,
                     $"GPO Settings Explorer {update.CurrentVersion} is the latest release.",
@@ -367,9 +555,6 @@ public partial class MainWindow
 
                 return;
             }
-
-            UpdateButton.Content =
-                $"Update {update.TagName}";
 
             var answer =
                 MessageBox.Show(
@@ -402,12 +587,18 @@ public partial class MainWindow
                 true,
                 $"Downloading {update.TagName}...");
 
+            UpdateButton.Content =
+                $"Downloading {update.TagName}";
+
             var progress =
                 new Progress<double>(
                     value =>
                     {
                         StatusText.Text =
                             $"Downloading {update.TagName}: {value:P0}";
+
+                        UpdateButton.ToolTip =
+                            $"Downloading update: {value:P0}";
                     });
 
             var package =
@@ -417,6 +608,12 @@ public partial class MainWindow
 
             StatusText.Text =
                 "Starting updater...";
+
+            UpdateButton.Content =
+                "Installing update";
+
+            UpdateButton.ToolTip =
+                "The application will restart after the update is installed.";
 
             UpdateService.StageInstallerAndRestart(
                 package);
@@ -441,6 +638,12 @@ public partial class MainWindow
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
 
+            UpdateButton.Content =
+                "Check updates";
+
+            UpdateButton.ToolTip =
+                "The last update check failed. Click to try again.";
+
             StatusText.Text =
                 "Update failed";
         }
@@ -450,4 +653,5 @@ public partial class MainWindow
                 false);
         }
     }
+
 }
