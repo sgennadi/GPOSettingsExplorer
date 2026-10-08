@@ -128,6 +128,58 @@ public sealed class GpoBackupService
         TryDeleteEmptyDirectory(backup.BackupDirectory);
     }
 
+    public string GenerateXmlReport(
+        GpoBackupInfo backup)
+    {
+        if (!Directory.Exists(
+                backup.BackupDirectory))
+        {
+            throw new DirectoryNotFoundException(
+                $"Backup directory does not exist: {backup.BackupDirectory}");
+        }
+
+        dynamic gpm =
+            CreateGpm();
+
+        dynamic constants =
+            gpm.GetConstants();
+
+        dynamic backupDirectory =
+            gpm.GetBackupDir(
+                backup.BackupDirectory);
+
+        dynamic backupObject =
+            backupDirectory.GetBackup(
+                backup.BackupId.ToString(
+                    "B"));
+
+        var temp =
+            Path.Combine(
+                Path.GetTempPath(),
+                $"GPOSettingsExplorer-backup-report-{Guid.NewGuid():N}.xml");
+
+        try
+        {
+            backupObject.GenerateReportToFile(
+                constants.ReportXML,
+                temp);
+
+            return File.ReadAllText(
+                temp);
+        }
+        finally
+        {
+            try
+            {
+                File.Delete(
+                    temp);
+            }
+            catch
+            {
+            }
+        }
+    }
+
     public string GenerateReport(GpoBackupInfo backup)
     {
         if (!Directory.Exists(backup.BackupDirectory))
