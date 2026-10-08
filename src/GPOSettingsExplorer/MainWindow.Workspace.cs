@@ -401,21 +401,53 @@ public partial class MainWindow
     private Dictionary<string, List<double>> CaptureGridWidths()
     {
         var result =
-            new Dictionary<string, List<double>>(
-                StringComparer.OrdinalIgnoreCase);
+            _workspaceState.GridColumnWidths
+                .ToDictionary(
+                    pair =>
+                        pair.Key,
+                    pair =>
+                        pair.Value.ToList(),
+                    StringComparer.OrdinalIgnoreCase);
 
         foreach (var grid in EnumerateNamedDataGrids(
                      this))
         {
-            result[
-                grid.Name] =
+            ApplyReadableGridColumnMinimums(
+                grid);
+
+            // Hidden TabItem contents can report the framework minimum width
+            // rather than their real measured width. Never overwrite a good
+            // saved layout with those transient measurements.
+            if (!grid.IsLoaded ||
+                !grid.IsVisible ||
+                grid.ActualWidth <
+                320 ||
+                grid.Columns.Count ==
+                0)
+            {
+                continue;
+            }
+
+            var widths =
                 grid.Columns
                     .Select(
                         column =>
                             Math.Max(
-                                20,
+                                column.MinWidth,
                                 column.ActualWidth))
                     .ToList();
+
+            if (widths.Any(
+                    width =>
+                        width <
+                        36))
+            {
+                continue;
+            }
+
+            result[
+                grid.Name] =
+                widths;
         }
 
         return result;
@@ -592,6 +624,9 @@ public partial class MainWindow
         foreach (var grid in EnumerateNamedDataGrids(
                      this))
         {
+            ApplyReadableGridColumnMinimums(
+                grid);
+
             if (!_restoredGridWidths.Contains(
                     grid.Name) &&
                 _workspaceState.GridColumnWidths.TryGetValue(
@@ -603,12 +638,18 @@ public partial class MainWindow
                      index < grid.Columns.Count;
                      index++)
                 {
-                    if (widths[index] >=
-                        20)
+                    if (double.IsFinite(
+                            widths[index]) &&
+                        widths[index] >=
+                        36 &&
+                        widths[index] <=
+                        2400)
                     {
                         grid.Columns[index].Width =
                             new DataGridLength(
-                                widths[index]);
+                                Math.Max(
+                                    grid.Columns[index].MinWidth,
+                                    widths[index]));
                     }
                 }
 
@@ -658,6 +699,139 @@ public partial class MainWindow
             {
             }
         }
+    }
+
+    private static void ApplyReadableGridColumnMinimums(
+        DataGrid grid)
+    {
+        grid.MinColumnWidth =
+            Math.Max(
+                grid.MinColumnWidth,
+                72);
+
+        foreach (var column in grid.Columns)
+        {
+            var minimum =
+                GetReadableColumnMinimum(
+                    column);
+
+            if (column.MinWidth <
+                minimum)
+            {
+                column.MinWidth =
+                    minimum;
+            }
+
+            if (column.Width.IsAbsolute &&
+                column.Width.Value <
+                minimum)
+            {
+                column.Width =
+                    new DataGridLength(
+                        minimum);
+            }
+        }
+    }
+
+    private static double GetReadableColumnMinimum(
+        DataGridColumn column)
+    {
+        var header =
+            Convert.ToString(
+                column.Header)
+            ?.Trim()
+            ?? string.Empty;
+
+        if (header.Equals(
+                "★",
+                StringComparison.Ordinal))
+        {
+            return 42;
+        }
+
+        if (header.Equals(
+                "Scope",
+                StringComparison.CurrentCultureIgnoreCase))
+        {
+            return 84;
+        }
+
+        if (header.Equals(
+                "State",
+                StringComparison.CurrentCultureIgnoreCase) ||
+            header.Equals(
+                "Action",
+                StringComparison.CurrentCultureIgnoreCase) ||
+            header.Equals(
+                "Type",
+                StringComparison.CurrentCultureIgnoreCase) ||
+            header.Equals(
+                "Order",
+                StringComparison.CurrentCultureIgnoreCase))
+        {
+            return 88;
+        }
+
+        if (header.Contains(
+                "Setting",
+                StringComparison.CurrentCultureIgnoreCase) ||
+            header.Contains(
+                "Category",
+                StringComparison.CurrentCultureIgnoreCase) ||
+            header.Contains(
+                "Description",
+                StringComparison.CurrentCultureIgnoreCase) ||
+            header.Contains(
+                "Value",
+                StringComparison.CurrentCultureIgnoreCase) ||
+            header.Contains(
+                "Path",
+                StringComparison.CurrentCultureIgnoreCase) ||
+            header.Contains(
+                "Target",
+                StringComparison.CurrentCultureIgnoreCase) ||
+            header.Contains(
+                "Command",
+                StringComparison.CurrentCultureIgnoreCase) ||
+            header.Contains(
+                "Arguments",
+                StringComparison.CurrentCultureIgnoreCase))
+        {
+            return 150;
+        }
+
+        if (header.Equals(
+                "GPO",
+                StringComparison.CurrentCultureIgnoreCase) ||
+            header.Contains(
+                "Name",
+                StringComparison.CurrentCultureIgnoreCase) ||
+            header.Contains(
+                "Registry",
+                StringComparison.CurrentCultureIgnoreCase) ||
+            header.Contains(
+                "File",
+                StringComparison.CurrentCultureIgnoreCase))
+        {
+            return 120;
+        }
+
+        if (column is DataGridCheckBoxColumn)
+        {
+            return Math.Clamp(
+                60 +
+                header.Length *
+                4.5,
+                78,
+                145);
+        }
+
+        return Math.Clamp(
+            56 +
+            header.Length *
+            5.5,
+            78,
+            170);
     }
 
     private static IEnumerable<T> EnumerateNamedControls<T>(
