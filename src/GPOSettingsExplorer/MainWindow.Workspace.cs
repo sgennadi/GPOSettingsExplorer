@@ -28,6 +28,14 @@ public partial class MainWindow
         new(
             StringComparer.OrdinalIgnoreCase);
 
+    private readonly HashSet<string> _restoredGridWidths =
+        new(
+            StringComparer.OrdinalIgnoreCase);
+
+    private readonly HashSet<string> _restoredGridSorts =
+        new(
+            StringComparer.OrdinalIgnoreCase);
+
     private void InitializeWorkspaceUi()
     {
         _workspaceState =
@@ -584,7 +592,9 @@ public partial class MainWindow
         foreach (var grid in EnumerateNamedDataGrids(
                      this))
         {
-            if (_workspaceState.GridColumnWidths.TryGetValue(
+            if (!_restoredGridWidths.Contains(
+                    grid.Name) &&
+                _workspaceState.GridColumnWidths.TryGetValue(
                     grid.Name,
                     out var widths))
             {
@@ -601,9 +611,14 @@ public partial class MainWindow
                                 widths[index]);
                     }
                 }
+
+                _restoredGridWidths.Add(
+                    grid.Name);
             }
 
-            if (grid.ItemsSource is null ||
+            if (_restoredGridSorts.Contains(
+                    grid.Name) ||
+                grid.ItemsSource is null ||
                 !_workspaceState.GridSorts.TryGetValue(
                     grid.Name,
                     out var sorts))
@@ -635,6 +650,9 @@ public partial class MainWindow
                             sort.Property,
                             direction));
                 }
+
+                _restoredGridSorts.Add(
+                    grid.Name);
             }
             catch
             {
