@@ -272,8 +272,11 @@ public sealed class GpoEditorNavigatorService
             progress?.Report(
                 "UI Automation exposed no matching row. Trying native MMC list view...");
 
-            progress?.Report(
-                "MMC opened the target policy category but did not find an exact row; no other policy was opened.");
+            var nativeAccessDenied = nativeDiagnostics.Contains(
+                "OpenProcess denied", StringComparison.OrdinalIgnoreCase);
+            progress?.Report(nativeAccessDenied
+                ? "MMC row inspection failed (access denied). Run the app and MMC at the same elevation; see the navigation log."
+                : "The MMC category opened, but no exact policy-name match could be verified. No other policy was opened; see the navigation log.");
 
             CrashLogService.Write(
                 $"MMC exact navigation miss: {setting.SettingName}",
