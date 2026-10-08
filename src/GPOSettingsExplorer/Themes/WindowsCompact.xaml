@@ -102,6 +102,7 @@
         <Setter Property="HeadersVisibility" Value="Column"/>
         <Setter Property="RowHeaderWidth" Value="0"/>
         <Setter Property="MinRowHeight" Value="26"/>
+        <Setter Property="MinColumnWidth" Value="72"/>
         <Setter Property="HorizontalScrollBarVisibility" Value="Auto"/>
         <Setter Property="VerticalScrollBarVisibility" Value="Auto"/>
         <Setter Property="EnableRowVirtualization" Value="True"/>
