@@ -193,13 +193,13 @@ public sealed class SemanticXmlDiffService
                 name] =
                 index + 1;
 
-            var identity =
+            var childIdentity =
                 Identity(
                     child);
 
             var childPath =
                 string.IsNullOrWhiteSpace(
-                    identity)
+                    childIdentity)
                     ? $"{currentPath}/{name}#{index + 1}"
                     : $"{currentPath}/{name}";
 
