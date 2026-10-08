@@ -1434,13 +1434,19 @@ public sealed class GpmService
             var key = FirstNonEmpty(
                 GetDirectOrAttributeValue(element, "Key"),
                 GetDirectOrAttributeValue(element, "key"),
-                FindNamedValue(element, "Key"));
+                FindNamedValue(element, "Key"),
+                FindNamedAttributeValue(element, "Key"),
+                FindNamedAttributeValue(element, "key"));
 
             var valueName = FirstNonEmpty(
                 GetDirectOrAttributeValue(element, "ValueName"),
                 GetDirectOrAttributeValue(element, "valueName"),
                 FindNamedValue(element, "ValueName"),
-                FindNamedValue(element, "Name"));
+                FindNamedValue(element, "Name"),
+                FindNamedAttributeValue(element, "ValueName"),
+                FindNamedAttributeValue(element, "valueName"),
+                FindNamedAttributeValue(element, "Name"),
+                FindNamedAttributeValue(element, "name"));
 
             var value = BuildGenericValueSummary(element, settingName, state);
 
@@ -1810,6 +1816,25 @@ public sealed class GpmService
         return element.Descendants()
             .FirstOrDefault(e => e.Name.LocalName.Equals(name, StringComparison.OrdinalIgnoreCase))?
             .Value.Trim() ?? string.Empty;
+    }
+
+    private static string FindNamedAttributeValue(
+        XElement element,
+        string name)
+    {
+        return element
+            .DescendantsAndSelf()
+            .SelectMany(
+                current =>
+                    current.Attributes())
+            .FirstOrDefault(
+                attribute =>
+                    !attribute.IsNamespaceDeclaration &&
+                    attribute.Name.LocalName.Equals(
+                        name,
+                        StringComparison.OrdinalIgnoreCase))
+            ?.Value.Trim()
+            ?? string.Empty;
     }
 
     private static string FirstNonEmpty(params string[] values) =>
