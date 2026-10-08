@@ -219,7 +219,8 @@ public sealed class GpoEditorNavigatorService
                 BuildNavigationMissDetails(
                     window,
                     setting,
-                    candidates));
+                    BuildRowCandidates(
+                        setting)));
 
             return false;
         }
