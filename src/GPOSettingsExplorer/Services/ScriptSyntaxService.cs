@@ -27,7 +27,7 @@ public static class ScriptSyntaxService
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     private static readonly Regex BatchGoto = new(
-        @"(?im)^\s*(?:(?:@?\s*)|(?:if\s+.+?\s+))(?:(?:goto\s+)|(?:call\s+:))(?<name>[a-zA-Z0-9_.-]+)\b",
+        @"(?im)^\s*(?:(?:@?\s*)|(?:if\s+.+?\s+))(?:(?:goto\s+:?)|(?:call\s+:))(?<name>[a-zA-Z0-9_.-]+)\b",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     public static bool IsPowerShell(string fileName) =>
