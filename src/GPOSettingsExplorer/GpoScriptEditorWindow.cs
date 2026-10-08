@@ -131,6 +131,7 @@ public sealed class GpoScriptEditorWindow : Window
         _editor = new TextBox
         {
             Text = document.Text,
+            IsReadOnly = !EditingGuard.IsEnabled,
             AcceptsReturn = true,
             AcceptsTab = true,
             TextWrapping = TextWrapping.NoWrap,
