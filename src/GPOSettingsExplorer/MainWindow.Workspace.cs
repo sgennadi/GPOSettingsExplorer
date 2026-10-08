@@ -22,6 +22,7 @@ public partial class MainWindow
         new();
 
     private bool _workspaceInitialized;
+    private bool _workspaceApplied;
 
     private void InitializeWorkspaceUi()
     {
@@ -122,6 +123,14 @@ public partial class MainWindow
         }
 
         ApplyGpoMarkers();
+
+        if (_workspaceApplied)
+        {
+            return;
+        }
+
+        _workspaceApplied =
+            true;
 
         if (_workspaceState.SelectedGpoId
             is Guid selectedId)
