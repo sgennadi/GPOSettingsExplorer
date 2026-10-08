@@ -19,6 +19,8 @@ public sealed record UpdateInfo(
     Version LatestVersion,
     string TagName,
     string ReleaseUrl,
+    string ReleaseNotes,
+    DateTimeOffset? PublishedAt,
     UpdateAsset? Asset)
 {
     public bool IsUpdateAvailable =>
@@ -75,20 +77,35 @@ public sealed class UpdateService
             document.RootElement;
 
         var tag =
-            root.TryGetProperty(
-                "tag_name",
-                out var tagProperty)
-                ? tagProperty.GetString()
-                  ?? string.Empty
-                : string.Empty;
+            ReadString(
+                root,
+                "tag_name");
 
         var releaseUrl =
-            root.TryGetProperty(
-                "html_url",
-                out var urlProperty)
-                ? urlProperty.GetString()
-                  ?? string.Empty
-                : string.Empty;
+            ReadString(
+                root,
+                "html_url");
+
+        var releaseNotes =
+            ReadString(
+                root,
+                "body");
+
+        DateTimeOffset? publishedAt =
+            null;
+
+        var publishedText =
+            ReadString(
+                root,
+                "published_at");
+
+        if (DateTimeOffset.TryParse(
+                publishedText,
+                out var parsedPublished))
+        {
+            publishedAt =
+                parsedPublished;
+        }
 
         var latest =
             ParseVersion(
@@ -121,12 +138,9 @@ public sealed class UpdateService
             foreach (var item in assets.EnumerateArray())
             {
                 var name =
-                    item.TryGetProperty(
-                        "name",
-                        out var nameProperty)
-                        ? nameProperty.GetString()
-                          ?? string.Empty
-                        : string.Empty;
+                    ReadString(
+                        item,
+                        "name");
 
                 if (!name.Equals(
                         expectedAsset,
@@ -136,12 +150,9 @@ public sealed class UpdateService
                 }
 
                 var download =
-                    item.TryGetProperty(
-                        "browser_download_url",
-                        out var downloadProperty)
-                        ? downloadProperty.GetString()
-                          ?? string.Empty
-                        : string.Empty;
+                    ReadString(
+                        item,
+                        "browser_download_url");
 
                 var size =
                     item.TryGetProperty(
@@ -153,12 +164,9 @@ public sealed class UpdateService
                         : 0;
 
                 var digest =
-                    item.TryGetProperty(
-                        "digest",
-                        out var digestProperty)
-                        ? digestProperty.GetString()
-                          ?? string.Empty
-                        : string.Empty;
+                    ReadString(
+                        item,
+                        "digest");
 
                 if (!string.IsNullOrWhiteSpace(
                         download))
@@ -181,6 +189,8 @@ public sealed class UpdateService
             latest,
             tag,
             releaseUrl,
+            releaseNotes,
+            publishedAt,
             asset);
     }
 
@@ -309,6 +319,10 @@ public sealed class UpdateService
                 $"The downloaded update failed SHA-256 verification. Expected {update.Asset.Digest}; received {computedDigest}.");
         }
 
+        ValidatePackage(
+            destination,
+            update.LatestVersion);
+
         return destination;
     }
 
@@ -375,6 +389,164 @@ public sealed class UpdateService
             });
     }
 
+    public static string? FindLatestRollbackDirectory()
+    {
+        var root =
+            RollbackRoot;
+
+        if (!Directory.Exists(
+                root))
+        {
+            return null;
+        }
+
+        return Directory.EnumerateDirectories(
+                    root,
+                    "rollback-*",
+                    SearchOption.TopDirectoryOnly)
+            .OrderByDescending(
+                Directory.GetCreationTimeUtc)
+            .FirstOrDefault();
+    }
+
+    public static void StageRollbackAndRestart(
+        string rollbackDirectory)
+    {
+        if (string.IsNullOrWhiteSpace(
+                rollbackDirectory) ||
+            !Directory.Exists(
+                rollbackDirectory))
+        {
+            throw new DirectoryNotFoundException(
+                "The rollback directory was not found.");
+        }
+
+        var executable =
+            Environment.ProcessPath
+            ?? throw new InvalidOperationException(
+                "The current executable path is unavailable.");
+
+        var updater =
+            Path.Combine(
+                Path.GetTempPath(),
+                $"GPOSettingsExplorer-Rollback-{Guid.NewGuid():N}.exe");
+
+        File.Copy(
+            executable,
+            updater,
+            overwrite:
+                true);
+
+        var targetDirectory =
+            AppContext.BaseDirectory.TrimEnd(
+                Path.DirectorySeparatorChar,
+                Path.AltDirectorySeparatorChar);
+
+        var targetExecutable =
+            Path.GetFileName(
+                executable);
+
+        var arguments =
+            string.Join(
+                " ",
+                "--rollback-update",
+                Quote(
+                    rollbackDirectory),
+                Quote(
+                    targetDirectory),
+                Quote(
+                    targetExecutable),
+                Environment.ProcessId.ToString(
+                    System.Globalization.CultureInfo.InvariantCulture));
+
+        Process.Start(
+            new ProcessStartInfo
+            {
+                FileName =
+                    updater,
+                Arguments =
+                    arguments,
+                WorkingDirectory =
+                    Path.GetTempPath(),
+                UseShellExecute =
+                    true
+            });
+    }
+
+    private static void ValidatePackage(
+        string packagePath,
+        Version expectedVersion)
+    {
+        using var archive =
+            ZipFile.OpenRead(
+                packagePath);
+
+        var executable =
+            archive.Entries.FirstOrDefault(
+                entry =>
+                    Path.GetFileName(
+                            entry.FullName)
+                        .Equals(
+                            "GPOSettingsExplorer.exe",
+                            StringComparison.OrdinalIgnoreCase));
+
+        if (executable is null ||
+            executable.Length <= 0)
+        {
+            throw new InvalidOperationException(
+                "The update archive does not contain a valid GPOSettingsExplorer.exe.");
+        }
+
+        var suspicious =
+            archive.Entries.FirstOrDefault(
+                entry =>
+                    IsUnsafeArchivePath(
+                        entry.FullName));
+
+        if (suspicious is not null)
+        {
+            throw new InvalidOperationException(
+                $"The update archive contains an unsafe path: {suspicious.FullName}");
+        }
+
+        if (expectedVersion.Major <= 0)
+        {
+            throw new InvalidOperationException(
+                "The release version is invalid.");
+        }
+    }
+
+    private static bool IsUnsafeArchivePath(
+        string path)
+    {
+        var normalized =
+            path.Replace(
+                '\\',
+                '/');
+
+        return normalized.StartsWith(
+                   "/",
+                   StringComparison.Ordinal) ||
+               normalized.Contains(
+                   "../",
+                   StringComparison.Ordinal) ||
+               normalized.Contains(
+                   ":",
+                   StringComparison.Ordinal);
+    }
+
+    private static string ReadString(
+        JsonElement element,
+        string name) =>
+        element.TryGetProperty(
+            name,
+            out var property) &&
+        property.ValueKind ==
+        JsonValueKind.String
+            ? property.GetString()
+              ?? string.Empty
+            : string.Empty;
+
     private static string Quote(
         string value) =>
         "\"" +
@@ -422,32 +594,59 @@ public sealed class UpdateService
             Math.Max(
                 0,
                 version.Build));
+
+    private static string RollbackRoot =>
+        Path.Combine(
+            Environment.GetFolderPath(
+                Environment.SpecialFolder.LocalApplicationData),
+            "GPOSettingsExplorer",
+            "Updates",
+            "Rollback");
 }
 
 public static class UpdateInstaller
 {
+    private sealed record RollbackManifest(
+        string TargetDirectory,
+        string TargetExecutable,
+        List<string> BackedUpFiles,
+        List<string> NewFiles);
+
     public static bool TryApply(
         IReadOnlyList<string> args)
     {
-        var index =
-            args
-                .Select(
-                    (value, position) =>
-                        new
-                        {
-                            value,
-                            position
-                        })
-                .FirstOrDefault(
-                    item =>
-                        item.value.Equals(
-                            "--apply-update",
-                            StringComparison.OrdinalIgnoreCase))
-                ?.position
-            ?? -1;
+        var applyIndex =
+            FindArgument(
+                args,
+                "--apply-update");
 
-        if (index < 0 ||
-            index + 4 >=
+        if (applyIndex >= 0)
+        {
+            return ApplyUpdate(
+                args,
+                applyIndex);
+        }
+
+        var rollbackIndex =
+            FindArgument(
+                args,
+                "--rollback-update");
+
+        if (rollbackIndex >= 0)
+        {
+            return ApplyRollback(
+                args,
+                rollbackIndex);
+        }
+
+        return false;
+    }
+
+    private static bool ApplyUpdate(
+        IReadOnlyList<string> args,
+        int index)
+    {
+        if (index + 4 >=
             args.Count)
         {
             return false;
@@ -467,45 +666,246 @@ public static class UpdateInstaller
                 args[index + 4],
                 out var parentProcessId);
 
+        var staging =
+            Path.Combine(
+                Path.GetTempPath(),
+                "GPOSettingsExplorer-Stage-" +
+                Guid.NewGuid().ToString(
+                    "N"));
+
+        var rollback =
+            Path.Combine(
+                Environment.GetFolderPath(
+                    Environment.SpecialFolder.LocalApplicationData),
+                "GPOSettingsExplorer",
+                "Updates",
+                "Rollback",
+                $"rollback-{DateTime.Now:yyyyMMdd-HHmmss}");
+
         try
         {
-            if (parentProcessId > 0)
-            {
-                try
-                {
-                    using var process =
-                        Process.GetProcessById(
-                            parentProcessId);
-
-                    process.WaitForExit(
-                        60000);
-                }
-                catch
-                {
-                }
-            }
+            WaitForParent(
+                parentProcessId);
 
             Directory.CreateDirectory(
-                targetDirectory);
+                staging);
 
             ZipFile.ExtractToDirectory(
                 package,
-                targetDirectory,
+                staging,
                 overwriteFiles:
                     true);
+
+            var stagedExecutable =
+                Path.Combine(
+                    staging,
+                    executableName);
+
+            if (!File.Exists(
+                    stagedExecutable))
+            {
+                throw new FileNotFoundException(
+                    "The staged update does not contain the application executable.",
+                    stagedExecutable);
+            }
+
+            Directory.CreateDirectory(
+                rollback);
+
+            var backedUp =
+                new List<string>();
+
+            var newFiles =
+                new List<string>();
+
+            foreach (var source in Directory.EnumerateFiles(
+                         staging,
+                         "*",
+                         SearchOption.AllDirectories))
+            {
+                var relative =
+                    Path.GetRelativePath(
+                        staging,
+                        source);
+
+                if (relative.StartsWith(
+                        "Data" +
+                        Path.DirectorySeparatorChar,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var target =
+                    Path.Combine(
+                        targetDirectory,
+                        relative);
+
+                if (File.Exists(
+                        target))
+                {
+                    var backup =
+                        Path.Combine(
+                            rollback,
+                            "Files",
+                            relative);
+
+                    Directory.CreateDirectory(
+                        Path.GetDirectoryName(
+                            backup)!);
+
+                    File.Copy(
+                        target,
+                        backup,
+                        overwrite:
+                            true);
+
+                    backedUp.Add(
+                        relative);
+                }
+                else
+                {
+                    newFiles.Add(
+                        relative);
+                }
+            }
+
+            var manifest =
+                new RollbackManifest(
+                    targetDirectory,
+                    executableName,
+                    backedUp,
+                    newFiles);
+
+            File.WriteAllText(
+                Path.Combine(
+                    rollback,
+                    "rollback.json"),
+                JsonSerializer.Serialize(
+                    manifest,
+                    new JsonSerializerOptions
+                    {
+                        WriteIndented =
+                            true
+                    }));
+
+            try
+            {
+                CopyTree(
+                    staging,
+                    targetDirectory);
+            }
+            catch
+            {
+                RestoreRollback(
+                    rollback,
+                    manifest);
+
+                throw;
+            }
+
+            CleanupOldRollbacks(
+                Path.GetDirectoryName(
+                    rollback)!,
+                keep:
+                    3);
 
             var executable =
                 Path.Combine(
                     targetDirectory,
                     executableName);
 
-            if (!File.Exists(
-                    executable))
+            Process.Start(
+                new ProcessStartInfo
+                {
+                    FileName =
+                        executable,
+                    WorkingDirectory =
+                        targetDirectory,
+                    Arguments =
+                        "--updated",
+                    UseShellExecute =
+                        true
+                });
+        }
+        catch (Exception ex)
+        {
+            CrashLogService.Write(
+                "Apply update with rollback",
+                ex);
+
+            try
             {
-                throw new FileNotFoundException(
-                    "The updated executable was not found after extraction.",
-                    executable);
+                System.Windows.MessageBox.Show(
+                    ex.Message +
+                    "\n\nThe previous application files were restored when possible.\nUpdate package:\n" +
+                    package,
+                    "GPO Settings Explorer Update",
+                    System.Windows.MessageBoxButton.OK,
+                    System.Windows.MessageBoxImage.Error);
             }
+            catch
+            {
+            }
+        }
+        finally
+        {
+            TryDeleteDirectory(
+                staging);
+        }
+
+        return true;
+    }
+
+    private static bool ApplyRollback(
+        IReadOnlyList<string> args,
+        int index)
+    {
+        if (index + 4 >=
+            args.Count)
+        {
+            return false;
+        }
+
+        var rollbackDirectory =
+            args[index + 1];
+
+        var targetDirectory =
+            args[index + 2];
+
+        var executableName =
+            args[index + 3];
+
+        _ =
+            int.TryParse(
+                args[index + 4],
+                out var parentProcessId);
+
+        try
+        {
+            WaitForParent(
+                parentProcessId);
+
+            var manifestPath =
+                Path.Combine(
+                    rollbackDirectory,
+                    "rollback.json");
+
+            var manifest =
+                JsonSerializer.Deserialize<RollbackManifest>(
+                    File.ReadAllText(
+                        manifestPath))
+                ?? throw new InvalidOperationException(
+                    "The rollback manifest is invalid.");
+
+            RestoreRollback(
+                rollbackDirectory,
+                manifest);
+
+            var executable =
+                Path.Combine(
+                    targetDirectory,
+                    executableName);
 
             Process.Start(
                 new ProcessStartInfo
@@ -521,16 +921,14 @@ public static class UpdateInstaller
         catch (Exception ex)
         {
             CrashLogService.Write(
-                "Apply update",
+                "Rollback update",
                 ex);
 
             try
             {
                 System.Windows.MessageBox.Show(
-                    ex.Message +
-                    "\n\nThe update package was left at:\n" +
-                    package,
-                    "GPO Settings Explorer Update",
+                    ex.Message,
+                    "GPO Settings Explorer Rollback",
                     System.Windows.MessageBoxButton.OK,
                     System.Windows.MessageBoxImage.Error);
             }
@@ -540,5 +938,171 @@ public static class UpdateInstaller
         }
 
         return true;
+    }
+
+    private static void RestoreRollback(
+        string rollbackDirectory,
+        RollbackManifest manifest)
+    {
+        foreach (var relative in manifest.NewFiles)
+        {
+            try
+            {
+                File.Delete(
+                    Path.Combine(
+                        manifest.TargetDirectory,
+                        relative));
+            }
+            catch
+            {
+            }
+        }
+
+        foreach (var relative in manifest.BackedUpFiles)
+        {
+            var source =
+                Path.Combine(
+                    rollbackDirectory,
+                    "Files",
+                    relative);
+
+            var target =
+                Path.Combine(
+                    manifest.TargetDirectory,
+                    relative);
+
+            Directory.CreateDirectory(
+                Path.GetDirectoryName(
+                    target)!);
+
+            File.Copy(
+                source,
+                target,
+                overwrite:
+                    true);
+        }
+    }
+
+    private static void CopyTree(
+        string sourceDirectory,
+        string targetDirectory)
+    {
+        foreach (var source in Directory.EnumerateFiles(
+                     sourceDirectory,
+                     "*",
+                     SearchOption.AllDirectories))
+        {
+            var relative =
+                Path.GetRelativePath(
+                    sourceDirectory,
+                    source);
+
+            if (relative.StartsWith(
+                    "Data" +
+                    Path.DirectorySeparatorChar,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var target =
+                Path.Combine(
+                    targetDirectory,
+                    relative);
+
+            Directory.CreateDirectory(
+                Path.GetDirectoryName(
+                    target)!);
+
+            File.Copy(
+                source,
+                target,
+                overwrite:
+                    true);
+        }
+    }
+
+    private static int FindArgument(
+        IReadOnlyList<string> args,
+        string name) =>
+        args
+            .Select(
+                (value, position) =>
+                    new
+                    {
+                        value,
+                        position
+                    })
+            .FirstOrDefault(
+                item =>
+                    item.value.Equals(
+                        name,
+                        StringComparison.OrdinalIgnoreCase))
+            ?.position
+        ?? -1;
+
+    private static void WaitForParent(
+        int processId)
+    {
+        if (processId <= 0)
+        {
+            return;
+        }
+
+        try
+        {
+            using var process =
+                Process.GetProcessById(
+                    processId);
+
+            process.WaitForExit(
+                60000);
+        }
+        catch
+        {
+        }
+    }
+
+    private static void CleanupOldRollbacks(
+        string root,
+        int keep)
+    {
+        try
+        {
+            foreach (var directory in Directory.EnumerateDirectories(
+                         root,
+                         "rollback-*",
+                         SearchOption.TopDirectoryOnly)
+                     .OrderByDescending(
+                         Directory.GetCreationTimeUtc)
+                     .Skip(
+                         keep))
+            {
+                TryDeleteDirectory(
+                    directory);
+            }
+        }
+        catch
+        {
+        }
+    }
+
+    private static void TryDeleteDirectory(
+        string path)
+    {
+        try
+        {
+            if (Directory.Exists(
+                    path))
+            {
+                Directory.Delete(
+                    path,
+                    recursive:
+                        true);
+            }
+        }
+        catch
+        {
+        }
     }
 }
