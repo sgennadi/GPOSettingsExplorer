@@ -4,6 +4,15 @@
 
 - No unreleased changes yet.
 
+## 0.4.3 - 2026-10-08
+
+- Fixed native MMC exact navigation opening the wrong Security Option after the correct target row was found.
+- Replaced coordinate-based double-click activation with verified native ListView selection/focus followed by Enter, so MMC opens the row that was actually selected.
+- Before opening, the fallback clears any previous ListView selection, selects and focuses only the target index, scrolls it into view, and verifies both selected and focused indexes.
+- Native row matching now gives priority to an exact/truncated match in the first Policy column before using broader registry/value aliases.
+- Diagnostics now report the selected and focused native indexes if row activation fails, making any remaining MMC-specific behavior directly observable.
+
+
 ## 0.4.2 - 2026-10-08
 
 - Added a native Win32 SysListView32 fallback for exact MMC Security Options navigation on Windows Server builds where UI Automation exposes the policy tree but no result rows.
