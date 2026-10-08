@@ -34,7 +34,7 @@ internal static class ScriptSyntaxHighlightingService
         return HighlightingLoader.Load(reader, HighlightingManager.Instance);
     }
 
-    private static string CommonColors() => $"""
+    private static string CommonColors() => $$"""
         <Color name="Comment" foreground="{UiStyle.ToRgbHex(UiStyle.ScriptCommentBrush)}"/>
         <Color name="String" foreground="{UiStyle.ToRgbHex(UiStyle.ScriptStringBrush)}"/>
         <Color name="Keyword" foreground="{UiStyle.ToRgbHex(UiStyle.ScriptKeywordBrush)}" fontWeight="bold"/>
@@ -42,7 +42,7 @@ internal static class ScriptSyntaxHighlightingService
         <Color name="Number" foreground="{UiStyle.ToRgbHex(UiStyle.ScriptNumberBrush)}"/>
         """;
 
-    private static string BatchDefinition() => $"""
+    private static string BatchDefinition() => $$"""
         <SyntaxDefinition name="GPO Batch / CMD" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
         {CommonColors()}
           <RuleSet ignoreCase="true">
@@ -56,7 +56,7 @@ internal static class ScriptSyntaxHighlightingService
         </SyntaxDefinition>
         """;
 
-    private static string PowerShellDefinition() => $"""
+    private static string PowerShellDefinition() => $$"""
         <SyntaxDefinition name="GPO PowerShell" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
         {{CommonColors()}}
           <RuleSet ignoreCase="true">
