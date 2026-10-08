@@ -87,6 +87,7 @@ public partial class MainWindow
             enabled);
 
         UpdateWriteModeUi();
+        RefreshPermissionAwareUi();
     }
 
     private void UpdateWriteModeUi()
