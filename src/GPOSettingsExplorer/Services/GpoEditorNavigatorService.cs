@@ -111,7 +111,7 @@ public sealed class GpoEditorNavigatorService
     {
         var deadline =
             DateTime.UtcNow.AddSeconds(
-                25);
+                60);
 
         progress?.Report(
             "Waiting for Group Policy Management Editor...");
@@ -493,6 +493,44 @@ public sealed class GpoEditorNavigatorService
             result,
             setting.SettingName);
 
+        AddCandidate(
+            result,
+            setting.RegistryValue);
+
+        AddCandidate(
+            result,
+            setting.RegistryKey);
+
+        AddCandidate(
+            result,
+            ExtractSummaryValue(
+                setting.Value,
+                "name"));
+
+        AddCandidate(
+            result,
+            ExtractSummaryValue(
+                setting.Value,
+                "status"));
+
+        AddCandidate(
+            result,
+            ExtractSummaryValue(
+                setting.Value,
+                "ValueName"));
+
+        AddCandidate(
+            result,
+            ExtractSummaryValue(
+                setting.Value,
+                "Key"));
+
+        AddCandidate(
+            result,
+            ExtractSummaryValue(
+                setting.Value,
+                "KeyPath"));
+
         if (setting.SettingName.StartsWith(
                 "Registry:",
                 StringComparison.OrdinalIgnoreCase))
@@ -509,22 +547,54 @@ public sealed class GpoEditorNavigatorService
         {
             AddCandidate(
                 result,
-                setting.RegistryValue);
+                LastRegistrySegment(
+                    setting.RegistryKey));
 
             AddCandidate(
                 result,
-                ExtractSummaryValue(
-                    setting.Value,
-                    "name"));
+                LastRegistrySegment(
+                    ExtractSummaryValue(
+                        setting.Value,
+                        "KeyPath")));
 
             AddCandidate(
                 result,
-                ExtractSummaryValue(
-                    setting.Value,
-                    "status"));
+                LastRegistrySegment(
+                    ExtractSummaryValue(
+                        setting.Value,
+                        "Key")));
         }
 
         return result;
+    }
+
+    private static string LastRegistrySegment(
+        string? value)
+    {
+        if (string.IsNullOrWhiteSpace(
+                value))
+        {
+            return string.Empty;
+        }
+
+        var normalized =
+            value
+                .Trim()
+                .Replace(
+                    '/',
+                    '\\')
+                .TrimEnd(
+                    '\\');
+
+        var index =
+            normalized.LastIndexOf(
+                '\\');
+
+        return index >= 0 &&
+               index <
+               normalized.Length - 1
+            ? normalized[(index + 1)..]
+            : normalized;
     }
 
     private static void AddCandidate(
@@ -627,27 +697,25 @@ public sealed class GpoEditorNavigatorService
     {
         try
         {
-            var texts =
+            var descendants =
                 window.FindAll(
                     TreeScope.Descendants,
-                    new PropertyCondition(
-                        AutomationElement.ControlTypeProperty,
-                        ControlType.Text));
+                    System.Windows.Automation.Condition.TrueCondition);
 
-            foreach (AutomationElement text in texts)
+            foreach (AutomationElement descendant in descendants)
             {
                 if (!ElementNameMatchesAny(
-                        text,
+                        descendant,
                         candidates))
                 {
                     continue;
                 }
 
                 var current =
-                    text;
+                    descendant;
 
                 for (var depth = 0;
-                     depth < 8;
+                     depth < 10;
                      depth++)
                 {
                     current =
@@ -934,17 +1002,15 @@ public sealed class GpoEditorNavigatorService
 
         try
         {
-            var texts =
+            var descendants =
                 element.FindAll(
                     TreeScope.Descendants,
-                    new PropertyCondition(
-                        AutomationElement.ControlTypeProperty,
-                        ControlType.Text));
+                    System.Windows.Automation.Condition.TrueCondition);
 
-            foreach (AutomationElement text in texts)
+            foreach (AutomationElement descendant in descendants)
             {
                 if (ElementNameMatchesAny(
-                        text,
+                        descendant,
                         candidates))
                 {
                     return true;
@@ -1016,15 +1082,74 @@ public sealed class GpoEditorNavigatorService
             return false;
         }
 
-        return normalizedActual.Equals(
-                   normalizedExpected,
-                   StringComparison.CurrentCultureIgnoreCase) ||
-               normalizedActual.StartsWith(
-                   normalizedExpected,
-                   StringComparison.CurrentCultureIgnoreCase) ||
-               normalizedActual.Contains(
-                   normalizedExpected,
-                   StringComparison.CurrentCultureIgnoreCase);
+        if (normalizedActual.Equals(
+                normalizedExpected,
+                StringComparison.CurrentCultureIgnoreCase) ||
+            normalizedActual.StartsWith(
+                normalizedExpected,
+                StringComparison.CurrentCultureIgnoreCase) ||
+            normalizedActual.Contains(
+                normalizedExpected,
+                StringComparison.CurrentCultureIgnoreCase))
+        {
+            return true;
+        }
+
+        var actualPrefix =
+            normalizedActual
+                .TrimEnd(
+                    '.')
+                .TrimEnd();
+
+        var expectedPrefix =
+            normalizedExpected
+                .TrimEnd(
+                    '.')
+                .TrimEnd();
+
+        if (actualPrefix.Length >= 24 &&
+            normalizedExpected.StartsWith(
+                actualPrefix,
+                StringComparison.CurrentCultureIgnoreCase))
+        {
+            return true;
+        }
+
+        if (expectedPrefix.Length >= 24 &&
+            normalizedActual.StartsWith(
+                expectedPrefix,
+                StringComparison.CurrentCultureIgnoreCase))
+        {
+            return true;
+        }
+
+        var common =
+            0;
+
+        var max =
+            Math.Min(
+                normalizedActual.Length,
+                normalizedExpected.Length);
+
+        while (common < max &&
+               char.ToUpperInvariant(
+                   normalizedActual[common]) ==
+               char.ToUpperInvariant(
+                   normalizedExpected[common]))
+        {
+            common++;
+        }
+
+        var shorter =
+            Math.Min(
+                normalizedActual.Length,
+                normalizedExpected.Length);
+
+        return common >= 28 &&
+               common >=
+               (int)Math.Ceiling(
+                   shorter *
+                   0.75);
     }
 
     private static string NormalizeUiText(
