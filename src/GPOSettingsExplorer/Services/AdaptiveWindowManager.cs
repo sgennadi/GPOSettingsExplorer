@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Interop;
 
 namespace GPOSettingsExplorer.Services;
@@ -18,6 +19,17 @@ internal static class AdaptiveWindowManager
             typeof(Window),
             FrameworkElement.LoadedEvent,
             new RoutedEventHandler(OnWindowLoaded));
+
+        EventManager.RegisterClassHandler(
+            typeof(DataGrid),
+            FrameworkElement.LoadedEvent,
+            new RoutedEventHandler(OnGridLoaded));
+    }
+
+    private static void OnGridLoaded(object sender, RoutedEventArgs e)
+    {
+        if (sender is DataGrid grid)
+            UiStyle.ApplyDataGridDefaults(grid);
     }
 
     private static void OnWindowLoaded(
