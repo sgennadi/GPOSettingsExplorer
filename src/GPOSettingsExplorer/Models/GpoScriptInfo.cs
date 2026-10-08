@@ -72,4 +72,5 @@ public sealed class GpoScriptDocument
     public bool EmitBom { get; init; }
     public string OriginalSha256 { get; init; } = string.Empty;
     public string NewLine { get; init; } = Environment.NewLine;
+    public string OriginalText { get; init; } = string.Empty;
 }
