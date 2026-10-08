@@ -302,8 +302,22 @@ public sealed partial class GpoScriptEditorWindow : Window
         root.Children.Add(statusPanel);
         root.Children.Add(_diagnosticsPanel);
         root.Children.Add(header);
-        root.Children.Add(tools);
-        root.Children.Add(options);
+
+        // At 200% scaling the command bars may occupy several lines.
+        // Bound their height and keep an independent scrollbar rather than
+        // pushing the editor and Save/Close buttons off-screen.
+        var toolbarContainer = new StackPanel();
+        toolbarContainer.Children.Add(tools);
+        toolbarContainer.Children.Add(options);
+        var toolbarScroller = new ScrollViewer
+        {
+            Content = toolbarContainer,
+            MaxHeight = 205,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled
+        };
+        DockPanel.SetDock(toolbarScroller, Dock.Top);
+        root.Children.Add(toolbarScroller);
         root.Children.Add(_editor);
 
         Loaded += (_, _) =>
