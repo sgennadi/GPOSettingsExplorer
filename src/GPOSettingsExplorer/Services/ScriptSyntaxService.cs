@@ -131,14 +131,14 @@ public static class ScriptSyntaxService
             var encodedPath = Convert.ToBase64String(Encoding.Unicode.GetBytes(temp));
             var command = $"""
                 $ErrorActionPreference = 'Stop'
-                $path = [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('{encodedPath}'))
+                $path = [Text.Encoding]::Unicode.GetString([Convert]::FromBase64String('{{encodedPath}}'))
                 $tokens = $null
                 $errors = $null
                 $null = [System.Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors)
-                foreach ($problem in $errors) {{
+                foreach ($problem in $errors) {
                     $message = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($problem.Message))
                     [Console]::Out.WriteLine(('{0}|{1}|{2}' -f $problem.Extent.StartLineNumber,$problem.Extent.StartColumnNumber,$message))
-                }}
+                }
                 """;
 
             var psPath = Path.Combine(
