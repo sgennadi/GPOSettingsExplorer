@@ -19,6 +19,8 @@ public sealed class GpoEditorNavigatorService
     private const int LvmEnsureVisible = LvmFirst + 19;
     private const int LvmSetItemState = LvmFirst + 43;
     private const int LvmGetItemTextW = LvmFirst + 115;
+    private const int LvmFindItemW = LvmFirst + 83;
+    private const uint LvfiString = 0x0002;
     private const int LvmGetNextItem = LvmFirst + 12;
     private const uint LvifText = 0x0001;
     private const uint LvisFocused = 0x0001;
@@ -1278,136 +1280,185 @@ public sealed class GpoEditorNavigatorService
         CancellationToken cancellationToken,
         out string diagnostics)
     {
-        var builder =
-            new StringBuilder();
+        var builder = new StringBuilder();
+        builder.AppendLine("Native MMC list-view probe:");
+        builder.AppendLine($"  Policy: {setting.SettingName}");
+        builder.AppendLine($"  Process ID: {process.Id}");
+        builder.AppendLine($"  Process architecture: {(Environment.Is64BitProcess ? "64-bit" : "32-bit")} explorer");
 
-        builder.AppendLine(
-            "Native MMC list-view probe:");
+        var access = ProcessVmOperation | ProcessVmRead |
+                     ProcessVmWrite | ProcessQueryLimitedInformation;
+        var processHandle = OpenProcess(access, inheritHandle: false, process.Id);
 
-        var listViews =
-            FindNativeListViews(
-                process.MainWindowHandle);
-
-        if (listViews.Count == 0)
+        if (processHandle == IntPtr.Zero)
         {
-            builder.AppendLine(
-                "  No SysListView32 controls were found.");
-
-            diagnostics =
-                builder.ToString();
-
-            return false;
-        }
-
-        var access =
-            ProcessVmOperation |
-            ProcessVmRead |
-            ProcessVmWrite |
-            ProcessQueryLimitedInformation;
-
-        var processHandle =
-            OpenProcess(
-                access,
-                inheritHandle:
-                    false,
-                process.Id);
-
-        if (processHandle ==
-            IntPtr.Zero)
-        {
-            builder.AppendLine(
-                $"  OpenProcess failed. Win32={Marshal.GetLastWin32Error()}");
-
-            diagnostics =
-                builder.ToString();
-
+            var win32 = Marshal.GetLastWin32Error();
+            builder.AppendLine($"  OpenProcess denied or unavailable. Win32={win32}.");
+            builder.AppendLine("  Try launching GPO Settings Explorer and MMC at the same Windows integrity level.");
+            diagnostics = builder.ToString();
             return false;
         }
 
         try
         {
-            foreach (var listView in listViews)
+            // Opening a Security Options node does not synchronously populate
+            // the right-hand MMC list view. Poll the native exact-name lookup
+            // for a bounded interval before trying a slower full-list scan.
+            var deadline = DateTime.UtcNow.AddSeconds(9);
+            var sawListView = false;
+            var sawItems = false;
+            var counts = new Dictionary<IntPtr, int>();
+            var searchAttempts = 0;
+
+            while (DateTime.UtcNow < deadline)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-
-                var count =
-                    checked(
-                        (int)SendMessage(
-                            listView,
-                            LvmGetItemCount,
-                            IntPtr.Zero,
-                            IntPtr.Zero));
-
-                builder.AppendLine(
-                    $"  SysListView32 0x{listView.ToInt64():X}: {count} rows");
-
-                if (count <= 0 ||
-                    count > 20000)
+                process.Refresh();
+                if (process.HasExited)
                 {
-                    continue;
+                    builder.AppendLine("  MMC closed while searching.");
+                    break;
                 }
 
-                var rows =
-                    ReadNativeListViewRows(
-                        processHandle,
-                        listView,
-                        count,
-                        cancellationToken);
-
-                foreach (var row in rows.Take(
-                             120))
+                var listViews = FindNativeListViews(process.MainWindowHandle);
+                sawListView |= listViews.Count > 0;
+                foreach (var listView in listViews)
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    var count = checked((int)SendMessage(
+                        listView, LvmGetItemCount, IntPtr.Zero, IntPtr.Zero));
+
+                    counts[listView] = count;
+                    if (count <= 0 || count > 20000)
+                        continue;
+
+                    sawItems = true;
+                    searchAttempts++;
+
+                    // The native LVFI_STRING search compares the *complete*
+                    // item name, not the text clipped with an ellipsis in MMC.
+                    // It avoids matching similarly named NTLM policies.
+                    var index = FindNativeListViewExactIndex(
+                        processHandle, listView, setting.SettingName);
+
+                    if (index < 0 || index >= count)
+                        continue;
+
+                    builder.AppendLine($"  LVM_FINDITEMW exact match: row {index} of {count}.");
+
+                    if (SelectAndOpenNativeListViewRow(
+                        process, processHandle, listView, index,
+                        out var selectedIndex, out var focusedIndex))
+                    {
+                        builder.AppendLine(
+                            $"  Verified selected={selectedIndex}, focused={focusedIndex}; opened exact row.");
+                        diagnostics = builder.ToString();
+                        return true;
+                    }
+
                     builder.AppendLine(
-                        $"    [{row.Index}] {row.Text}");
+                        $"  Exact native match found, but activation failed (selected={selectedIndex}, focused={focusedIndex}).");
                 }
 
-                var match =
-                    FindBestNativeListViewMatch(
-                        rows,
-                        setting,
-                        candidates);
-
-                if (match is null)
-                {
-                    continue;
-                }
-
-                builder.AppendLine(
-                    $"  Native match: [{match.Index}] {match.Text}");
-
-                if (!SelectAndOpenNativeListViewRow(
-                        process,
-                        processHandle,
-                        listView,
-                        match.Index,
-                        out var selectedIndex,
-                        out var focusedIndex))
-                {
-                    builder.AppendLine(
-                        $"  Matching row was found, but native selection/open failed. Selected={selectedIndex}, Focused={focusedIndex}.");
-
-                    continue;
-                }
-
-                builder.AppendLine(
-                    $"  Native row confirmed selected/focused at index {match.Index}; opened with Enter.");
-
-                diagnostics =
-                    builder.ToString();
-
-                return true;
+                Thread.Sleep(220);
             }
+
+            builder.AppendLine($"  MMC list views found: {sawListView}; populated: {sawItems}; exact-name probes: {searchAttempts}.");
+            foreach (var pair in counts)
+                builder.AppendLine($"  ListView 0x{pair.Key.ToInt64():X}: {pair.Value} item(s)");
+
+            // Older MMC configurations may not support LVM_FINDITEMW reliably.
+            // Read and compare *only the Policy (first) column* of each row;
+            // never match text from the Policy Setting or other value columns.
+            foreach (var pair in counts)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var listView = pair.Key;
+                if (pair.Value is <= 0 or > 20000)
+                    continue;
+
+                var rows = ReadNativeListViewRows(
+                    processHandle, listView, pair.Value, cancellationToken);
+                builder.AppendLine($"  Native fallback returned {rows.Count} named rows.");
+                foreach (var row in rows.Take(30))
+                    builder.AppendLine($"    [{row.Index}] {row.Text}");
+
+                var match = FindBestNativeListViewMatch(rows, setting, candidates);
+                if (match is null)
+                    continue;
+
+                builder.AppendLine($"  Verified fallback name match: [{match.Index}] {match.Text}");
+                if (SelectAndOpenNativeListViewRow(
+                    process, processHandle, listView, match.Index,
+                    out var selectedIndex, out var focusedIndex))
+                {
+                    builder.AppendLine($"  Opened verified row {match.Index}.");
+                    diagnostics = builder.ToString();
+                    return true;
+                }
+
+                builder.AppendLine($"  Row {match.Index} selection failed: selected={selectedIndex}, focused={focusedIndex}.");
+            }
+
+            builder.AppendLine(
+                "  Could not prove an exact policy name match. No approximate match was opened.");
+            diagnostics = builder.ToString();
+            return false;
         }
         finally
         {
-            CloseHandle(
-                processHandle);
+            CloseHandle(processHandle);
         }
+    }
 
-        diagnostics =
-            builder.ToString();
+    private static int FindNativeListViewExactIndex(
+        IntPtr processHandle,
+        IntPtr listView,
+        string policyName)
+    {
+        var name = MmcPolicyNameMatcher.Normalize(policyName);
+        if (string.IsNullOrWhiteSpace(name))
+            return -1;
 
-        return false;
+        var bytes = Encoding.Unicode.GetBytes(name + "\0");
+        var infoSize = Marshal.SizeOf<NativeLvFindInfo>();
+        var remoteText = VirtualAllocEx(processHandle, IntPtr.Zero,
+            (UIntPtr)bytes.Length, MemCommit | MemReserve, PageReadWrite);
+        if (remoteText == IntPtr.Zero)
+            return -1;
+
+        var remoteFindInfo = IntPtr.Zero;
+        try
+        {
+            remoteFindInfo = VirtualAllocEx(processHandle, IntPtr.Zero,
+                (UIntPtr)infoSize, MemCommit | MemReserve, PageReadWrite);
+            if (remoteFindInfo == IntPtr.Zero)
+                return -1;
+
+            if (!WriteProcessMemory(processHandle, remoteText, bytes,
+                    bytes.Length, out var written) ||
+                written.ToUInt64() != (ulong)bytes.Length)
+                return -1;
+
+            var info = new NativeLvFindInfo
+            {
+                Flags = LvfiString,
+                Text = remoteText
+            };
+            if (!WriteRemoteStructure(processHandle, remoteFindInfo, info, infoSize))
+                return -1;
+
+            // LVM_FINDITEMW with LVFI_STRING (not LVFI_PARTIAL) is an
+            // exact-name lookup inside the target MMC process.
+            return checked((int)SendMessage(
+                listView, LvmFindItemW, new IntPtr(-1), remoteFindInfo));
+        }
+        finally
+        {
+            if (remoteFindInfo != IntPtr.Zero)
+                VirtualFreeEx(processHandle, remoteFindInfo, UIntPtr.Zero, MemRelease);
+            VirtualFreeEx(processHandle, remoteText, UIntPtr.Zero, MemRelease);
+        }
     }
 
     private static NativeListViewRow? FindBestNativeListViewMatch(
@@ -1415,50 +1466,13 @@ public sealed class GpoEditorNavigatorService
         PolicySettingInfo setting,
         IReadOnlyList<string> candidates)
     {
-        var target =
-            NormalizeUiText(
-                setting.SettingName);
-
-        foreach (var row in rows)
-        {
-            var firstColumn =
-                NormalizeUiText(
-                    row.Text.Split(
-                            " | ",
-                            StringSplitOptions.None)
-                        .FirstOrDefault()
-                    ?? string.Empty);
-
-            if (firstColumn.Equals(
-                    target,
-                    StringComparison.CurrentCultureIgnoreCase))
-            {
-                return row;
-            }
-
-            var trimmed =
-                firstColumn
-                    .TrimEnd(
-                        '.')
-                    .TrimEnd();
-
-            if (firstColumn.EndsWith("...", StringComparison.Ordinal) &&
-                trimmed.Length >= 28 &&
-                target.StartsWith(
-                    trimmed,
-                    StringComparison.CurrentCultureIgnoreCase))
-            {
-                return row;
-            }
-        }
-
-        return rows.FirstOrDefault(
-            row =>
-                candidates.Any(
-                    candidate =>
-                        TextMatches(
-                            row.Text,
-                            candidate)));
+        // The first column is Policy. Other columns contain settings/values
+        // and cannot identify which policy would be opened.
+        var names = rows
+            .Select(row => row.Text.Split(" | ", StringSplitOptions.None)[0])
+            .ToArray();
+        var index = MmcPolicyNameMatcher.FindUniqueMatch(names, setting.SettingName);
+        return index >= 0 ? rows[index] : null;
     }
 
     private static IReadOnlyList<IntPtr> FindNativeListViews(
@@ -1966,6 +1980,16 @@ public sealed class GpoEditorNavigatorService
     private sealed record NativeListViewRow(
         int Index,
         string Text);
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct NativeLvFindInfo
+    {
+        public uint Flags;
+        public IntPtr Text;
+        public IntPtr Parameter;
+        public NativePoint Point;
+        public uint Direction;
+    }
 
     [StructLayout(
         LayoutKind.Sequential,
