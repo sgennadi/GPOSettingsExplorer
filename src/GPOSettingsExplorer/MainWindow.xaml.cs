@@ -76,6 +76,8 @@ public partial class MainWindow : Window
             DomainText.Text = _domainContext.DomainName;
             ServerText.Text = _domainContext.ConnectedServer;
 
+            _gpoCapabilities.Clear();
+
             if (!_gpmService.IsAvailable)
             {
                 HeaderStatusText.Text = "GPMC/RSAT is not installed. GPO operations are unavailable.";
