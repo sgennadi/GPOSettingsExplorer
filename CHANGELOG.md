@@ -4,6 +4,13 @@
 
 - No unreleased changes yet.
 
+## 0.3.1 - 2026-10-08
+
+- Fixed exact MMC navigation for Security Options such as "Network security: LAN Manager authentication level" by handling virtualized MMC rows and scrolling through the full result pane instead of searching only currently materialized rows.
+- Added exact navigation for GPP Registry items. Registry rows now open Computer/User Configuration > Preferences > Windows Settings > Registry and search for the selected item instead of only opening the GPO.
+- GPP Registry report parsing now reads nested key/value attributes from Properties nodes, so Registry metadata is populated instead of showing "<not reported>" when GPMC emits attributes rather than child elements.
+- Exact navigation now uses multiple row aliases (display name, registry value name, and GPP name/status) and a longer bounded navigation window for slower MMC consoles.
+
 ## 0.3.0 - 2026-10-07
 
 - Added a startup Active Directory connection manager with current-session or alternate credentials, optional DC pinning, connection testing, and DPAPI-protected credential persistence.
