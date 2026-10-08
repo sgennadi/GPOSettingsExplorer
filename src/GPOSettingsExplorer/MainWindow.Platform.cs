@@ -391,15 +391,106 @@ public partial class MainWindow
         var state =
             _updateCheckStateService.Load();
 
-        if (!string.IsNullOrWhiteSpace(
+        if (string.IsNullOrWhiteSpace(
                 state.LastSeenTag))
         {
             UpdateButton.ToolTip =
-                state.LastSuccessfulCheckUtc ==
-                DateTime.MinValue
-                    ? $"Last seen release: {state.LastSeenTag}"
-                    : $"Last checked: {state.LastSuccessfulCheckUtc.ToLocalTime():g}. Last seen release: {state.LastSeenTag}";
+                "Checks GitHub Releases for a newer x64/ARM64 portable build.";
+
+            return;
         }
+
+        var lastChecked =
+            state.LastSuccessfulCheckUtc ==
+            DateTime.MinValue
+                ? string.Empty
+                : $" Last checked: {state.LastSuccessfulCheckUtc.ToLocalTime():g}.";
+
+        if (TryParseReleaseVersion(
+                state.LastSeenTag,
+                out var latest) &&
+            latest >
+            GetCurrentApplicationVersion())
+        {
+            UpdateButton.Content =
+                $"Update {state.LastSeenTag}";
+
+            UpdateButton.ToolTip =
+                $"A newer release was found during the last successful check.{lastChecked} Click to verify and install.";
+
+            return;
+        }
+
+        UpdateButton.ToolTip =
+            $"Last seen release: {state.LastSeenTag}.{lastChecked}";
+    }
+
+    private static Version GetCurrentApplicationVersion()
+    {
+        var version =
+            typeof(MainWindow)
+                .Assembly
+                .GetName()
+                .Version
+            ?? new Version(
+                0,
+                0,
+                0);
+
+        return new Version(
+            Math.Max(
+                0,
+                version.Major),
+            Math.Max(
+                0,
+                version.Minor),
+            Math.Max(
+                0,
+                version.Build));
+    }
+
+    private static bool TryParseReleaseVersion(
+        string tag,
+        out Version version)
+    {
+        var text =
+            tag.Trim();
+
+        if (text.StartsWith(
+                'v') ||
+            text.StartsWith(
+                'V'))
+        {
+            text =
+                text[1..];
+        }
+
+        if (!Version.TryParse(
+                text,
+                out var parsed))
+        {
+            version =
+                new Version(
+                    0,
+                    0,
+                    0);
+
+            return false;
+        }
+
+        version =
+            new Version(
+                Math.Max(
+                    0,
+                    parsed.Major),
+                Math.Max(
+                    0,
+                    parsed.Minor),
+                Math.Max(
+                    0,
+                    parsed.Build));
+
+        return true;
     }
 
     private void ApplyUpdateState(
