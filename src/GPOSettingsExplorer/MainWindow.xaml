@@ -1524,6 +1524,7 @@
                             <Button Content="Refresh" Click="RefreshAudit_Click"/>
                             <Button Content="Open folder" Click="OpenAuditFolder_Click"/>
                             <Button Content="Export CSV" Click="ExportAuditCsv_Click"/>
+                            <Button Content="View details" Click="ViewAuditEntry_Click"/>
                             <Button Content="Open linked backup" Click="OpenAuditBackup_Click"/>
                             <Button Content="Restore linked backup" Click="RestoreAuditBackup_Click"/>
                             <TextBlock Text="Search:" VerticalAlignment="Center" Margin="12,0,0,0"/>
@@ -1537,7 +1538,8 @@
                         </WrapPanel>
                     </StackPanel>
 
-                    <DataGrid x:Name="AuditGrid">
+                    <DataGrid x:Name="AuditGrid"
+                              MouseDoubleClick="AuditGrid_MouseDoubleClick">
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="Time" Binding="{Binding Timestamp, StringFormat={}{0:yyyy-MM-dd HH:mm:ss zzz}}" Width="190"/>
                             <DataGridTextColumn Header="User" Binding="{Binding User}" Width="170"/>
