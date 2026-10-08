@@ -46,3 +46,12 @@ At every scale:
 ## Definition of done
 
 A new GPP section or other feature is not UI-complete until its new and changed windows comply with this checklist.
+
+## Semantic colors and script editing
+
+- All colors and language syntax tokens must come from the centralized palette in `Themes/WindowsCompact.xaml`, exposed through `UiStyle`; never scatter hexadecimal colors across code-behind.
+- Keep file type identity, disabled GPO states, missing/unassigned script warnings, and syntax diagnostics distinguishable using BOTH color and textual status.
+- Error color means actual failure; warning color means a partial scope, possibly unsafe script, or action requiring attention.
+- Script editor must not execute source code in order to preview or validate it. The PowerShell AST parse is an explicit parse-only operation.
+- At 200% scaling, editor toolbars should scroll if they cannot wrap within the available height, and Save/Close buttons remain reachable.
+- Never drop edited text on a failed save or a hidden GPO change-preview dialog.
