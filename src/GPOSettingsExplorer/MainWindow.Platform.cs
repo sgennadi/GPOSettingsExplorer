@@ -510,13 +510,26 @@ public partial class MainWindow
         }
         catch (Exception ex)
         {
-            // Startup update checks are intentionally silent. A temporary
-            // internet/GitHub failure must never interrupt AD administration.
-            CrashLogService.Write(
-                "Automatic update check",
-                ex);
+            // Startup update checks are intentionally silent. Firewall,
+            // proxy and Internet restrictions are expected on many servers
+            // and must not create crash-style diagnostic logs.
+            if (!UpdateService.IsExpectedConnectivityFailure(
+                    ex))
+            {
+                CrashLogService.Write(
+                    "Automatic update check",
+                    ex);
+            }
 
             ApplyStoredUpdateState();
+
+            if (UpdateService.IsExpectedConnectivityFailure(
+                    ex))
+            {
+                UpdateButton.ToolTip =
+                    UpdateService.BuildConnectivityFailureMessage(
+                        ex);
+            }
         }
     }
 
@@ -776,11 +789,31 @@ public partial class MainWindow
             UpdateButton.Content =
                 "Check updates";
 
+            StatusText.Text =
+                "Update check unavailable";
+
+            if (UpdateService.IsExpectedConnectivityFailure(
+                    ex))
+            {
+                var message =
+                    UpdateService.BuildConnectivityFailureMessage(
+                        ex);
+
+                UpdateButton.ToolTip =
+                    message;
+
+                MessageBox.Show(
+                    this,
+                    message,
+                    "Check for Updates",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Information);
+
+                return;
+            }
+
             UpdateButton.ToolTip =
                 "The last update check failed. Click to try again.";
-
-            StatusText.Text =
-                "Update failed";
 
             ErrorDialog.Show(
                 this,

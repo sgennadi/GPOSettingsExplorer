@@ -9,6 +9,7 @@ var tests = new (string Name, Action Body)[]
     ("GPP XML cache refreshes after file change", TestGppXmlCache),
     ("Script inventory cache invalidates on GPO modification", TestScriptCache),
     ("Automatic update checks respect 24-hour and retry windows", TestUpdateCheckSchedule),
+    ("Blocked GitHub socket is treated as expected connectivity failure", TestBlockedUpdateConnectivity),
     ("Semantic XML diff ignores report timestamps and finds setting changes", TestSemanticXmlDiff)
 };
 
@@ -389,6 +390,30 @@ static void TestUpdateCheckSchedule()
             oldFailureAfterStaleSuccess,
             now),
         "A failed retry older than two hours should be attempted again.");
+}
+
+static void TestBlockedUpdateConnectivity()
+{
+    var exception =
+        new System.Net.Http.HttpRequestException(
+            "blocked",
+            new System.Net.Sockets.SocketException(
+                10013));
+
+    Assert(
+        UpdateService.IsExpectedConnectivityFailure(
+            exception),
+        "Socket 10013 should be handled as an expected updater connectivity restriction.");
+
+    var message =
+        UpdateService.BuildConnectivityFailureMessage(
+            exception);
+
+    Assert(
+        message.Contains(
+            "10013",
+            StringComparison.Ordinal),
+        "The connectivity explanation should identify socket error 10013.");
 }
 
 static void TestSemanticXmlDiff()

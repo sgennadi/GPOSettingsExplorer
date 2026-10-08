@@ -87,8 +87,26 @@ public partial class MainWindow
 
         if (SecurityGpoCombo.SelectedItem is null)
         {
-            SecurityGpoCombo.SelectedIndex = 0;
-            return;
+            if (GpoGrid.SelectedItem
+                is GpoInfo selectedGpo)
+            {
+                SecurityGpoCombo.SelectedItem =
+                    _gpos.FirstOrDefault(
+                        item =>
+                            item.Id ==
+                            selectedGpo.Id);
+            }
+
+            if (SecurityGpoCombo.SelectedItem is null)
+            {
+                PermissionCountText.Text =
+                    "Select a GPO to view Security Filtering and Delegation.";
+
+                ApplySecurityCapability(
+                    null);
+
+                return;
+            }
         }
 
         await LoadPermissionsAsync();

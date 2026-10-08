@@ -4,6 +4,18 @@
 
 - No unreleased changes yet.
 
+## 0.4.1 - 2026-10-08
+
+- Fixed Security & Delegation failures when GPMC exposes a stale/deleted trustee property as FileNotFoundException or another non-COM exception. Unresolvable trustee properties are now isolated instead of aborting the complete permission list.
+- Security & Delegation now follows the GPO currently selected on the main GPO list instead of automatically loading the first alphabetic GPO.
+- Corrected raw RegistrySettings parsing. KeyPath, value name, value data, and AdmSetting are now extracted explicitly, and Extra Registry Settings are no longer misidentified as Group Policy Preferences Registry items.
+- Advanced the settings-index cache schema so cached v0.4.0 rows are rebuilt automatically with the corrected RegistrySettings metadata.
+- Exact Security Options navigation now waits longer, searches all UI Automation descendants/cells, understands truncated MMC row text, and uses registry/value aliases as additional row identities.
+- Removed false exact-navigation claims for raw RegistrySettings. AdmSetting=false rows are identified as Extra Registry Settings and no longer open the unrelated Preferences > Windows Settings > Registry node.
+- Automatic GitHub update checks no longer write crash-style logs when outbound HTTPS is blocked by firewall/proxy policy. Manual checks show a compact network explanation, including socket error 10013 when applicable.
+- Added regression coverage for blocked GitHub socket handling.
+
+
 ## 0.4.0 - 2026-10-08
 
 - Reworked portable self-update into a staged install. Update ZIPs are verified before shutdown, extracted into a staging directory, existing application files are backed up, and failed replacement attempts automatically restore the previous files.

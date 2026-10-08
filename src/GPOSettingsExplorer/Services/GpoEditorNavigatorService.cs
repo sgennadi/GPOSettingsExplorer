@@ -16,11 +16,8 @@ public sealed class GpoEditorNavigatorService
         PolicySettingInfo setting)
     {
         return setting.Extension.Equals(
-                   "SecuritySettings",
-                   StringComparison.OrdinalIgnoreCase) ||
-               setting.Extension.Equals(
-                   "RegistrySettings",
-                   StringComparison.OrdinalIgnoreCase);
+            "SecuritySettings",
+            StringComparison.OrdinalIgnoreCase);
     }
 
     public async Task<bool> OpenAtSettingAsync(
@@ -111,7 +108,7 @@ public sealed class GpoEditorNavigatorService
     {
         var deadline =
             DateTime.UtcNow.AddSeconds(
-                25);
+                60);
 
         progress?.Report(
             "Waiting for Group Policy Management Editor...");
@@ -214,6 +211,17 @@ public sealed class GpoEditorNavigatorService
 
         if (row is null)
         {
+            progress?.Report(
+                "MMC opened the target policy node but did not expose a matching row.");
+
+            CrashLogService.Write(
+                $"MMC exact navigation miss: {setting.SettingName}",
+                BuildNavigationMissDetails(
+                    window,
+                    setting,
+                    BuildRowCandidates(
+                        setting)));
+
             return false;
         }
 
@@ -483,6 +491,136 @@ public sealed class GpoEditorNavigatorService
         return null;
     }
 
+    private static string BuildNavigationMissDetails(
+        AutomationElement window,
+        PolicySettingInfo setting,
+        IReadOnlyList<string> candidates)
+    {
+        var builder =
+            new System.Text.StringBuilder();
+
+        builder.AppendLine(
+            $"Setting: {setting.SettingName}");
+
+        builder.AppendLine(
+            $"Extension: {setting.Extension}");
+
+        builder.AppendLine(
+            $"Scope: {setting.Scope}");
+
+        builder.AppendLine(
+            $"Registry key: {setting.RegistryKey}");
+
+        builder.AppendLine(
+            $"Registry value: {setting.RegistryValue}");
+
+        builder.AppendLine(
+            "Candidates:");
+
+        foreach (var candidate in candidates)
+        {
+            builder.AppendLine(
+                "  - " +
+                candidate);
+        }
+
+        builder.AppendLine(
+            "Visible MMC rows:");
+
+        try
+        {
+            var rowCondition =
+                new OrCondition(
+                    new PropertyCondition(
+                        AutomationElement.ControlTypeProperty,
+                        ControlType.ListItem),
+                    new PropertyCondition(
+                        AutomationElement.ControlTypeProperty,
+                        ControlType.DataItem));
+
+            var rows =
+                window.FindAll(
+                    TreeScope.Descendants,
+                    rowCondition);
+
+            var count =
+                0;
+
+            foreach (AutomationElement row in rows)
+            {
+                if (count++ >=
+                    80)
+                {
+                    break;
+                }
+
+                var names =
+                    new List<string>();
+
+                try
+                {
+                    AddDiagnosticName(
+                        names,
+                        row.Current.Name);
+
+                    var descendants =
+                        row.FindAll(
+                            TreeScope.Descendants,
+                            System.Windows.Automation.Condition.TrueCondition);
+
+                    foreach (AutomationElement descendant in descendants)
+                    {
+                        AddDiagnosticName(
+                            names,
+                            descendant.Current.Name);
+                    }
+                }
+                catch (Exception ex)
+                    when (!IsFatal(
+                        ex))
+                {
+                }
+
+                if (names.Count >
+                    0)
+                {
+                    builder.AppendLine(
+                        "  - " +
+                        string.Join(
+                            " | ",
+                            names.Distinct(
+                                StringComparer.CurrentCultureIgnoreCase)));
+                }
+            }
+        }
+        catch (Exception ex)
+            when (!IsFatal(
+                ex))
+        {
+            builder.AppendLine(
+                $"  <unable to enumerate rows: {ex.Message}>");
+        }
+
+        return builder.ToString();
+    }
+
+    private static void AddDiagnosticName(
+        ICollection<string> names,
+        string? value)
+    {
+        var normalized =
+            NormalizeUiText(
+                value
+                ?? string.Empty);
+
+        if (!string.IsNullOrWhiteSpace(
+                normalized))
+        {
+            names.Add(
+                normalized);
+        }
+    }
+
     private static IReadOnlyList<string> BuildRowCandidates(
         PolicySettingInfo setting)
     {
@@ -492,6 +630,44 @@ public sealed class GpoEditorNavigatorService
         AddCandidate(
             result,
             setting.SettingName);
+
+        AddCandidate(
+            result,
+            setting.RegistryValue);
+
+        AddCandidate(
+            result,
+            setting.RegistryKey);
+
+        AddCandidate(
+            result,
+            ExtractSummaryValue(
+                setting.Value,
+                "name"));
+
+        AddCandidate(
+            result,
+            ExtractSummaryValue(
+                setting.Value,
+                "status"));
+
+        AddCandidate(
+            result,
+            ExtractSummaryValue(
+                setting.Value,
+                "ValueName"));
+
+        AddCandidate(
+            result,
+            ExtractSummaryValue(
+                setting.Value,
+                "Key"));
+
+        AddCandidate(
+            result,
+            ExtractSummaryValue(
+                setting.Value,
+                "KeyPath"));
 
         if (setting.SettingName.StartsWith(
                 "Registry:",
@@ -509,22 +685,54 @@ public sealed class GpoEditorNavigatorService
         {
             AddCandidate(
                 result,
-                setting.RegistryValue);
+                LastRegistrySegment(
+                    setting.RegistryKey));
 
             AddCandidate(
                 result,
-                ExtractSummaryValue(
-                    setting.Value,
-                    "name"));
+                LastRegistrySegment(
+                    ExtractSummaryValue(
+                        setting.Value,
+                        "KeyPath")));
 
             AddCandidate(
                 result,
-                ExtractSummaryValue(
-                    setting.Value,
-                    "status"));
+                LastRegistrySegment(
+                    ExtractSummaryValue(
+                        setting.Value,
+                        "Key")));
         }
 
         return result;
+    }
+
+    private static string LastRegistrySegment(
+        string? value)
+    {
+        if (string.IsNullOrWhiteSpace(
+                value))
+        {
+            return string.Empty;
+        }
+
+        var normalized =
+            value
+                .Trim()
+                .Replace(
+                    '/',
+                    '\\')
+                .TrimEnd(
+                    '\\');
+
+        var index =
+            normalized.LastIndexOf(
+                '\\');
+
+        return index >= 0 &&
+               index <
+               normalized.Length - 1
+            ? normalized[(index + 1)..]
+            : normalized;
     }
 
     private static void AddCandidate(
@@ -627,27 +835,25 @@ public sealed class GpoEditorNavigatorService
     {
         try
         {
-            var texts =
+            var descendants =
                 window.FindAll(
                     TreeScope.Descendants,
-                    new PropertyCondition(
-                        AutomationElement.ControlTypeProperty,
-                        ControlType.Text));
+                    System.Windows.Automation.Condition.TrueCondition);
 
-            foreach (AutomationElement text in texts)
+            foreach (AutomationElement descendant in descendants)
             {
                 if (!ElementNameMatchesAny(
-                        text,
+                        descendant,
                         candidates))
                 {
                     continue;
                 }
 
                 var current =
-                    text;
+                    descendant;
 
                 for (var depth = 0;
-                     depth < 8;
+                     depth < 10;
                      depth++)
                 {
                     current =
@@ -934,17 +1140,15 @@ public sealed class GpoEditorNavigatorService
 
         try
         {
-            var texts =
+            var descendants =
                 element.FindAll(
                     TreeScope.Descendants,
-                    new PropertyCondition(
-                        AutomationElement.ControlTypeProperty,
-                        ControlType.Text));
+                    System.Windows.Automation.Condition.TrueCondition);
 
-            foreach (AutomationElement text in texts)
+            foreach (AutomationElement descendant in descendants)
             {
                 if (ElementNameMatchesAny(
-                        text,
+                        descendant,
                         candidates))
                 {
                     return true;
@@ -1016,15 +1220,74 @@ public sealed class GpoEditorNavigatorService
             return false;
         }
 
-        return normalizedActual.Equals(
-                   normalizedExpected,
-                   StringComparison.CurrentCultureIgnoreCase) ||
-               normalizedActual.StartsWith(
-                   normalizedExpected,
-                   StringComparison.CurrentCultureIgnoreCase) ||
-               normalizedActual.Contains(
-                   normalizedExpected,
-                   StringComparison.CurrentCultureIgnoreCase);
+        if (normalizedActual.Equals(
+                normalizedExpected,
+                StringComparison.CurrentCultureIgnoreCase) ||
+            normalizedActual.StartsWith(
+                normalizedExpected,
+                StringComparison.CurrentCultureIgnoreCase) ||
+            normalizedActual.Contains(
+                normalizedExpected,
+                StringComparison.CurrentCultureIgnoreCase))
+        {
+            return true;
+        }
+
+        var actualPrefix =
+            normalizedActual
+                .TrimEnd(
+                    '.')
+                .TrimEnd();
+
+        var expectedPrefix =
+            normalizedExpected
+                .TrimEnd(
+                    '.')
+                .TrimEnd();
+
+        if (actualPrefix.Length >= 24 &&
+            normalizedExpected.StartsWith(
+                actualPrefix,
+                StringComparison.CurrentCultureIgnoreCase))
+        {
+            return true;
+        }
+
+        if (expectedPrefix.Length >= 24 &&
+            normalizedActual.StartsWith(
+                expectedPrefix,
+                StringComparison.CurrentCultureIgnoreCase))
+        {
+            return true;
+        }
+
+        var common =
+            0;
+
+        var max =
+            Math.Min(
+                normalizedActual.Length,
+                normalizedExpected.Length);
+
+        while (common < max &&
+               char.ToUpperInvariant(
+                   normalizedActual[common]) ==
+               char.ToUpperInvariant(
+                   normalizedExpected[common]))
+        {
+            common++;
+        }
+
+        var shorter =
+            Math.Min(
+                normalizedActual.Length,
+                normalizedExpected.Length);
+
+        return common >= 28 &&
+               common >=
+               (int)Math.Ceiling(
+                   shorter *
+                   0.75);
     }
 
     private static string NormalizeUiText(

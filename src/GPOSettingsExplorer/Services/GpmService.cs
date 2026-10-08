@@ -440,7 +440,9 @@ public sealed class GpmService
                 domainName,
                 gpoId);
         }
-        catch (COMException gpmException)
+        catch (Exception gpmException)
+            when (!IsFatal(
+                gpmException))
         {
             try
             {
@@ -448,6 +450,8 @@ public sealed class GpmService
                     gpoId);
             }
             catch (Exception directoryException)
+                when (!IsFatal(
+                    directoryException))
             {
                 throw new InvalidOperationException(
                     BuildSecurityLoadDiagnostic(
@@ -540,10 +544,14 @@ public sealed class GpmService
                             SafeBool(() => permission.Inheritable)
                     });
             }
-            catch (COMException)
+            catch (Exception ex)
+                when (!IsFatal(
+                    ex))
             {
-                // A deleted or otherwise unresolvable trustee must not make
-                // the complete GPO security page unusable.
+                // A deleted, stale or otherwise unresolvable trustee must not
+                // make the complete GPO security page unusable. GPMC can
+                // surface these failures as COMException, FileNotFoundException
+                // or RuntimeBinderException depending on the trustee property.
             }
         }
 
@@ -744,7 +752,7 @@ public sealed class GpmService
     private static string BuildSecurityLoadDiagnostic(
         string domainName,
         Guid gpoId,
-        COMException gpmException,
+        Exception gpmException,
         Exception directoryException)
     {
         var builder =
@@ -1436,6 +1444,19 @@ public sealed class GpmService
                     gpo));
         }
 
+        if (extensionType.Equals(
+                "RegistrySettings",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            rows.AddRange(
+                ParseRegistrySettings(
+                    extension,
+                    scopeName,
+                    gpo));
+
+            return rows;
+        }
+
         var candidates = extension
             .Descendants()
             .Where(e =>
@@ -1529,6 +1550,159 @@ public sealed class GpmService
 
         return rows;
     }
+
+    private static IEnumerable<PolicySettingInfo> ParseRegistrySettings(
+        XElement extension,
+        string scopeName,
+        GpoInfo gpo)
+    {
+        foreach (var registrySetting in extension
+                     .Descendants()
+                     .Where(element =>
+                         element.Name.LocalName.Equals(
+                             "RegistrySetting",
+                             StringComparison.OrdinalIgnoreCase)))
+        {
+            var keyPath =
+                FirstNonEmpty(
+                    ChildValue(
+                        registrySetting,
+                        "KeyPath"),
+                    DescendantValue(
+                        registrySetting,
+                        "KeyPath"));
+
+            var admSetting =
+                FirstNonEmpty(
+                    ChildValue(
+                        registrySetting,
+                        "AdmSetting"),
+                    DescendantValue(
+                        registrySetting,
+                        "AdmSetting"));
+
+            var values =
+                registrySetting
+                    .Descendants()
+                    .Where(element =>
+                        element.Name.LocalName.Equals(
+                            "Value",
+                            StringComparison.OrdinalIgnoreCase))
+                    .ToArray();
+
+            if (values.Length == 0)
+            {
+                yield return new PolicySettingInfo
+                {
+                    GpoId = gpo.Id,
+                    GpoName = gpo.DisplayName,
+                    Scope = scopeName,
+                    Extension = "RegistrySettings",
+                    Category =
+                        IsFalseText(
+                            admSetting)
+                            ? "Registry > Extra Registry Settings"
+                            : "Registry",
+                    SettingName =
+                        string.IsNullOrWhiteSpace(
+                            keyPath)
+                            ? "Registry setting"
+                            : $"Registry: {keyPath}",
+                    State = "Configured",
+                    Value =
+                        string.IsNullOrWhiteSpace(
+                            admSetting)
+                            ? string.Empty
+                            : $"AdmSetting={admSetting}",
+                    RegistryKey = keyPath,
+                    RegistryValue = string.Empty
+                };
+
+                continue;
+            }
+
+            foreach (var valueElement in values)
+            {
+                var valueName =
+                    FirstNonEmpty(
+                        ChildValue(
+                            valueElement,
+                            "Name"),
+                        DescendantValue(
+                            valueElement,
+                            "Name"));
+
+                var valueParts =
+                    valueElement
+                        .Descendants()
+                        .Where(element =>
+                            !element.HasElements &&
+                            !element.Name.LocalName.Equals(
+                                "Name",
+                                StringComparison.OrdinalIgnoreCase))
+                        .Select(element =>
+                            $"{element.Name.LocalName}={element.Value.Trim()}")
+                        .Where(part =>
+                            !part.EndsWith(
+                                "=",
+                                StringComparison.Ordinal))
+                        .Distinct(
+                            StringComparer.CurrentCultureIgnoreCase)
+                        .Take(16)
+                        .ToArray();
+
+                var summary =
+                    new List<string>();
+
+                if (!string.IsNullOrWhiteSpace(
+                        admSetting))
+                {
+                    summary.Add(
+                        $"AdmSetting={admSetting}");
+                }
+
+                summary.AddRange(
+                    valueParts);
+
+                yield return new PolicySettingInfo
+                {
+                    GpoId = gpo.Id,
+                    GpoName = gpo.DisplayName,
+                    Scope = scopeName,
+                    Extension = "RegistrySettings",
+                    Category =
+                        IsFalseText(
+                            admSetting)
+                            ? "Registry > Extra Registry Settings"
+                            : "Registry",
+                    SettingName =
+                        string.IsNullOrWhiteSpace(
+                            valueName)
+                            ? string.IsNullOrWhiteSpace(
+                                keyPath)
+                                ? "Registry setting"
+                                : $"Registry: {keyPath}"
+                            : $"Registry: {valueName}",
+                    State = "Configured",
+                    Value =
+                        string.Join(
+                            "; ",
+                            summary),
+                    RegistryKey = keyPath,
+                    RegistryValue = valueName
+                };
+            }
+        }
+    }
+
+    private static bool IsFalseText(
+        string value) =>
+        value.Equals(
+            "false",
+            StringComparison.OrdinalIgnoreCase) ||
+        value.Equals(
+            "0",
+            StringComparison.OrdinalIgnoreCase);
 
     private static IEnumerable<PolicySettingInfo> ParseSecurityOptions(
         XElement extension,
@@ -1956,7 +2130,9 @@ public sealed class GpmService
                        getter())
                    ?? string.Empty;
         }
-        catch (COMException)
+        catch (Exception ex)
+            when (!IsFatal(
+                ex))
         {
             return string.Empty;
         }
@@ -1968,7 +2144,9 @@ public sealed class GpmService
         {
             return Convert.ToInt32(getter());
         }
-        catch (COMException)
+        catch (Exception ex)
+            when (!IsFatal(
+                ex))
         {
             return 0;
         }
@@ -1980,9 +2158,17 @@ public sealed class GpmService
         {
             return Convert.ToBoolean(getter());
         }
-        catch (COMException)
+        catch (Exception ex)
+            when (!IsFatal(
+                ex))
         {
             return false;
         }
     }
+
+    private static bool IsFatal(
+        Exception exception) =>
+        exception is OutOfMemoryException or
+                     StackOverflowException or
+                     AccessViolationException;
 }
