@@ -9,6 +9,7 @@ var tests = new (string Name, Action Body)[]
     ("PowerShell syntax parser reports malformed code without running it", TestPowerShellSyntaxDiagnostics),
     ("Script searches distinguish content and file metadata", TestScriptSearchModes),
     ("MMC navigation does not confuse audit and registry with security options", TestMmcNavigationRouting),
+    ("MMC policy names must match uniquely and exactly", TestMmcPolicyNameMatcher),
     ("Domain connection pins LDAP and SYSVOL", TestDomainConnectionPaths),
     ("DPAPI current-user round trip", TestDpapiRoundTrip),
     ("GPP XML cache refreshes after file change", TestGppXmlCache),
@@ -158,6 +159,43 @@ static void TestScriptSearchModes()
     {
         Directory.Delete(root, recursive: true);
     }
+}
+
+static void TestMmcPolicyNameMatcher()
+{
+    const string target = "Network security: LAN Manager authentication level";
+    var rows = new[]
+    {
+        "Network security: Restrict NTLM: NTLM authentication in this domain",
+        target,
+        "Network security: Restrict NTLM: Outgoing NTLM traffic to remote servers",
+        "Network security: LAN Manager authentication levels",
+        "Network security: Force logoff when logon hours expire"
+    };
+
+    Assert(MmcPolicyNameMatcher.FindUniqueMatch(rows, target) == 1,
+        "Native MMC lookup missed the LAN Manager policy among similar NTLM policies.");
+
+    Assert(MmcPolicyNameMatcher.FindUniqueMatch(rows, "Network security: LAN Manager") == -1,
+        "Unsafe partial prefix unexpectedly matched a different policy.");
+
+    Assert(MmcPolicyNameMatcher.FindUniqueMatch(new[] { target, target }, target) == -1,
+        "Ambiguous duplicate policy name should never be opened automatically.");
+
+    Assert(MmcPolicyNameMatcher.Exact("  Network   security: LAN Manager authentication level  ", target),
+        "MMC normalization should ignore whitespace differences.");
+
+    Assert(MmcPolicyNameMatcher.FindUniqueMatch(
+        new[] { "Network security: LAN Manager authenti..." }, target) == 0,
+        "A single explicitly truncated MMC label should be recognized.");
+
+    Assert(MmcPolicyNameMatcher.FindUniqueMatch(
+        new[] { "Network security: LAN Manager authenti...", "Network security: LAN Manager authenti..." },
+        target) == -1, "Ambiguous truncated MMC rows should never be activated.");
+
+    Assert(MmcPolicyNameMatcher.FindUniqueMatch(
+        new[] { "Network security: LAN Manager authentication" }, target) == -1,
+        "Non-ellipsis truncation is unsafe and must not count as a verified match.");
 }
 
 static void TestMmcNavigationRouting()

@@ -4,6 +4,14 @@
 
 - No unreleased changes yet.
 
+## 0.4.5 - 2026-10-08
+
+- Fixed exact MMC Security Options navigation when the requested parameter, such as **Network security: LAN Manager authentication level**, is not currently visible in the scrolled policy list.
+- Native list lookup now uses `LVM_FINDITEMW` with an exact full-name comparison, polls for delayed MMC list population and verifies the selected/focused row before opening it.
+- Strict native fallback matches only the Policy column, never an NTLM value from another column or an ambiguous partial name.
+- Better failure diagnostics distinguish MMC access/permission problems from genuinely missing policy names; failures are logged under `%LOCALAPPDATA%\\GPOSettingsExplorer\\Logs`.
+- Regression tests cover the LAN Manager setting among similarly named NTLM options, ellipsis-only matching and ambiguous duplicate labels.
+
 ## 0.4.4 - 2026-10-08
 
 - GPO Scripts search now supports **Content only**, **File names & paths**, and **Both**; the result grid identifies the match type and line number.
