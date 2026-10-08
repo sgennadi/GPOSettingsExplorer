@@ -48,6 +48,8 @@ public partial class MainWindow
         object sender,
         System.Windows.Controls.SelectionChangedEventArgs e)
     {
+        ScheduleWorkspaceControlRestore();
+
         if (!ReferenceEquals(
                 e.OriginalSource,
                 MainTabs) ||
