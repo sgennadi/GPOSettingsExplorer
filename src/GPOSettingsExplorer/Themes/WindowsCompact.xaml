@@ -258,6 +258,23 @@
         </Style.Triggers>
     </Style>
 
+    <Style x:Key="UiScriptDiagnosticRowStyle" TargetType="{x:Type DataGridRow}">
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding Severity}" Value="Error">
+                <Setter Property="Background" Value="{StaticResource UiMissingRowBrush}"/>
+                <Setter Property="Foreground" Value="{StaticResource UiErrorBrush}"/>
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Severity}" Value="Warning">
+                <Setter Property="Background" Value="{StaticResource UiPartialRowBrush}"/>
+                <Setter Property="Foreground" Value="{StaticResource UiWarningBrush}"/>
+            </DataTrigger>
+            <Trigger Property="IsSelected" Value="True">
+                <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/>
+                <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.HighlightTextBrushKey}}"/>
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
     <Style x:Key="UiScriptStatusTextStyle" TargetType="{x:Type TextBlock}">
         <Setter Property="TextWrapping" Value="NoWrap"/>
         <Style.Triggers>
