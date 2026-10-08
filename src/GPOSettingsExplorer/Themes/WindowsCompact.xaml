@@ -9,6 +9,23 @@
     <SolidColorBrush x:Key="UiMutedBrush" Color="#596779"/>
     <SolidColorBrush x:Key="UiSurfaceBrush" Color="#EFF3F8"/>
 
+    <!-- Semantic colors are centralized here; no per-window palettes. -->
+    <SolidColorBrush x:Key="UiDisabledRowBrush" Color="#EDF0F3"/>
+    <SolidColorBrush x:Key="UiPartialRowBrush" Color="#FFF7E7"/>
+    <SolidColorBrush x:Key="UiMissingRowBrush" Color="#FFF0EE"/>
+    <SolidColorBrush x:Key="UiUnassignedRowBrush" Color="#F5F6F8"/>
+    <SolidColorBrush x:Key="UiFileBatchBrush" Color="#1762A3"/>
+    <SolidColorBrush x:Key="UiFileCmdBrush" Color="#076C78"/>
+    <SolidColorBrush x:Key="UiFilePowerShellBrush" Color="#7443AC"/>
+    <SolidColorBrush x:Key="UiFileVbsBrush" Color="#A35C15"/>
+    <SolidColorBrush x:Key="UiFileJavaScriptBrush" Color="#A66A00"/>
+    <SolidColorBrush x:Key="UiFileOtherBrush" Color="#566477"/>
+    <SolidColorBrush x:Key="UiScriptCommentBrush" Color="#24834D"/>
+    <SolidColorBrush x:Key="UiScriptStringBrush" Color="#9A4E16"/>
+    <SolidColorBrush x:Key="UiScriptKeywordBrush" Color="#245BBB"/>
+    <SolidColorBrush x:Key="UiScriptVariableBrush" Color="#8450B2"/>
+    <SolidColorBrush x:Key="UiScriptNumberBrush" Color="#0B7484"/>
+
     <!--
         Compact native Windows-oriented styling.
         All dimensions are device-independent pixels (DIPs), so WPF scales them
@@ -142,6 +159,115 @@
         <Setter Property="EnableColumnVirtualization" Value="True"/>
         <Setter Property="UseLayoutRounding" Value="True"/>
         <Setter Property="SnapsToDevicePixels" Value="True"/>
+    </Style>
+
+    <!-- GPO states: disabled both scopes = grey; only one scope = amber. -->
+    <Style x:Key="UiGpoRowStyle" TargetType="{x:Type DataGridRow}">
+        <Style.Triggers>
+            <MultiDataTrigger>
+                <MultiDataTrigger.Conditions>
+                    <Condition Binding="{Binding ComputerEnabled}" Value="False"/>
+                    <Condition Binding="{Binding UserEnabled}" Value="False"/>
+                </MultiDataTrigger.Conditions>
+                <Setter Property="Background" Value="{StaticResource UiDisabledRowBrush}"/>
+                <Setter Property="Foreground" Value="{StaticResource UiMutedBrush}"/>
+            </MultiDataTrigger>
+            <MultiDataTrigger>
+                <MultiDataTrigger.Conditions>
+                    <Condition Binding="{Binding ComputerEnabled}" Value="True"/>
+                    <Condition Binding="{Binding UserEnabled}" Value="False"/>
+                </MultiDataTrigger.Conditions>
+                <Setter Property="Background" Value="{StaticResource UiPartialRowBrush}"/>
+            </MultiDataTrigger>
+            <MultiDataTrigger>
+                <MultiDataTrigger.Conditions>
+                    <Condition Binding="{Binding ComputerEnabled}" Value="False"/>
+                    <Condition Binding="{Binding UserEnabled}" Value="True"/>
+                </MultiDataTrigger.Conditions>
+                <Setter Property="Background" Value="{StaticResource UiPartialRowBrush}"/>
+            </MultiDataTrigger>
+            <Trigger Property="IsSelected" Value="True">
+                <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/>
+                <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.HighlightTextBrushKey}}"/>
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="UiPolicyRowStyle" TargetType="{x:Type DataGridRow}">
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding State}" Value="Disabled">
+                <Setter Property="Background" Value="{StaticResource UiDisabledRowBrush}"/>
+                <Setter Property="Foreground" Value="{StaticResource UiMutedBrush}"/>
+            </DataTrigger>
+            <DataTrigger Binding="{Binding State}" Value="Not Configured">
+                <Setter Property="Background" Value="{StaticResource UiDisabledRowBrush}"/>
+                <Setter Property="Foreground" Value="{StaticResource UiMutedBrush}"/>
+            </DataTrigger>
+            <Trigger Property="IsSelected" Value="True">
+                <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/>
+                <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.HighlightTextBrushKey}}"/>
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="UiScriptRowStyle" TargetType="{x:Type DataGridRow}">
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding Referenced}" Value="False">
+                <Setter Property="Background" Value="{StaticResource UiUnassignedRowBrush}"/>
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Exists}" Value="False">
+                <Setter Property="Background" Value="{StaticResource UiMissingRowBrush}"/>
+                <Setter Property="Foreground" Value="{StaticResource UiErrorBrush}"/>
+            </DataTrigger>
+            <Trigger Property="IsSelected" Value="True">
+                <Setter Property="Background" Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/>
+                <Setter Property="Foreground" Value="{DynamicResource {x:Static SystemColors.HighlightTextBrushKey}}"/>
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="UiScriptTypeTextStyle" TargetType="{x:Type TextBlock}">
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="TextWrapping" Value="NoWrap"/>
+        <Setter Property="Foreground" Value="{StaticResource UiFileOtherBrush}"/>
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding Type}" Value="BAT">
+                <Setter Property="Foreground" Value="{StaticResource UiFileBatchBrush}"/>
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Type}" Value="CMD">
+                <Setter Property="Foreground" Value="{StaticResource UiFileCmdBrush}"/>
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Type}" Value="PS1">
+                <Setter Property="Foreground" Value="{StaticResource UiFilePowerShellBrush}"/>
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Type}" Value="PSM1">
+                <Setter Property="Foreground" Value="{StaticResource UiFilePowerShellBrush}"/>
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Type}" Value="PSD1">
+                <Setter Property="Foreground" Value="{StaticResource UiFilePowerShellBrush}"/>
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Type}" Value="VBS">
+                <Setter Property="Foreground" Value="{StaticResource UiFileVbsBrush}"/>
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Type}" Value="JS">
+                <Setter Property="Foreground" Value="{StaticResource UiFileJavaScriptBrush}"/>
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="UiScriptMatchTextStyle" TargetType="{x:Type TextBlock}">
+        <Setter Property="TextWrapping" Value="NoWrap"/>
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding MatchType}" Value="Content">
+                <Setter Property="Foreground" Value="{StaticResource UiSuccessBrush}"/>
+            </DataTrigger>
+            <DataTrigger Binding="{Binding MatchType}" Value="File name">
+                <Setter Property="Foreground" Value="{StaticResource UiAccentBrush}"/>
+            </DataTrigger>
+            <DataTrigger Binding="{Binding MatchType}" Value="Parameters">
+                <Setter Property="Foreground" Value="{StaticResource UiWarningBrush}"/>
+            </DataTrigger>
+        </Style.Triggers>
     </Style>
 
     <DataTemplate x:Key="WrappingColumnHeaderTemplate">
