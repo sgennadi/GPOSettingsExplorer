@@ -11,6 +11,18 @@ public sealed class GpoInfo
     public bool UserEnabled { get; init; }
     public string WmiFilterName { get; init; } = string.Empty;
     public string WmiFilterPath { get; init; } = string.Empty;
+    public bool IsFavorite { get; set; }
+    public int RecentRank { get; set; } = int.MaxValue;
+
+    public string FavoriteMark =>
+        IsFavorite
+            ? "★"
+            : string.Empty;
+
+    public string RecentMark =>
+        RecentRank == int.MaxValue
+            ? string.Empty
+            : $"#{RecentRank}";
 
     public string ScopeState =>
         ComputerEnabled && UserEnabled ? "Computer + User" :
