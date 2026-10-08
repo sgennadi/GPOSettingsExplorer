@@ -22,7 +22,6 @@ public partial class MainWindow
     private readonly UpdateCheckStateService _updateCheckStateService =
         new();
 
-    private UpdateInfo? _lastUpdateInfo;
 
     private void Connection_Click(
         object sender,
@@ -362,9 +361,6 @@ public partial class MainWindow
             var update =
                 await _updateService.CheckAsync();
 
-            _lastUpdateInfo =
-                update;
-
             _updateCheckStateService.MarkSuccessful(
                 DateTime.UtcNow,
                 update.TagName);
@@ -538,9 +534,6 @@ public partial class MainWindow
 
             var update =
                 await _updateService.CheckAsync();
-
-            _lastUpdateInfo =
-                update;
 
             _updateCheckStateService.MarkSuccessful(
                 DateTime.UtcNow,
