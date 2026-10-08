@@ -18,6 +18,22 @@ internal static class UiStyle
     public static Brush WarningBrush => ThemeBrush("UiWarningBrush", Brushes.DarkOrange);
     public static Brush ErrorBrush => ThemeBrush("UiErrorBrush", Brushes.Firebrick);
     public static Brush MutedBrush => ThemeBrush("UiMutedBrush", SystemColors.GrayTextBrush);
+    public static Brush FileBatchBrush => ThemeBrush("UiFileBatchBrush", AccentBrush);
+    public static Brush FileCmdBrush => ThemeBrush("UiFileCmdBrush", AccentBrush);
+    public static Brush FilePowerShellBrush => ThemeBrush("UiFilePowerShellBrush", AccentBrush);
+    public static Brush FileOtherBrush => ThemeBrush("UiFileOtherBrush", MutedBrush);
+    public static Brush ScriptCommentBrush => ThemeBrush("UiScriptCommentBrush", SuccessBrush);
+    public static Brush ScriptStringBrush => ThemeBrush("UiScriptStringBrush", WarningBrush);
+    public static Brush ScriptKeywordBrush => ThemeBrush("UiScriptKeywordBrush", AccentBrush);
+    public static Brush ScriptVariableBrush => ThemeBrush("UiScriptVariableBrush", AccentBrush);
+    public static Brush ScriptNumberBrush => ThemeBrush("UiScriptNumberBrush", AccentBrush);
+
+    public static string ToRgbHex(Brush brush)
+    {
+        var color = (brush as SolidColorBrush)?.Color ?? Colors.Black;
+        return $"#{color.R:X2}{color.G:X2}{color.B:X2}";
+    }
+
 
     public static FontFamily MonospaceFontFamily =>
         CodeFont;
