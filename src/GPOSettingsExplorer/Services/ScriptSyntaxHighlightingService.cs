@@ -9,7 +9,7 @@ namespace GPOSettingsExplorer.Services;
 /// Runtime XSHD definitions. All colors originate in UiStyle / WindowsCompact.xaml.
 /// No scripts are ever executed while highlighting.
 /// </summary>
-internal static class ScriptSyntaxHighlightingService
+public static class ScriptSyntaxHighlightingService
 {
     public static IHighlightingDefinition? ForFile(string fileName)
     {
