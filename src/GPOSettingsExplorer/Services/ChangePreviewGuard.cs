@@ -48,12 +48,19 @@ public static class ChangePreviewGuard
 
         void Show()
         {
+            // During in-place script editing the editor is itself modal.
+            // Parent the confirmation to the active dialog so the approval
+            // stays visible and cannot be hidden behind a disabled main window.
+            var owner =
+                application.Windows.OfType<Window>()
+                    .Where(candidate => candidate.IsVisible && candidate.IsActive)
+                    .FirstOrDefault()
+                ?? application.MainWindow;
+
             var window =
-                new ChangePreviewWindow(
-                    request)
+                new ChangePreviewWindow(request)
                 {
-                    Owner =
-                        application.MainWindow
+                    Owner = owner
                 };
 
             approved =
