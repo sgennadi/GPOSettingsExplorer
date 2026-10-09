@@ -208,10 +208,8 @@ public static class MmcFullSettingsInventoryService
                 else if (!snapshot.HasList)
                 {
                     sections.Add(new MmcInventorySection(sectionPath,
-                        children.Count > 0 ? "Folder only" : "No list", 0,
-                        children.Count > 0
-                            ? "Container has child sections but no native list."
-                            : "No native SysListView32; custom/virtualized view may hide policy rows."));
+                        "No list", 0,
+                        "No native SysListView32 was exposed. Even a parent with child categories may contain policies in a custom/virtualized right pane."));
                 }
                 else
                 {
