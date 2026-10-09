@@ -30,6 +30,11 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
+        // Take the version from the running assembly, never from a hard-coded caption.
+        var version = typeof(MainWindow).Assembly.GetName().Version;
+        Title = "GPO Settings Explorer" +
+                (version is null ? "" : $" v{version.ToString(3)}");
+
         GpoGrid.ItemsSource = _gpos;
         SettingsGrid.ItemsSource = _settings;
         WmiGrid.ItemsSource = _wmiFilters;

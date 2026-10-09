@@ -112,6 +112,10 @@
                             <Button x:Name="RenameGpoButton" Content="Rename" Click="RenameGpo_Click"/>
                             <Button x:Name="DeleteGpoButton" Content="Delete" Click="DeleteGpo_Click"/>
                             <Button Content="Open editor" Click="OpenGpoEditor_Click"/>
+                            <Button Content="GPO Hierarchy &amp; Links"
+                                    Click="OpenHierarchyLinksTab_Click"
+                                    Style="{StaticResource UiPrimaryButton}"
+                                    ToolTip="Open the combined GPO hierarchy tree and link management pane."/>
                             <Button Content="Backup selected" Click="BackupSelectedGpo_Click"/>
                             <Button Content="Build settings index" Click="BuildSettingsIndex_Click"/>
                             <Separator Width="12"/>
@@ -1442,36 +1446,103 @@
                 </DockPanel>
             </TabItem>
 
-            <TabItem Header="GPO Links">
-                <DockPanel Margin="6">
-                    <WrapPanel DockPanel.Dock="Top">
-                        <TextBlock Text="Search links:" VerticalAlignment="Center"/>
-                        <TextBox x:Name="LinkSearchBox" Width="360" TextChanged="LinkSearchBox_TextChanged"/>
-                        <Button Content="Load links" Click="LoadLinks_Click"/>
-                        <Button Content="Hierarchy / Order..." Click="ShowGpoHierarchy_Click"
-                                ToolTip="Show site/domain/OU tree, link order and inheritance states"/>
-                        <Button Content="New link..." Click="NewLink_Click"/>
-                        <Button Content="Edit link..." Click="EditLink_Click"/>
-                        <Button Content="Remove link" Click="RemoveLink_Click"/>
-                        <Button Content="Toggle block inheritance" Click="ToggleBlockInheritance_Click"/>
-                        <TextBlock x:Name="LinksCountText" Margin="16,0,0,0" VerticalAlignment="Center" Foreground="DimGray"/>
-                    </WrapPanel>
-                    <DataGrid x:Name="LinksGrid" MouseDoubleClick="LinksGrid_MouseDoubleClick">
-                        <DataGrid.Columns>
-                            <DataGridTextColumn Header="GPO" Binding="{Binding GpoName}" Width="1.5*"/>
-                            <DataGridTextColumn Header="Target" Binding="{Binding TargetName}" Width="1.2*"/>
-                            <DataGridTextColumn Header="Type" Binding="{Binding TargetType}" Width="90"/>
-                            <DataGridTextColumn Header="Order" Binding="{Binding Order}" Width="70"/>
-                            <DataGridCheckBoxColumn Header="Enabled" Binding="{Binding Enabled, Mode=OneWay}" IsReadOnly="True"
-                                                    Width="80"/>
-                            <DataGridCheckBoxColumn Header="Enforced" Binding="{Binding Enforced, Mode=OneWay}" IsReadOnly="True"
-                                                    Width="80"/>
-                            <DataGridCheckBoxColumn Header="Block inheritance" Binding="{Binding BlockInheritance, Mode=OneWay}" IsReadOnly="True"
-                                                    Width="120"/>
-                            <DataGridTextColumn Header="Target DN" Binding="{Binding TargetDn}" Width="2.2*"/>
-                        </DataGrid.Columns>
-                    </DataGrid>
-                </DockPanel>
+            <TabItem x:Name="GpoLinksTab" Header="GPO Hierarchy &amp; Links">
+                <Grid Margin="6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="0.95*" MinWidth="245"/>
+                        <ColumnDefinition Width="7"/>
+                        <ColumnDefinition Width="1.65*" MinWidth="410"/>
+                    </Grid.ColumnDefinitions>
+
+                    <Border Grid.Column="0" Padding="9" Margin="0,0,2,0" BorderThickness="1"
+                            BorderBrush="{DynamicResource UiAccentBrush}" CornerRadius="5">
+                        <DockPanel>
+                            <StackPanel DockPanel.Dock="Top">
+                                <TextBlock Text="1  GPO HIERARCHY / ORDER"
+                                           FontWeight="SemiBold" Foreground="{DynamicResource UiAccentBrush}"/>
+                                <TextBlock Text="Browse Sites, Domain and OUs. Link order 1 has highest priority within its container."
+                                           TextWrapping="Wrap" Margin="0,4,0,7"
+                                           Foreground="{DynamicResource UiMutedBrush}"/>
+                                <WrapPanel>
+                                    <TextBox x:Name="HierarchySearchBox" MinWidth="135" Width="235"
+                                             ToolTip="Find an OU, site, domain or linked GPO"
+                                             TextChanged="HierarchySearchBox_TextChanged"/>
+                                    <Button Content="Expand" Click="ExpandGpoHierarchy_Click"/>
+                                    <Button Content="Collapse" Click="CollapseGpoHierarchy_Click"/>
+                                </WrapPanel>
+                                <WrapPanel>
+                                    <Button Content="Refresh hierarchy" Click="LoadLinks_Click"
+                                            Style="{StaticResource UiPrimaryButton}"/>
+                                    <Button Content="Full view..." Click="ShowGpoHierarchy_Click"/>
+                                    <Button Content="Export..." Click="ExportGpoHierarchy_Click"/>
+                                </WrapPanel>
+                                <TextBlock x:Name="HierarchyCountText" Margin="2,5,0,7"
+                                           Text="Open this tab to load the hierarchy."
+                                           Foreground="{DynamicResource UiMutedBrush}" TextWrapping="Wrap"/>
+                            </StackPanel>
+                            <TreeView x:Name="GpoHierarchyTree"
+                                      SelectedItemChanged="GpoHierarchyTree_SelectedItemChanged"
+                                      ScrollViewer.HorizontalScrollBarVisibility="Auto"/>
+                        </DockPanel>
+                    </Border>
+
+                    <GridSplitter Grid.Column="1" Width="7"
+                                  HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                                  Background="{DynamicResource {x:Static SystemColors.ControlDarkBrushKey}}"/>
+
+                    <Border Grid.Column="2" Margin="2,0,0,0" Padding="9" BorderThickness="1"
+                            BorderBrush="{DynamicResource {x:Static SystemColors.ControlDarkBrushKey}}"
+                            CornerRadius="5">
+                        <DockPanel>
+                            <StackPanel DockPanel.Dock="Top">
+                                <TextBlock Text="2  GPO LINKS / MANAGEMENT"
+                                           FontWeight="SemiBold" Foreground="{DynamicResource UiAccentBrush}"/>
+                                <TextBlock Text="Select a linked GPO in the tree on the left, then edit its link here. Changes require WRITE mode, preview and confirmation."
+                                           Foreground="{DynamicResource UiMutedBrush}"
+                                           TextWrapping="Wrap" Margin="0,4,0,7"/>
+                                <WrapPanel>
+                                    <TextBlock Text="Find link:" VerticalAlignment="Center"/>
+                                    <TextBox x:Name="LinkSearchBox" MinWidth="160" Width="245"
+                                             TextChanged="LinkSearchBox_TextChanged"/>
+                                    <Button Content="Refresh links" Click="LoadLinks_Click"/>
+                                    <Button Content="All links" Click="ShowAllGpoLinks_Click"
+                                            ToolTip="Clear OU selection and show every direct GPO link."/>
+                                </WrapPanel>
+                                <WrapPanel>
+                                    <Button Content="New link..." Click="NewLink_Click"/>
+                                    <Button Content="Edit selected link..." Click="EditLink_Click"
+                                            Style="{StaticResource UiPrimaryButton}"/>
+                                    <Button Content="Remove link" Click="RemoveLink_Click"/>
+                                    <Button Content="Toggle block inheritance" Click="ToggleBlockInheritance_Click"/>
+                                </WrapPanel>
+                                <TextBlock x:Name="LinksCountText" Margin="2,5,0,3"
+                                           Foreground="{DynamicResource UiMutedBrush}"/>
+                                <TextBlock x:Name="LinkSelectionHint"
+                                           Text="Select a GPO link in the tree or the list."
+                                           TextWrapping="Wrap" Margin="2,0,0,8"
+                                           Foreground="{DynamicResource UiMutedBrush}"/>
+                            </StackPanel>
+                            <DataGrid x:Name="LinksGrid" IsReadOnly="True"
+                                      MouseDoubleClick="LinksGrid_MouseDoubleClick"
+                                      SelectionChanged="LinksGrid_SelectionChanged">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="GPO" Binding="{Binding GpoName}" Width="1.5*"/>
+                                    <DataGridTextColumn Header="Target" Binding="{Binding TargetName}" Width="1.2*"/>
+                                    <DataGridTextColumn Header="Type" Binding="{Binding TargetType}" Width="90"/>
+                                    <DataGridTextColumn Header="Order" Binding="{Binding Order}" Width="70"/>
+                                    <DataGridCheckBoxColumn Header="Enabled" Binding="{Binding Enabled, Mode=OneWay}"
+                                                            IsReadOnly="True" Width="80"/>
+                                    <DataGridCheckBoxColumn Header="Enforced" Binding="{Binding Enforced, Mode=OneWay}"
+                                                            IsReadOnly="True" Width="80"/>
+                                    <DataGridCheckBoxColumn Header="Block inheritance"
+                                                            Binding="{Binding BlockInheritance, Mode=OneWay}"
+                                                            IsReadOnly="True" Width="120"/>
+                                    <DataGridTextColumn Header="Target DN" Binding="{Binding TargetDn}" Width="2.2*"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </DockPanel>
+                    </Border>
+                </Grid>
             </TabItem>
 
             <TabItem x:Name="SecurityTab"
@@ -1661,6 +1732,8 @@
                                     <DataGrid.Columns>
                                         <DataGridTextColumn Header="Type" Binding="{Binding Kind}" Width="120"/>
                                         <DataGridTextColumn Header="Overlap" Binding="{Binding OverlapStatus}" Width="165"/>
+                                        <DataGridTextColumn Header="RSoP / WMI / Security check"
+                                                            Binding="{Binding VerificationStatus}" Width="210"/>
                                         <DataGridTextColumn Header="Scope" Binding="{Binding Scope}" Width="90"/>
                                         <DataGridTextColumn Header="Setting" Binding="{Binding SettingName}" Width="1.8*"/>
                                         <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="1.4*"/>

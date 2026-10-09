@@ -59,6 +59,13 @@ public partial class MainWindow
             return;
         }
 
+        if (GpoLinksTab.IsSelected)
+        {
+            if (_linkTargets.Count == 0)
+                await LoadLinksAsync();
+            return;
+        }
+
         if (AllSettingsTab.IsSelected)
         {
             await EnsureSettingsIndexAsync(
