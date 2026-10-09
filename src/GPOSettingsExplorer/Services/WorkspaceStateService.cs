@@ -14,6 +14,9 @@ public sealed class WorkspaceState
     public double WindowHeight { get; set; } = 850;
     public bool WindowMaximized { get; set; }
     public int SelectedTabIndex { get; set; }
+    // v1 groups ADMX under All Settings and GPP editors under Preferences.
+    // Legacy v0 indices are migrated once when restoring older workspace files.
+    public int NavigationLayoutVersion { get; set; }
     public Guid? SelectedGpoId { get; set; }
     public string GpoSearch { get; set; } = string.Empty;
     public string SettingsSearch { get; set; } = string.Empty;
