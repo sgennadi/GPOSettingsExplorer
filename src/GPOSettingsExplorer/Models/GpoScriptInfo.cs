@@ -82,9 +82,20 @@ public sealed class GpoScriptSearchResult
 public sealed class GpoScriptDocument
 {
     public string Text { get; set; } = string.Empty;
-    public int CodePage { get; init; }
-    public bool EmitBom { get; init; }
-    public string OriginalSha256 { get; init; } = string.Empty;
-    public string NewLine { get; init; } = Environment.NewLine;
-    public string OriginalText { get; init; } = string.Empty;
+    public int CodePage { get; set; }
+    public bool EmitBom { get; set; }
+    public string OriginalSha256 { get; set; } = string.Empty;
+    public string NewLine { get; set; } = Environment.NewLine;
+    public string OriginalText { get; set; } = string.Empty;
+    public int OriginalCodePage { get; set; }
+    public bool OriginalEmitBom { get; set; }
+    public string OriginalNewLine { get; set; } = Environment.NewLine;
+
+    public bool FormatChanged =>
+        CodePage != OriginalCodePage ||
+        EmitBom != OriginalEmitBom ||
+        NewLine != OriginalNewLine;
+
+    public bool HasChanges =>
+        FormatChanged || !Text.Equals(OriginalText, StringComparison.Ordinal);
 }
