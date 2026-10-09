@@ -491,6 +491,17 @@ public partial class MainWindow
             return;
         }
 
+        // A working AD connection is not an Internet connection. Check
+        // GitHub reachability before contacting GitHub Releases or marking
+        // an update-check attempt. Offline DCs must remain silent.
+        if (!await GitHubConnectivityService.IsAvailableAsync())
+        {
+            UpdateButton.Content = "Updates offline";
+            UpdateButton.ToolTip =
+                "GitHub is unreachable. Automatic update checking is skipped.";
+            return;
+        }
+
         _updateCheckStateService.MarkAttempt(
             DateTime.UtcNow);
 
@@ -674,6 +685,18 @@ public partial class MainWindow
         object sender,
         RoutedEventArgs e)
     {
+        // Explicit click may recheck after connectivity returns. A failed
+        // GitHub reachability probe suppresses all release/download requests.
+        if (!await GitHubConnectivityService.IsAvailableAsync(force: true))
+        {
+            UpdateButton.Content = "Updates offline";
+            UpdateButton.ToolTip =
+                "GitHub is not reachable; no update request was sent.";
+            StatusText.Text =
+                "Offline: skipped update checking. Local GPO features remain available.";
+            return;
+        }
+
         SetBusy(
             true,
             "Checking for updates...");
