@@ -92,12 +92,12 @@ public static class MmcRouteAuditService
         if (root is null)
             throw new TimeoutException("MMC policy tree did not appear within the audit deadline.");
 
-        report.AppendLine("### Observed MMC tree (maximum 220 nodes, depth 7)");
-        var budget = 220;
-        SnapshotTree(root, report, 0, 7, ref budget, token, Array.Empty<string>());
-        report.AppendLine();
+        // Validate requested index routes BEFORE walking a potentially huge
+        // ADMX tree. The old 220-node snapshot could exhaust the deadline
+        // before representative paths were verified.
         report.AppendLine($"### All indexed MMC section paths ({targets.Length})");
-        report.AppendLine("This is a three-minute, read-only, bounded scan; any unchecked paths remain in the report.");
+        report.AppendLine("MMC routes are verified first, followed by a bounded tree snapshot. " +
+            "Any unverified or ambiguous paths remain explicit.");
 
         var found = 0;
         var missing = 0;
@@ -112,7 +112,7 @@ public static class MmcRouteAuditService
                 break;
             }
 
-            progress?.Report($"Checking {found + missing + errors + 1}/{targets.Length}: {target.Path}");
+            progress?.Report($"Checking {found + missing + errors + skipped + 1}/{targets.Length}: {target.Path}");
             var segments = target.Path.Split(" > ", StringSplitOptions.RemoveEmptyEntries);
             if (MmcInventorySafetyRules.ShouldSkipNode(segments, out var skipExplanation))
             {
@@ -121,7 +121,13 @@ public static class MmcRouteAuditService
                 skipped++;
                 continue;
             }
-            MmcInventoryDialogGuard.ThrowIfDialogOpen(process);
+            var preexistingDialog = MmcInventoryDialogGuard.FindVisibleDialog(process.Id);
+            if (preexistingDialog is not null)
+            {
+                report.AppendLine("[NOT CHECKED] " + target.Path);
+                report.AppendLine("    MMC dialog blocks safe inspection: " + preexistingDialog);
+                break;
+            }
             var node = root;
             var status = "FOUND";
             var detail = "";
@@ -130,6 +136,7 @@ public static class MmcRouteAuditService
                 token.ThrowIfCancellationRequested();
                 try
                 {
+                    MmcInventoryDialogGuard.ThrowIfDialogOpen(process);
                     // The root of the MMC policy tree has computer/user branches;
                     // every deeper level must be an immediate child.
                     var child = i == 0
@@ -154,6 +161,14 @@ public static class MmcRouteAuditService
                         detail = $"Stopped at segment {i + 1}/{segments.Length}: {segments[i]}. " +
                             $"Visible children: {DescribeChildren(node)}";
                         break;
+                    }
+
+                    var actualLabel = child.Current.Name ?? "";
+                    if (!actualLabel.Equals(segments[i], StringComparison.CurrentCultureIgnoreCase) &&
+                        MmcTreePathMatcher.SectionNameMatches(actualLabel, segments[i]))
+                    {
+                        detail += (detail.Length == 0 ? "" : " ") +
+                            $"Display-name alias at segment {i + 1}: {actualLabel}.";
                     }
 
                     node = child;
@@ -181,9 +196,43 @@ public static class MmcRouteAuditService
             }
         }
 
+        var uncheckedRoutes = targets.Length - found - missing - errors - skipped;
         report.AppendLine();
-        report.AppendLine($"SUMMARY: found={found}; missing={missing}; errors={errors}; skipped={skipped}; total={targets.Length}");
+        report.AppendLine(
+            $"SUMMARY: found={found}; missing={missing}; errors={errors}; skipped={skipped}; unchecked={uncheckedRoutes}; total={targets.Length}");
         report.AppendLine("FOUND confirms only a matching MMC tree path. It does not prove exact setting-dialog navigation.");
+        report.AppendLine();
+
+        const int snapshotNodeLimit = 1500;
+        const int snapshotDepthLimit = 12;
+        report.AppendLine($"### Observed MMC tree (limit {snapshotNodeLimit:N0} nodes, depth {snapshotDepthLimit})");
+        report.AppendLine("Tree details are a bounded diagnostic, NOT a complete list of ADMX policies.");
+        var remaining = snapshotNodeLimit;
+        var coverage = new TreeSnapshotCoverage();
+        if (uncheckedRoutes > 0 || DateTime.UtcNow >= deadline)
+        {
+            coverage.TimeLimitReached = true;
+            report.AppendLine("[PARTIAL] Tree snapshot omitted: the route audit reached its deadline.");
+        }
+        else
+        {
+            SnapshotTree(root, report, 0, snapshotDepthLimit,
+                ref remaining, token, Array.Empty<string>(), deadline,
+                process, coverage);
+        }
+
+        report.AppendLine(
+            $"TREE COVERAGE: {(coverage.IsComplete ? "BOUNDED COMPLETE" : "PARTIAL")}; " +
+            $"nodes={coverage.Visited:N0}; unsafe_skipped={coverage.UnsafeSkipped}; " +
+            $"depth_cutoffs={coverage.DepthCutoffs}; read_errors={coverage.ReadErrors}; " +
+            $"node_limit={coverage.NodeLimitReached}; deadline={coverage.TimeLimitReached}");
+        if (coverage.UnsafeSkipped > 0 || coverage.NodeLimitReached ||
+            coverage.TimeLimitReached || coverage.DepthCutoffs > 0 || coverage.ReadErrors > 0)
+        {
+            report.AppendLine("PARTIAL means additional MMC nodes may exist; it is NOT evidence that " +
+                "an unlisted GPO setting is missing or Not Configured.");
+        }
+
         var directory = StoragePaths.Audit;
         Directory.CreateDirectory(directory);
         var file = Path.Combine(directory,
@@ -208,15 +257,15 @@ public static class MmcRouteAuditService
     {
         var condition = new PropertyCondition(
             AutomationElement.ControlTypeProperty, ControlType.TreeItem);
-        var children = parent.FindAll(TreeScope.Children, condition);
-        foreach (AutomationElement child in children)
-        {
-            var actual = child.Current.Name?.Trim() ?? "";
-            if (actual.Equals(segment, StringComparison.CurrentCultureIgnoreCase) ||
-                actual.StartsWith(segment + " (", StringComparison.CurrentCultureIgnoreCase))
-                return child;
-        }
-        return null;
+        var children = parent.FindAll(TreeScope.Children, condition)
+            .Cast<AutomationElement>().ToArray();
+        var labels = children.Select(child => child.Current.Name ?? "").ToArray();
+        var index = MmcTreePathMatcher.FindUniqueIndex(labels, segment);
+        if (index == MmcTreePathMatcher.Ambiguous)
+            throw new InvalidOperationException(
+                $"Ambiguous MMC child section '{segment}': multiple matching nodes. " +
+                "Exact navigation was refused.");
+        return index < 0 ? null : children[index];
     }
 
     private static void Expand(AutomationElement node)
@@ -241,49 +290,122 @@ public static class MmcRouteAuditService
         catch (ElementNotAvailableException) { return "<MMC changed the tree>"; }
     }
 
+    private sealed class TreeSnapshotCoverage
+    {
+        public int Visited { get; set; }
+        public int UnsafeSkipped { get; set; }
+        public int DepthCutoffs { get; set; }
+        public int ReadErrors { get; set; }
+        public bool NodeLimitReached { get; set; }
+        public bool TimeLimitReached { get; set; }
+        public bool IsComplete =>
+            Visited > 0 && UnsafeSkipped == 0 && DepthCutoffs == 0 &&
+            ReadErrors == 0 && !NodeLimitReached && !TimeLimitReached;
+    }
+
     private static void SnapshotTree(
         AutomationElement parent, StringBuilder report, int depth,
         int maxDepth, ref int remaining, CancellationToken token,
-        IReadOnlyList<string> ancestors)
+        IReadOnlyList<string> ancestors, DateTime deadline,
+        Process process, TreeSnapshotCoverage coverage)
     {
-        if (remaining <= 0 || depth > maxDepth)
+        if (DateTime.UtcNow >= deadline)
+        {
+            coverage.TimeLimitReached = true;
             return;
+        }
+
+        if (remaining <= 0)
+        {
+            coverage.NodeLimitReached = true;
+            return;
+        }
 
         AutomationElementCollection nodes;
         try
         {
+            MmcInventoryDialogGuard.ThrowIfDialogOpen(process);
             nodes = parent.FindAll(TreeScope.Children,
                 new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.TreeItem));
         }
-        catch (COMException) { return; }
-        catch (ElementNotAvailableException) { return; }
+        catch (Exception ex) when (ex is COMException or ElementNotAvailableException
+                                   or InvalidOperationException)
+        {
+            coverage.ReadErrors++;
+            report.AppendLine(new string(' ', Math.Max(0, depth * 2)) +
+                "[READ ERROR] " + ex.Message);
+            return;
+        }
 
         foreach (AutomationElement node in nodes)
         {
             token.ThrowIfCancellationRequested();
-            if (--remaining <= 0)
+            if (remaining <= 0)
+            {
+                coverage.NodeLimitReached = true;
                 break;
+            }
+            if (DateTime.UtcNow >= deadline)
+            {
+                coverage.TimeLimitReached = true;
+                break;
+            }
+
+            remaining--;
+            coverage.Visited++;
             try
             {
-                var name = node.Current.Name;
+                MmcInventoryDialogGuard.ThrowIfDialogOpen(process);
+                var name = node.Current.Name ?? "<unnamed node>";
                 var path = ancestors.Append(name).ToArray();
-                report.AppendLine(new string(' ', depth * 2) + "- " + name);
+                var indent = new string(' ', depth * 2);
+                report.AppendLine(indent + "- " + name);
+
                 if (MmcInventorySafetyRules.ShouldSkipNode(path, out var reason))
                 {
-                    report.AppendLine(new string(' ', depth * 2 + 2) +
-                        "[SKIPPED: unsafe snap-in] " + reason);
+                    coverage.UnsafeSkipped++;
+                    report.AppendLine(indent + "  [SKIPPED: unsafe snap-in] " + reason);
                     continue;
                 }
-                if (depth < maxDepth)
+
+                if (depth >= maxDepth)
                 {
-                    Expand(node);
-                    SnapshotTree(node, report, depth + 1,
-                        maxDepth, ref remaining, token, path);
+                    // We do not expand a node beyond the depth limit. If it
+                    // exposes children through ExpandCollapse, report that
+                    // its descendants were deliberately not inspected.
+                    if (node.TryGetCurrentPattern(ExpandCollapsePattern.Pattern,
+                            out var raw) &&
+                        raw is ExpandCollapsePattern expand &&
+                        expand.Current.ExpandCollapseState != ExpandCollapseState.LeafNode)
+                    {
+                        coverage.DepthCutoffs++;
+                        report.AppendLine(indent + "  [NOT EXPANDED: depth limit]");
+                    }
+                    continue;
+                }
+
+                Expand(node);
+                SnapshotTree(node, report, depth + 1, maxDepth,
+                    ref remaining, token, path, deadline, process, coverage);
+                if (coverage.TimeLimitReached || coverage.NodeLimitReached)
+                    break;
+            }
+            catch (Exception ex) when (ex is COMException or ElementNotAvailableException
+                                       or InvalidOperationException)
+            {
+                coverage.ReadErrors++;
+                report.AppendLine(new string(' ', depth * 2) +
+                    "[READ ERROR] " + ex.Message);
+                // If an MMC modal popup was triggered by an extension, stop
+                // rather than continuing blind into further snap-in nodes.
+                if (MmcInventoryDialogGuard.FindVisibleDialog(process.Id) is not null)
+                {
+                    coverage.TimeLimitReached = true;
+                    report.AppendLine("[PARTIAL] Visible MMC dialog; traversal stopped. " +
+                        "The dialog was NOT dismissed automatically.");
+                    break;
                 }
             }
-            catch (COMException) { }
-            catch (ElementNotAvailableException) { }
-            catch (InvalidOperationException) { }
         }
     }
 }

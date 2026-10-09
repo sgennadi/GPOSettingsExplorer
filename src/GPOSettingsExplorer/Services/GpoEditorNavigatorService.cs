@@ -612,15 +612,15 @@ public sealed class GpoEditorNavigatorService
                 return null;
             }
 
-            foreach (AutomationElement item in items)
-            {
-                if (ElementNameMatches(
-                        item,
-                        name))
-                {
-                    return item;
-                }
-            }
+            var rows = items.Cast<AutomationElement>().ToArray();
+            var labels = rows.Select(item => item.Current.Name ?? "").ToArray();
+            var index = MmcTreePathMatcher.FindUniqueIndex(labels, name);
+            // Ambiguous tree nodes are never safe edit targets. A matching
+            // policy row name in another section must not become a shortcut.
+            if (index == MmcTreePathMatcher.Ambiguous)
+                return null;
+            if (index >= 0)
+                return rows[index];
 
             TryExpand(
                 parent);

@@ -4,6 +4,16 @@
 
 - No unreleased changes yet.
 
+## 0.7.1 - 2026-10-09
+
+- Fix an MMC Route Audit false MISSING for Computer Configuration > Policies > Administrative Templates when MMC presents the section as **Administrative Templates: Policy definitions (ADMX files) retrieved from the central store**. Exact and recognized ADMX-store captions are matched conservatively; broad fuzzy prefix matches remain disallowed.
+- Reuse the strict unique tree label matcher for exact Group Policy editor tree navigation. If multiple matching MMC child labels exist, navigation refuses to guess and the audit records an error.
+- Verify indexed MMC section paths before capturing the diagnostic tree, so a long ADMX expansion cannot consume the route verification window first. Increase the tree snapshot cap from 220 nodes/depth 7 to 1,500 nodes/depth 12, bounded by the same deadline.
+- Mark scan coverage explicitly as PARTIAL when unsafe snap-ins were skipped, snapshot node/depth/time limits were hit, or UI Automation nodes failed. Separate route summary counts include unchecked paths, and recognized ADMX display-name aliases are shown in the report.
+- Do not automatically dismiss modal MMC errors; an unsafe dialog prevents further unattended path checks. The MMC process is left open for operator review.
+- Add regression tests for central/local ADMX display labels, duplicate nodes, unrelated names, and the exact YOSH-DC03 report's missing route.
+- No GPO settings, SYSVOL content, or AD links are written by MMC audit. Live validation on a test GPO is still necessary.
+
 ## 0.7.0 - 2026-10-09
 
 - Replace competing ADMX/GPMC/MMC main settings views with one **All Settings / Unified Catalog**. Browse by text, source, state and GPO; see verified source evidence, state/value, capability, registry target and path in one virtualized WPF grid.
