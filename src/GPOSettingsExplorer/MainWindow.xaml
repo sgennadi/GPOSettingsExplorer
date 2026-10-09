@@ -1448,6 +1448,8 @@
                         <TextBlock Text="Search links:" VerticalAlignment="Center"/>
                         <TextBox x:Name="LinkSearchBox" Width="360" TextChanged="LinkSearchBox_TextChanged"/>
                         <Button Content="Load links" Click="LoadLinks_Click"/>
+                        <Button Content="Hierarchy / Order..." Click="ShowGpoHierarchy_Click"
+                                ToolTip="Show site/domain/OU tree, link order and inheritance states"/>
                         <Button Content="New link..." Click="NewLink_Click"/>
                         <Button Content="Edit link..." Click="EditLink_Click"/>
                         <Button Content="Remove link" Click="RemoveLink_Click"/>
