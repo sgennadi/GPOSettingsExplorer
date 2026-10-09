@@ -8,6 +8,8 @@ var tests = new (string Name, Action Body)[]
     ("AvalonEdit BAT and PowerShell syntax definitions load", TestScriptHighlighting),
     ("PowerShell syntax parser reports malformed code without running it", TestPowerShellSyntaxDiagnostics),
     ("Script searches distinguish content and file metadata", TestScriptSearchModes),
+    ("Identical GPO script copies resolve without implicit mass edit", TestGpoScriptCopyResolution),
+    ("Public Key, NRPT and MSI metadata route to the right MMC sections", TestExtendedMmcSectionRouting),
     ("MMC navigation does not confuse audit and registry with security options", TestMmcNavigationRouting),
     ("MMC policy names must match uniquely and exactly", TestMmcPolicyNameMatcher),
     ("Domain connection pins LDAP and SYSVOL", TestDomainConnectionPaths),
@@ -159,6 +161,86 @@ static void TestScriptSearchModes()
     {
         Directory.Delete(root, recursive: true);
     }
+}
+
+static void TestGpoScriptCopyResolution()
+{
+    var gpoA = Guid.NewGuid();
+    var gpoB = Guid.NewGuid();
+    var sourceA = new GpoScriptInfo
+    {
+        GpoId = gpoA, GpoName = "GPO A", Scope = "Computer",
+        EventName = "Startup", FileName = "deploy.bat",
+        FullPath = @"\\server\SYSVOL\Policies\A\deploy.bat",
+        Exists = true, Referenced = true
+    };
+    var sourceB = new GpoScriptInfo
+    {
+        GpoId = gpoB, GpoName = "GPO B", Scope = "Computer",
+        EventName = "Startup", FileName = "deploy.bat",
+        FullPath = @"\\server\SYSVOL\Policies\B\deploy.bat",
+        Exists = true, Referenced = true
+    };
+    var result = new GpoScriptSearchResult
+    {
+        Identity = "same sha256",
+        Scripts = new[] { sourceB, sourceA, sourceB }
+    };
+    Assert(result.CopyCount == 2 && result.HasMultipleCopies &&
+           result.CopiesLabel == "2 copies",
+        "Identical scripts should show an interactive two-copy counter.");
+    var unique = GpoScriptCopyResolver.PhysicalCopies(result);
+    Assert(unique.Count == 2, "The viewer should deduplicate identical physical paths.");
+    Assert(GpoScriptCopyResolver.PreferredCopy(result, gpoA)?.FullPath == sourceA.FullPath,
+        "Editing from the selected GPO must use only that GPO's physical script.");
+    Assert(GpoScriptCopyResolver.PreferredCopy(result, null, sourceB.FullPath)?.GpoId == gpoB,
+        "Explicitly selected physical copy must be retained.");
+    Assert(GpoScriptCopyResolver.PreferredCopy(result)?.GpoName == "GPO A",
+        "No-scope default must be deterministic.");
+    Assert(GpoScriptCopyResolver.PreferredCopy(
+        new GpoScriptSearchResult { Scripts = new[] { sourceA } })?.GpoId == gpoA,
+        "One-copy result must open without a chooser.");
+}
+
+static void TestExtendedMmcSectionRouting()
+{
+    var path = GpoEditorNavigatorService.NavigationTarget(new PolicySettingInfo
+    {
+        Extension = "PublicKeySettings", Scope = "Computer",
+        SettingName = "Root Certificate Settings", Category = "PublicKeySettings"
+    });
+    Assert(path.EndsWith(
+        "Security Settings > Public Key Policies > Trusted Root Certification Authorities",
+        StringComparison.Ordinal),
+        "Root Certificate Settings was not routed into Public Key Policies.");
+
+    var nrpt = GpoEditorNavigatorService.NavigationTarget(new PolicySettingInfo
+    {
+        Extension = "NrptSettings", Scope = "Computer",
+        SettingName = "Fallback"
+    });
+    Assert(nrpt.EndsWith("Policies > Windows Settings > Name Resolution Policy",
+        StringComparison.Ordinal), "NRPT fell back to unrelated Security Settings.");
+
+    var software = GpoEditorNavigatorService.NavigationTarget(new PolicySettingInfo
+    {
+        Extension = "SoftwareInstallationSettings", Scope = "Computer",
+        SettingName = "Trustee Auditing"
+    });
+    Assert(software.EndsWith(
+        "Computer Configuration > Policies > Software Settings > Software installation",
+        StringComparison.Ordinal), "Trustee Auditing should point to Software installation package security.");
+    Assert(!new GpoEditorNavigatorService().CanNavigateExactly(new PolicySettingInfo
+    {
+        Extension = "SoftwareInstallationSettings", Scope = "Computer",
+        SettingName = "Trustee Auditing"
+    }), "Nested package ACL metadata cannot be opened as a Security Option.");
+
+    var notMapped = GpoPolicySectionRoutes.Resolve(new PolicySettingInfo
+    {
+        Extension = "RegistrySettings", Scope = "Computer", SettingName = "Registry: raw"
+    });
+    Assert(notMapped.Count == 0, "Raw registry.pol navigation must remain unchanged.");
 }
 
 static void TestMmcPolicyNameMatcher()
