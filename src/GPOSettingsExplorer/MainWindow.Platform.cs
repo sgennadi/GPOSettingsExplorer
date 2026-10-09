@@ -256,36 +256,52 @@ public partial class MainWindow
 
         if (target is PolicySettingInfo setting)
         {
-            MainTabs.SelectedItem =
-                AllSettingsTab;
+            MainTabs.SelectedItem = AllSettingsTab;
+            await EnsureUnifiedCatalogReadyAsync();
+            if (UnifiedAllGposCheckBox.IsChecked == false)
+            {
+                UnifiedAllGposCheckBox.IsChecked = true;
+                await RefreshUnifiedCatalogAsync();
+            }
+            UnifiedSearchBox.Text = string.Empty;
+            UnifiedSourceCombo.SelectedIndex = 0;
+            UnifiedStateCombo.SelectedIndex = 0;
 
-            var selected =
-                _settings.FirstOrDefault(
-                    item =>
-                        item.GpoId ==
-                        setting.GpoId &&
-                        item.Scope.Equals(
-                            setting.Scope,
-                            StringComparison.OrdinalIgnoreCase) &&
-                        item.SettingName.Equals(
-                            setting.SettingName,
-                            StringComparison.CurrentCultureIgnoreCase))
+            var selected = _settings.FirstOrDefault(item =>
+                item.GpoId == setting.GpoId &&
+                item.Scope.Equals(setting.Scope, StringComparison.OrdinalIgnoreCase) &&
+                item.SettingName.Equals(setting.SettingName, StringComparison.CurrentCultureIgnoreCase) &&
+                item.Category.Equals(setting.Category, StringComparison.CurrentCultureIgnoreCase))
                 ?? setting;
+            var unified = _unifiedRows.FirstOrDefault(row =>
+                ReferenceEquals(row.Configured, selected) ||
+                (row.Configured?.GpoId == selected.GpoId &&
+                 row.Configured.Scope.Equals(selected.Scope, StringComparison.OrdinalIgnoreCase) &&
+                 row.Configured.SettingName.Equals(selected.SettingName, StringComparison.CurrentCultureIgnoreCase) &&
+                 row.Configured.Category.Equals(selected.Category, StringComparison.CurrentCultureIgnoreCase)));
 
-            SettingsGrid.SelectedItem =
-                selected;
-
-            SettingsGrid.ScrollIntoView(
-                selected);
+            if (unified is not null)
+            {
+                UnifiedSettingsGrid.SelectedItem = unified;
+                UnifiedSettingsGrid.ScrollIntoView(unified);
+                UnifiedSettingsGrid.Focus();
+            }
+            else
+            {
+                // Retain legacy selection for an item whose index changed during
+                // the live reload. Never choose a same-name policy elsewhere.
+                AdvancedSourcesExpander.IsExpanded = true;
+                AllSettingsSubTabs.SelectedIndex = 0;
+                SettingsGrid.SelectedItem = selected;
+                SettingsGrid.ScrollIntoView(selected);
+            }
 
             if (openExact)
             {
-                MarkGpoRecent(
-                    setting.GpoId);
-
+                SettingsGrid.SelectedItem = selected;
+                MarkGpoRecent(setting.GpoId);
                 await EditSelectedSettingAsync();
             }
-
             return;
         }
 
@@ -306,8 +322,24 @@ public partial class MainWindow
             if (grid is null)
                 continue;
 
-            MainTabs.SelectedItem =
-                tab;
+            MainTabs.SelectedItem = tab;
+            DependencyObject editorRoot = root;
+            if (ReferenceEquals(tab, GppPreferencesTab))
+            {
+                // The former top-level GPP tabs are now child tabs. Activate
+                // the owning editor (including nested Files/Users subtabs)
+                // before choosing a source-specific edit command.
+                ActivateNestedSourceTabs(root, target);
+                foreach (var candidate in GppPreferencesTabs.Items.OfType<TabItem>())
+                {
+                    if (candidate.Content is DependencyObject candidateRoot &&
+                        FindDataGridContaining(candidateRoot, target, out _) is not null)
+                    {
+                        editorRoot = candidateRoot;
+                        break;
+                    }
+                }
+            }
 
             if (!filtered)
             {
@@ -325,7 +357,7 @@ public partial class MainWindow
                         target);
 
                     if (!TryInvokeSourceEditor(
-                            root))
+                            editorRoot))
                     {
                         StatusText.Text =
                             "The item was selected in its source tab; no dedicated editor action was found.";
@@ -351,6 +383,29 @@ public partial class MainWindow
             "Global Search",
             MessageBoxButton.OK,
             MessageBoxImage.Information);
+    }
+
+    private static void ActivateNestedSourceTabs(
+        DependencyObject root, object target)
+    {
+        foreach (var child in LogicalTreeHelper.GetChildren(root))
+        {
+            if (child is System.Windows.Controls.TabControl tabs)
+            {
+                foreach (var tab in tabs.Items.OfType<TabItem>())
+                {
+                    if (tab.Content is not DependencyObject inside ||
+                        FindDataGridContaining(inside, target, out _) is null)
+                        continue;
+                    tabs.SelectedItem = tab;
+                    ActivateNestedSourceTabs(inside, target);
+                    return;
+                }
+            }
+
+            if (child is DependencyObject dependency)
+                ActivateNestedSourceTabs(dependency, target);
+        }
     }
 
     private void MarkRecentFromObject(
