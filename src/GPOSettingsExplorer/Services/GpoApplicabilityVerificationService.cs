@@ -278,13 +278,16 @@ public sealed class GpoApplicabilityVerificationService
 
         foreach (var id in ids)
         {
-            var match = entries.FirstOrDefault(e => e.Id == id);
-            if (match is null)
+            var matches = entries.Where(e => e.Id == id).ToArray();
+            if (matches.Length != 1)
             {
-                details.Add($"{id:B}: not identified in the scope GPO list (unknown, NOT proof of filtering)");
+                details.Add(matches.Length == 0
+                    ? $"{id:B}: not identified in the scope GPO list (unknown, NOT proof of filtering)"
+                    : $"{id:B}: duplicated GPO records in the scope list; ambiguous result");
                 allApplied = false;
                 continue;
             }
+            var match = matches[0];
 
             if (match.FilterAllowed == false || match.AccessDenied == true ||
                 match.Enabled == false || match.IsValid == false)
@@ -293,7 +296,8 @@ public sealed class GpoApplicabilityVerificationService
                 excluded = true;
                 allApplied = false;
             }
-            else if (match.FilterAllowed == true && match.AccessDenied == false)
+            else if (match.FilterAllowed == true && match.AccessDenied == false &&
+                     match.Enabled == true && match.IsValid == true)
                 details.Add($"{id:B}: applied on this sample");
             else
             {
