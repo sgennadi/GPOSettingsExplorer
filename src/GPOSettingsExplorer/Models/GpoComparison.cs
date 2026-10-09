@@ -35,14 +35,18 @@ public sealed class GpoConflictInfo
     public string Kind { get; init; } = "Different values";
     public string OverlapStatus { get; init; } = "Unknown";
     public string LinkEvidence { get; init; } = string.Empty;
-    public string Recommendation { get; init; } = string.Empty;
+    public string Recommendation { get; set; } = string.Empty;
+    public string VerificationStatus { get; set; } = "Not checked";
+    public string RsopEvidence { get; set; } = "Not checked on a target computer.";
+    public string WmiEvidence { get; set; } = "Not checked on a target computer.";
+    public string SecurityEvidence { get; set; } = "Not checked on a target computer.";
     public string PriorityNote { get; init; } = string.Empty;
     public bool IsPotentialOverlap { get; init; }
     public IReadOnlyList<PolicySettingInfo> Participants { get; init; } =
         Array.Empty<PolicySettingInfo>();
 
     public string SearchText =>
-        Kind + " " + OverlapStatus + " " + LinkEvidence + " " +
+        Kind + " " + OverlapStatus + " " + VerificationStatus + " " + LinkEvidence + " " + RsopEvidence + " " + WmiEvidence + " " + SecurityEvidence + " " +
         Recommendation + " " +
         $"{Scope} {SettingName} {Category} {RegistryKey} {RegistryValue} {Gpos} {Variants}";
 }
