@@ -112,6 +112,10 @@
                             <Button x:Name="RenameGpoButton" Content="Rename" Click="RenameGpo_Click"/>
                             <Button x:Name="DeleteGpoButton" Content="Delete" Click="DeleteGpo_Click"/>
                             <Button Content="Open editor" Click="OpenGpoEditor_Click"/>
+                            <Button Content="GPO Hierarchy &amp; Links"
+                                    Click="OpenHierarchyLinksTab_Click"
+                                    Style="{StaticResource UiPrimaryButton}"
+                                    ToolTip="Open the combined GPO hierarchy tree and link management pane."/>
                             <Button Content="Backup selected" Click="BackupSelectedGpo_Click"/>
                             <Button Content="Build settings index" Click="BuildSettingsIndex_Click"/>
                             <Separator Width="12"/>
