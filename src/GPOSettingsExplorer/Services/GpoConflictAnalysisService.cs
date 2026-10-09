@@ -99,10 +99,21 @@ public static class GpoConflictAnalysisService
         GpoLinkInfo[] links,
         IReadOnlyDictionary<Guid, GpoInfo> gpos)
     {
-        if (participants.All(s => gpos.TryGetValue(s.GpoId, out var gpo) &&
-              !(s.Scope.Equals("User", StringComparison.OrdinalIgnoreCase)
-                  ? gpo.UserEnabled : gpo.ComputerEnabled)))
-            return ("Scopes disabled", "These GPO scopes are currently disabled.", false);
+        var activeParticipants = participants.Where(s =>
+            !gpos.TryGetValue(s.GpoId, out var gpo) ||
+            (s.Scope.Equals("User", StringComparison.OrdinalIgnoreCase)
+                ? gpo.UserEnabled : gpo.ComputerEnabled)).ToArray();
+
+        if (activeParticipants.Length < 2)
+            return ("Not simultaneously active",
+                "At least one required Computer/User Configuration scope is currently " +
+                "disabled, so this snapshot does not establish a simultaneous active conflict. " +
+                "Retain this finding for future enablement review.", false);
+
+        // Exclude links whose GPO policy scope is disabled before comparing
+        // affected target containers.
+        var activeGpoIds = activeParticipants.Select(s => s.GpoId).ToHashSet();
+        links = links.Where(l => activeGpoIds.Contains(l.GpoId)).ToArray();
 
         if (links.Length == 0)
             return ("Unknown / no links loaded",
