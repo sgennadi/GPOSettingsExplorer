@@ -4,6 +4,15 @@
 
 - No unreleased changes yet.
 
+## 0.6.0 - 2026-10-09
+
+- Added **MMC Full Settings Inventory** as an inner view of the existing **All Settings** tab (no new top-level tab). Select a reference GPO and explicitly launch a read-only native MMC tree and policy list scan; cancel while running.
+- Scans the real MMC tree through UI Automation and reads right-pane SysListView32 first-column names and secondary values without opening setting dialogs. Supports search, exact-row navigation with literal-path and unique-name checks, CSV export, and per-section coverage/error diagnostics.
+- Reconciles observed rows conservatively with GPMC's configured settings index and cached ADMX policy definitions using GPO ID, scope, name and section path. A missing GPMC setting is **not** treated as Not Configured, and no setting is fabricated from ADMX when absent from MMC.
+- Marks scan coverage PARTIAL on inaccessible nodes, non-native/custom views, timeouts, limits or cancellation. Hard bounds: 10 minutes, 4,000 nodes, 18 tree levels, 12,000 rows per section and 100,000 rows overall. A finished scan never claims universal snap-in support or effective RSoP.
+- Preserves the existing exact Security Options navigator; scanning creates no GPO write, backup, merge or unlink. A setting dialog opens only after an explicit action and literal name verification.
+- Adds regression tests covering GPMC/ADMX correlation, false Not Configured prevention, name collisions, source status and incomplete coverage.
+
 ## 0.5.2 - 2026-10-09
 
 - Fix empty `Before` / `After` for newly committed **Edit GPO Script** audit events. Capture original SYSVOL file bytes and return before/after evidence only after script byte verification and GPO Scripts extension commit.
