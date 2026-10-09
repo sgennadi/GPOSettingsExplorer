@@ -144,7 +144,13 @@ public partial class MainWindow
             $"{rows.Length:N0} shown / {_conflictRows.Count:N0} differences and duplicates (RSoP not proven)";
     }
 
-    private void ConflictGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+    private void ConflictGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e) =>
+        ShowConflictDetails();
+
+    private void ConflictDetails_Click(object sender, RoutedEventArgs e) =>
+        ShowConflictDetails();
+
+    private void ShowConflictDetails()
     {
         if (ConflictGrid.SelectedItem is not GpoConflictInfo conflict)
             return;
