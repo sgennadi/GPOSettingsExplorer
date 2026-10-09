@@ -4,6 +4,17 @@
 
 - No unreleased changes yet.
 
+## 0.7.0 - 2026-10-09
+
+- Replace competing ADMX/GPMC/MMC main settings views with one **All Settings / Unified Catalog**. Browse by text, source, state and GPO; see verified source evidence, state/value, capability, registry target and path in one virtualized WPF grid.
+- Join GPMC configured rows to ADMX and a selected GPO's read-only MMC observations conservatively, matching GPO ID, scope, category, policy name and unique registry targets. Never infer Not Configured from the absence of GPMC XML; ADMX templates are labeled **Template - state unknown** until a target is read.
+- Connect unified row actions to the existing backed-up ADMX editor, supported security editor and verified native MMC row opening; unsupported types stay read-only or open GPMC manually. Preserve safe-mode/write-confirmation requirements.
+- Preserve the original configured GPMC, MMC inventory and ADMX data grids under collapsed **Advanced sources and diagnostics** inside All Settings, instead of deleting diagnostic capabilities.
+- Remove the separate top-level ADMX Catalog tab and group sixteen GPP editors beneath a single **Preferences (GPP)** tab. No GPP editor or migration/backup logic has been deleted.
+- Migrate pre-0.7.0 saved tab indices and maintain global-search navigation into the unified settings view and nested GPP editors.
+- Export the visible unified search result with source and capability evidence. The optional MMC scan keeps PARTIAL diagnostics, and an unverified extension is never treated as editable.
+- Add regression coverage for cross-GPO MMC isolation, source matching, ambiguity and unknown policy states. Domain controller integration testing is still necessary for actual MMC/GPMC behavior.
+
 ## 0.6.1 - 2026-10-09
 
 - Prevent MMC Full Settings Inventory from entering **Scripts (Startup/Shutdown)** and **Scripts (Logon/Logoff)** snap-ins through UI Automation. A production DC screenshot showed an MMC snap-in error in the former. These nodes are safely excluded **before expansion/selection** and listed as **Skipped - unsafe snap-in** under Coverage, not fabricated as complete data.

@@ -32,11 +32,16 @@ public partial class MainWindow
 
     private async Task EditSelectedSettingAsync()
     {
-        if (_domainContext is null ||
-            SettingsGrid.SelectedItem is not PolicySettingInfo setting)
-        {
+        if (SettingsGrid.SelectedItem is PolicySettingInfo setting)
+            await EditConfiguredSettingAsync(setting);
+    }
+
+    // Called directly by Unified Settings; no dependence on whether the
+    // advanced legacy DataGrid is visible or has an active search filter.
+    private async Task EditConfiguredSettingAsync(PolicySettingInfo setting)
+    {
+        if (_domainContext is null)
             return;
-        }
 
         var gpo = _gpos.FirstOrDefault(item => item.Id == setting.GpoId);
         if (gpo is null)
@@ -53,10 +58,12 @@ public partial class MainWindow
         {
             await EnsureAdmxCatalogAsync();
 
+            // Do not route a configured setting to a different policy merely
+            // because the ADMX display label happens to be identical.
             var definition =
-                _admxCatalogService.Find(
-                    _admxPolicies!,
-                    setting);
+                UnifiedSettingsCatalogService.ResolveDefinition(
+                    setting,
+                    _admxPolicies!);
 
             if (definition is null)
             {
@@ -435,6 +442,8 @@ public partial class MainWindow
         SettingsCountText.Text = $"{_settings.Count:N0} configured settings";
 
         await PersistCurrentSettingsCacheAsync();
+        if (AllSettingsTab.IsSelected)
+            await RefreshUnifiedCatalogAsync();
     }
 
     private async void BackupSelectedGpo_Click(object sender, RoutedEventArgs e)

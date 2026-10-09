@@ -95,6 +95,7 @@ public partial class MainWindow
             MmcInventoryGrid.ItemsSource = _mmcInventoryView;
             MmcInventorySectionsGrid.ItemsSource = result.Sections;
             UpdateMmcInventoryCount();
+            await RefreshUnifiedCatalogAsync();
             MmcInventoryCoverageText.Text = result.Coverage +
                 (configured.Length == 0
                     ? " | GPMC configured index not available for this GPO."

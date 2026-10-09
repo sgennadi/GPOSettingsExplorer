@@ -28,6 +28,7 @@ var tests = new (string Name, Action Body)[]
     ("RSoP verification rejects missing, excluded and nested GPOs", TestRsopVerificationEvidence),
     ("MMC inventory verifies source, path, scope and incomplete coverage", TestMmcFullInventoryReconciliation),
     ("MMC inventory skips fragile Scripts snap-ins before automation", TestMmcInventorySnapinSafety),
+    ("Unified catalog joins evidence without cross-GPO or false state inference", TestUnifiedSettingsCatalog),
     ("Semantic XML diff ignores report timestamps and finds setting changes", TestSemanticXmlDiff)
 };
 
@@ -409,6 +410,112 @@ static void TestRsopVerificationEvidence()
         "Computer", new[] { a, b });
     Assert(!noFlags.AllApplied && !noFlags.AnyExcluded,
         "Missing security and WMI application flags must never imply applied.");
+}
+
+static void TestUnifiedSettingsCatalog()
+{
+    var gpoA = Guid.NewGuid();
+    var gpoB = Guid.NewGuid();
+    const string name = "Network security: LAN Manager authentication level";
+
+    var a = new PolicySettingInfo
+    {
+        GpoId = gpoA, GpoName = "Baseline A", Scope = "Computer",
+        Extension = "SecuritySettings",
+        Category = "Security Settings > Local Policies > Security Options",
+        SettingName = name, State = "Enabled", Value = "NTLMv2"
+    };
+    var b = new PolicySettingInfo
+    {
+        GpoId = gpoB, GpoName = "Baseline B", Scope = "Computer",
+        Extension = "SecuritySettings",
+        Category = "Security Settings > Local Policies > Security Options",
+        SettingName = name, State = "Disabled", Value = "NTLM"
+    };
+
+    var correct = new AdmxPolicyDefinition
+    {
+        AdmxFile = "security.admx", Name = "LanManagerAuthentication",
+        DisplayName = name, Scope = "Computer",
+        Category = "Security Settings > Local Policies > Security Options",
+        Key = @"Software\\Policies\\Example", ValueName = "LanManager"
+    };
+    var wrongCategory = new AdmxPolicyDefinition
+    {
+        AdmxFile = "unrelated.admx", Name = "UnrelatedPolicy",
+        DisplayName = name, Scope = "Computer",
+        Category = "Windows Components > Other", Key = "Unrelated"
+    };
+
+    var mmc = new MmcInventoryEntry
+    {
+        GpoId = gpoA, GpoName = "Baseline A", Scope = "Computer",
+        SectionPath = "Computer Configuration > Policies > Windows Settings > " +
+                      "Security Settings > Local Policies > Security Options",
+        SettingName = name,
+        MmcState = "Enabled (MMC)", MmcValue = "NTLMv2",
+        Source = "MMC native list",
+        Navigation = "Exact MMC row candidate"
+    };
+
+    var combined = UnifiedSettingsCatalogService.Build(
+        new[] { a, b }, new[] { correct, wrongCategory }, new[] { mmc }, null,
+        "PARTIAL: Scripts snap-in excluded");
+
+    Assert(combined.ConfiguredCount == 2 && combined.MmcOnlyCount == 0,
+        "Only the specific matching configured setting may consume an MMC observation.");
+    var rowsA = combined.Rows.Where(row => row.Configured?.GpoId == gpoA).ToArray();
+    Assert(rowsA.Length == 1 && rowsA[0].Admx == correct &&
+           ReferenceEquals(rowsA[0].Mmc, mmc) &&
+           rowsA[0].State == "Enabled" &&
+           rowsA[0].Sources.Contains("MMC", StringComparison.Ordinal),
+        "Configured, ADMX and MMC evidence must join only on exact GPO, scope and category.");
+    var rowsB = combined.Rows.Where(row => row.Configured?.GpoId == gpoB).ToArray();
+    Assert(rowsB.Length == 1 && rowsB[0].Mmc is null &&
+           rowsB[0].State == "Disabled",
+        "Another GPO must never inherit the reference MMC editor's value.");
+    Assert(combined.Coverage.Contains("PARTIAL", StringComparison.Ordinal),
+        "Incomplete MMC scan must remain visible in the unified catalog.");
+
+    var other = UnifiedSettingsCatalogService.Build(
+        new[] { a }, new[] { correct, wrongCategory }, new[] { mmc }, gpoB);
+    Assert(other.ConfiguredCount == 0 && other.MmcOnlyCount == 0 &&
+           other.Rows.Any(row => row.Kind == "ADMX template" && row.Admx == correct),
+        "A GPO with no configured instance must still expose the ADMX template as unknown.");
+    Assert(other.Rows.Where(row => row.Kind == "ADMX template")
+        .All(row => row.GpoId is null &&
+                    row.State == "Template - state unknown"),
+        "Templates must never be labeled Not Configured from missing GPMC rows.");
+
+    var mmcOnly = UnifiedSettingsCatalogService.Build(
+        Array.Empty<PolicySettingInfo>(), null, new[] { mmc }, gpoA);
+    Assert(mmcOnly.MmcOnlyCount == 1 && !mmcOnly.AdmxLoaded &&
+           mmcOnly.Rows[0].Kind == "MMC observed" &&
+           mmcOnly.Rows[0].State == "Enabled (MMC)",
+        "MMC-only evidence must remain visible without an ADMX/GPMC index.");
+
+    var ambiguous = UnifiedSettingsCatalogService.Build(
+        new[] { a }, new[] { correct, new AdmxPolicyDefinition
+        {
+            AdmxFile = "duplicate.admx", Name = "OtherId",
+            DisplayName = name, Scope = "Computer",
+            Category = correct.Category
+        } }, null, gpoA);
+    Assert(ambiguous.Rows.Single(row => row.Kind == "Configured").Admx is null,
+        "An ambiguous same-name/category ADMX reference must not be arbitrarily resolved.");
+    Assert(UnifiedSettingsCatalogService.ResolveDefinition(a, new[]
+        {
+            correct,
+            new AdmxPolicyDefinition
+            {
+                Scope = "Computer", DisplayName = name,
+                Category = correct.Category, AdmxFile = "duplicate.admx"
+            }
+        }) is null,
+        "Legacy GPMC/Global Search editing must also reject ambiguous same-name ADMX records.");
+    Assert(ReferenceEquals(
+        UnifiedSettingsCatalogService.ResolveDefinition(a, new[] { correct, wrongCategory }),
+        correct), "A unique exact category match must remain editable.");
 }
 
 static void TestMmcInventorySnapinSafety()
