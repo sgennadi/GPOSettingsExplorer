@@ -4,6 +4,13 @@
 
 - No unreleased changes yet.
 
+## 0.4.6 - 2026-10-09
+
+- Preserve the **field-tested v0.4.5 exact MMC Security Options navigation** unchanged. The user confirmed that `Network security: LAN Manager authentication level` opens correctly in v0.4.5.
+- Keep the `Setting Value` window open when an exact MMC policy opens or when only a category can be opened; the window closes only upon an explicit user action.
+- For raw `Registry > Extra Registry Settings` / `AdmSetting=false`, explain that `registry.pol` records do not necessarily have an ADMX editor entry, keep the current value visible, and offer Copy registry key / Copy value name.
+- Retain existing safe read-only behavior and centralized UI status colors.
+
 ## 0.4.5 - 2026-10-08
 
 - Fixed exact MMC Security Options navigation when the requested parameter, such as **Network security: LAN Manager authentication level**, is not currently visible in the scrolled policy list.
