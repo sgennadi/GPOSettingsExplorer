@@ -170,12 +170,12 @@ public partial class MainWindow
             var oldIndex = _workspaceState.SelectedTabIndex;
             if (oldIndex == 3)
             {
-                AdvancedSourcesExpander.IsExpanded = true;
-                AllSettingsSubTabs.SelectedItem = AdmxCatalogTab;
+                _workspaceState.AdvancedSourcesExpanded = true;
+                _workspaceState.AdvancedSourceTabIndex = 2;
             }
             else if (oldIndex >= 4 && oldIndex <= 19)
             {
-                GppPreferencesTabs.SelectedIndex = oldIndex - 4;
+                _workspaceState.PreferencesTabIndex = oldIndex - 4;
             }
 
             _workspaceState.SelectedTabIndex = oldIndex switch
@@ -187,6 +187,14 @@ public partial class MainWindow
             };
             _workspaceState.NavigationLayoutVersion = 1;
         }
+
+        if (_workspaceState.PreferencesTabIndex >= 0 &&
+            _workspaceState.PreferencesTabIndex < GppPreferencesTabs.Items.Count)
+            GppPreferencesTabs.SelectedIndex = _workspaceState.PreferencesTabIndex;
+        if (_workspaceState.AdvancedSourceTabIndex >= 0 &&
+            _workspaceState.AdvancedSourceTabIndex < AllSettingsSubTabs.Items.Count)
+            AllSettingsSubTabs.SelectedIndex = _workspaceState.AdvancedSourceTabIndex;
+        AdvancedSourcesExpander.IsExpanded = _workspaceState.AdvancedSourcesExpanded;
 
         if (_workspaceState.SelectedTabIndex >= 0 &&
             _workspaceState.SelectedTabIndex < MainTabs.Items.Count)
@@ -259,6 +267,9 @@ public partial class MainWindow
                 SelectedTabIndex =
                     MainTabs.SelectedIndex,
                 NavigationLayoutVersion = 1,
+                PreferencesTabIndex = GppPreferencesTabs.SelectedIndex,
+                AdvancedSourceTabIndex = AllSettingsSubTabs.SelectedIndex,
+                AdvancedSourcesExpanded = AdvancedSourcesExpander.IsExpanded,
                 SelectedGpoId =
                     (GpoGrid.SelectedItem as GpoInfo)
                     ?.Id,
