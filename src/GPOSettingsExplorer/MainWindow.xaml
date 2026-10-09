@@ -480,6 +480,9 @@
                 </Grid>
             </TabItem>
 
+            <TabItem x:Name="GppPreferencesTab" Header="Preferences (GPP)">
+                <TabControl x:Name="GppPreferencesTabs" Margin="6" TabStripPlacement="Top"
+                            ToolTip="Original GPP editors are grouped here to keep primary navigation compact.">
             <TabItem Header="GPP Data Sources"
                      Loaded="GppDataSourcesTab_Loaded">
                 <DockPanel Margin="6">
@@ -1590,6 +1593,9 @@
                         </DataGrid.Columns>
                     </DataGrid>
                 </DockPanel>
+            </TabItem>
+
+                </TabControl>
             </TabItem>
 
             <TabItem x:Name="GpoLinksTab" Header="GPO Hierarchy &amp; Links">
