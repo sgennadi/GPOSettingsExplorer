@@ -44,7 +44,8 @@ public sealed record MmcInventoryScanResult(
             s.Status is "Rows read" or "Empty list" or "Folder only");
 
     public int Failures => Sections.Count(s =>
-        s.Status is "Read error" or "Selection failed" or "Truncated" or "No list");
+        s.Status is "Read error" or "Selection failed" or "Truncated" or
+                        "No list" or "Skipped - unsafe snap-in" or "Scan aborted");
 
     public string Coverage =>
         $"{Rows.Count:N0} observed rows / {NodesVisited:N0} tree nodes / " +
