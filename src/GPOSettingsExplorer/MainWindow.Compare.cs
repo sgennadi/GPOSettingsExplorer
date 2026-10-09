@@ -168,7 +168,10 @@ public partial class MainWindow
         {
             Owner = this
         };
-        if (details.ShowDialog() != true)
+        var action = details.ShowDialog();
+        // Detail checks update a finding in memory. Refresh grid bindings after the dialog closes.
+        ApplyConflictFilter();
+        if (action != true)
             return;
 
         if (details.ReviewLinks)
