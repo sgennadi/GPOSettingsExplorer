@@ -47,6 +47,20 @@ public static class SecurityXmlEntryClassifier
                name.Equals("Permission", StringComparison.OrdinalIgnoreCase);
     }
 
+    public static string DisplaySummary(PolicySettingInfo setting)
+    {
+        if (!IsTechnicalDetail(setting))
+            return setting.Value;
+
+        if (setting.SettingName.StartsWith("Member:", StringComparison.OrdinalIgnoreCase))
+            return "Restricted-group membership XML detail - inspect source for SID and member name.";
+
+        if (setting.SettingName.Equals("Registry", StringComparison.OrdinalIgnoreCase))
+            return "Registry security descriptor / ACL XML detail - inspect source for full permissions.";
+
+        return "GPMC XML metadata / security descriptor - inspect original value.";
+    }
+
     /// <summary>
     /// Applies only to legacy indexed records which did not store XML ancestry.
     /// Never classify arbitrary group member labels without a provenance clue.
