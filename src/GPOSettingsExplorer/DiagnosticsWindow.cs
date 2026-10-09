@@ -130,11 +130,17 @@ public sealed class DiagnosticsWindow : Window
         toolbar.Children.Add(
             support);
 
-        toolbar.Children.Add(
-            openLogs);
+        toolbar.Children.Add(openLogs);
 
-        toolbar.Children.Add(
-            rollback);
+        var reviewPending = new Button
+        {
+            Content = "Review local logs...",
+            ToolTip = "Review pending diagnostics offline or online. No automatic uploads."
+        };
+        reviewPending.Click += async (_, _) => await ReviewLocalLogsAsync();
+        toolbar.Children.Add(reviewPending);
+
+        toolbar.Children.Add(rollback);
 
         _status =
             new TextBlock
@@ -331,6 +337,36 @@ public sealed class DiagnosticsWindow : Window
                 "Create Support Package",
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
+        }
+    }
+
+    private async Task ReviewLocalLogsAsync()
+    {
+        try
+        {
+            var queue = new DiagnosticLogQueueService();
+            var pending = await Task.Run(queue.GetPending);
+            if (pending.Count == 0)
+            {
+                MessageBox.Show(this,
+                    "No pending diagnostic logs were found. Already submitted logs " +
+                    "are archived locally for fourteen days.",
+                    "Diagnostic queue", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+
+            var review = new DiagnosticSubmissionWindow(queue, pending)
+            {
+                Owner = this
+            };
+            review.ShowDialog();
+            _status.Text = $"{queue.GetPending().Count:N0} diagnostics remain pending.";
+        }
+        catch (Exception ex)
+        {
+            ErrorDialog.Show(this,
+                "Review diagnostic logs",
+                "Could not prepare the local diagnostic queue.", ex);
         }
     }
 
