@@ -14,7 +14,7 @@ Download the latest portable build from:
 
 **[GitHub Releases](https://github.com/sgennadi/GPOSettingsExplorer/releases/latest)**
 
-Current release: **v0.6.0**
+Current release: **v0.6.1**
 
 Available packages:
 
@@ -23,11 +23,11 @@ Available packages:
 
 The builds are self-contained. A separate .NET runtime installation is not required.
 
-### MMC Full Settings Inventory (0.6.0)
+### MMC Full Settings Inventory (0.6.0; safer navigation in 0.6.1)
 
 In **All Settings**, open **MMC Full Settings Inventory** (an inner view, not a separate main tab). Choose a reference GPO and click **Scan MMC (read-only)**. The application opens one native GPMC editor and walks its actual MMC tree and native SysListView32 policy lists. The inventory includes search, raw MMC values/states, GPMC XML and ADMX correlation, section coverage diagnostics, CSV export, and an explicit **Open exact in MMC** action that requires a unique literal row match.
 
-This is a **bounded, best-effort inventory**, not a guarantee that all installed third-party snap-ins expose native rows. Unavailable/virtualized controls, canceled or timed-out scans, and unreadable sections are reported as **PARTIAL**, never silently completed. A missing GPMC configured row is **not** proof of Not Configured; that state is displayed only when actually observed in MMC. The scan never edits GPO settings. A manual native editor opens only on explicit request.
+This is a **bounded, best-effort inventory**, not a guarantee that all installed third-party snap-ins expose native rows. Unavailable/virtualized controls, canceled or timed-out scans, and unreadable sections are reported as **PARTIAL**, never silently completed. A missing GPMC configured row is **not** proof of Not Configured; that state is displayed only when actually observed in MMC. The scan never edits GPO settings. A manual native editor opens only on explicit request. From v0.6.1 the Scripts (Startup/Shutdown) and Scripts (Logon/Logoff) MMC snap-ins are intentionally skipped before automated selection/expansion because their extensions may crash; use the dedicated **GPO Scripts** tab instead. These sections appear as incomplete in **Coverage / skipped sections**. If MMC shows a modal snap-in error, the scan stops with PARTIAL diagnostics, never auto-clicks the dialog or sets permanent ignore, and leaves the MMC session for manual investigation.
 
 ### Script editor and visual status colors (0.4.4)
 
