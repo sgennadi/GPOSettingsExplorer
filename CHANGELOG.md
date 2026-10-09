@@ -4,6 +4,18 @@
 
 - No unreleased changes yet.
 
+## 0.4.8 - 2026-10-09
+
+- Added GitHub API connectivity check before automatic/manual release lookups; offline machines skip update checks without creating false error logs or retrying every launch.
+- Added an optional, nonintrusive "N logs · Review" counter when at least three unsent diagnostics accumulate **and GitHub is reachable**. Rechecks every 30 minutes, with a 12-hour reminder cooldown; offline machines do not receive an Internet submission prompt.
+- New review window for local diagnostic reports, with manual export, redacted preview, optional short excerpts, optional encrypted GitHub token, and a second consent step before opening a public GitHub Issue. **Nothing uploads in the background.**
+- Error logs, MMC route audits and GPO hierarchy reports are queued locally. Only after GitHub confirms successful receipt are unchanged source files moved to a 14-day local sent archive and removed from the active queue. Failed/offline uploads never delete pending logs.
+- Keep offline unsent error logs instead of deleting them after the previous 30-day/100-file limit.
+- Add a diagnostics intake GitHub Actions workflow triggered after builds and daily; it groups public diagnostic Issues from multiple computers into a concise report with fingerprints, versions and counts (no raw issue bodies or confidential logs).
+- Add regression tests for queue persistence, offline retention, acknowledgement-only cleanup and default public-report sanitization.
+
+
+
 ## 0.4.7 - 2026-10-09
 
 - GPO Scripts search: identical script files are deduplicated into one content match; the **Copies** column is an accent-colored, clickable count. Click it to see which GPOs contain the identical script, copy the SYSVOL path, or explicitly edit another physical copy.

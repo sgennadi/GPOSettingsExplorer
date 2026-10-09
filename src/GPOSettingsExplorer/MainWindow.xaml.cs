@@ -53,6 +53,8 @@ public partial class MainWindow : Window
 
         await RefreshAllAsync();
 
+        StartDiagnosticQueueMonitor();
+
         _ =
             CheckForUpdatesAutomaticallyAsync();
     }
@@ -744,6 +746,7 @@ public partial class MainWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        StopDiagnosticQueueMonitor();
         _indexCancellation?.Cancel();
         base.OnClosed(e);
     }

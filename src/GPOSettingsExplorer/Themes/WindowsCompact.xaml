@@ -86,6 +86,15 @@
         </Style.Triggers>
     </Style>
 
+    <Style x:Key="UiPendingDiagnosticsButton" TargetType="{x:Type Button}"
+           BasedOn="{StaticResource {x:Type Button}}">
+        <Setter Property="Background" Value="{StaticResource UiPartialRowBrush}"/>
+        <Setter Property="Foreground" Value="{StaticResource UiWarningBrush}"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="MinWidth" Value="155"/>
+        <Setter Property="ToolTip" Value="Pending error logs detected; click for local review (no automatic upload)."/>
+    </Style>
+
     <Style x:Key="UiWriteModeToggle" TargetType="{x:Type ToggleButton}">
         <Setter Property="Padding" Value="10,5"/>
         <Setter Property="MinHeight" Value="28"/>

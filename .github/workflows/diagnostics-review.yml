@@ -1,0 +1,49 @@
+name: diagnostics-review
+
+on:
+  workflow_run:
+    workflows:
+      - build
+    types:
+      - completed
+  schedule:
+    - cron: "25 7 * * *"
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "tools/DiagnosticsReview/**"
+      - ".github/workflows/diagnostics-review.yml"
+
+permissions:
+  contents: read
+  issues: read
+
+concurrency:
+  group: gpo-diagnostics-${{ github.repository }}
+  cancel-in-progress: true
+
+jobs:
+  collect:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout trusted repository sources
+        uses: actions/checkout@v5
+
+      - name: Read and summarize diagnostics from all computers
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ./tools/DiagnosticsReview/Review-Diagnostics.ps1 -Repository "${{ github.repository }}" -RecentDays 7
+
+      - name: Upload report without issue bodies or private log data
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostic-issue-summary
+          path: |
+            artifacts/diagnostics-review/diagnostics-summary.md
+            artifacts/diagnostics-review/diagnostics-summary.json
+          retention-days: 30

@@ -14,7 +14,7 @@ Download the latest portable build from:
 
 **[GitHub Releases](https://github.com/sgennadi/GPOSettingsExplorer/releases/latest)**
 
-Current release: **v0.4.7**
+Current release: **v0.4.8**
 
 Available packages:
 
@@ -30,6 +30,28 @@ The GPO Scripts tab provides a rich, portable AvalonEdit editor with syntax colo
 The editor provides line numbers, word wrap, visible tabs/spaces, adjustable font size, find/replace/replace all, Undo/Redo, goto line, comment/uncomment, indent/outdent, keyboard shortcuts, and export to a local copy. The syntax check uses the PowerShell AST parser **without executing script content**. BAT/CMD supports useful static warnings such as unresolved and duplicate labels, but this is not a full CMD interpreter. Diagnostics can be opened by line.
 
 Saving still requires explicitly enabling WRITE mode, creates a GPO backup, previews the change, verifies the SYSVOL file bytes, and reports save/rollback errors without discarding the edited text. Test on an isolated GPO before editing production scripts.
+
+### Diagnostics on multiple computers
+
+The application watches its own local diagnostic log queue every 30 minutes.
+If three or more unsent logs accumulate, an amber "N logs · Review" action is
+shown **only when GitHub is reachable**. No Internet connectivity means no
+automatic release lookup and no invitation to send logs. Diagnostic collection,
+local export and GPO functions continue to work offline.
+
+"Review local logs" in Diagnostics opens a local preview; the user can export
+it without a network connection. Public GitHub Issues are **opt-in**, with a
+separate approval immediately before sending. The default report contains
+anonymous fingerprints/counts, not raw AD names or policy contents. Optional
+redacted excerpts must be inspected before publication. A fine-grained GitHub
+token with only Issues read/write permission is required; optionally store it
+under the current Windows user using DPAPI. No token is included in an Issue.
+
+On a confirmed successful issue submission, unchanged original log files move
+into a 14-day local archive and their hashes are recorded, so they are not
+offered twice. Interrupted/offline sends preserve the originals. A build/scheduled
+GitHub Actions job summarizes existing Issues across installations, without
+performing automatic repairs or posting private log bodies.
 
 ## Main features
 

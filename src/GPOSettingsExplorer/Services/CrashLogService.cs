@@ -51,9 +51,9 @@ public static class CrashLogService
                 new UTF8Encoding(
                     encoderShouldEmitUTF8Identifier: false));
 
-            CleanupOldLogs(
-                directory);
-
+            // Pending reports may belong to a machine without Internet access.
+            // Do not delete unsent logs by age/count. The diagnostic queue
+            // archives and cleans only after GitHub confirms delivery.
             return path;
         }
         catch
