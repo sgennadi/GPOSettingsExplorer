@@ -48,6 +48,7 @@ public partial class MainWindow : Window
         _wmiView.Filter = FilterWmi;
 
         InitializeSecurityUi();
+        InitializeMmcInventoryUi();
         InitializeWorkspaceUi();
     }
 
