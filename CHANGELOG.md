@@ -4,6 +4,14 @@
 
 - No unreleased changes yet.
 
+## 0.4.6 - 2026-10-09
+
+- Fixed native MMC `LVM_GETITEMTEXTW` decoding: use exactly the UTF-16 character count returned by Windows instead of decoding the full reused buffer, which previously appended stale policy name fragments to the current row.
+- Verify the complete first-column policy name after `LVM_FINDITEMW` returns an index, before opening any Security Options policy; prevent accidental activation of a neighbouring NTLM setting.
+- Keep the Setting Value window open after launching MMC (whether exact or section-only), instead of automatically discarding the value and registry details.
+- For `Registry > Extra Registry Settings` / `AdmSetting=false`, explain that raw `registry.pol` data has no guaranteed ADMX editing entry; offer Copy registry key / Copy value name while retaining the value preview.
+- Add regression tests reproducing stale ListView buffer tails at Security Options row 69. Native MMC integration must still be tested on the affected Windows Server.
+
 ## 0.4.5 - 2026-10-08
 
 - Fixed exact MMC Security Options navigation when the requested parameter, such as **Network security: LAN Manager authentication level**, is not currently visible in the scrolled policy list.
