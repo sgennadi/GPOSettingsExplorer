@@ -68,16 +68,7 @@ public partial class MainWindow
 
         if (AllSettingsTab.IsSelected)
         {
-            await EnsureSettingsIndexAsync(
-                forceRebuild: false);
-
-            return;
-        }
-
-        if (AdmxCatalogTab.IsSelected)
-        {
-            await EnsureAdmxCatalogAsync();
-            ApplyAdmxFilter();
+            await EnsureUnifiedCatalogReadyAsync();
             return;
         }
 
