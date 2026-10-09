@@ -107,6 +107,130 @@ public sealed class GpoEditorNavigatorService
             cancellationToken);
     }
 
+    /// <summary>
+    /// Open an observed inventory row by its actual MMC tree path and unique
+    /// literal first-column name. Never substitute fuzzy policy matches.
+    /// A newly opened editor is used instead of acting on stale scan handles.
+    /// </summary>
+    public async Task<bool> OpenInventoryEntryAsync(
+        GpoInfo gpo,
+        string domainDistinguishedName,
+        MmcInventoryEntry entry,
+        IProgress<string>? progress = null,
+        CancellationToken token = default)
+    {
+        if (entry.GpoId != gpo.Id ||
+            entry.TreeSegments.Count == 0 ||
+            !entry.Navigation.Equals("Exact MMC row candidate", StringComparison.Ordinal))
+            return false;
+
+        var process = StartEditor(gpo, domainDistinguishedName);
+        return await Task.Run(() =>
+        {
+            try
+            {
+                var deadline = DateTime.UtcNow.AddSeconds(75);
+                var window = WaitForWindow(process, deadline, token);
+                if (window is null)
+                {
+                    progress?.Report("MMC editor window was not found.");
+                    return false;
+                }
+
+                var tree = FindControl(window, ControlType.Tree);
+                if (tree is null)
+                    return false;
+                AutomationElement? current = null;
+
+                foreach (var segment in entry.TreeSegments)
+                {
+                    token.ThrowIfCancellationRequested();
+                    current = current is null
+                        ? FindTreeItem(tree, segment, TreeScope.Descendants, deadline, token)
+                        : FindTreeItem(current, segment, TreeScope.Children, deadline, token);
+                    if (current is null)
+                    {
+                        progress?.Report("MMC section unavailable: " + segment);
+                        return false;
+                    }
+
+                    // A partial/truncated tree label cannot establish exact
+                    // identity for inventory edit navigation.
+                    if (!string.Equals(NormalizeUiText(current.Current.Name),
+                            NormalizeUiText(segment),
+                            StringComparison.CurrentCultureIgnoreCase))
+                    {
+                        progress?.Report("MMC section identity was not exact: " + segment);
+                        return false;
+                    }
+
+                    TryScrollIntoView(current);
+                    TrySelectOrClick(current, doubleClick: false);
+                    TryExpand(current);
+                    Thread.Sleep(175);
+                }
+
+                if (current is null)
+                    return false;
+
+                TrySelectOrClick(current, doubleClick: false);
+                Thread.Sleep(400);
+
+                var snapshot = ReadInventoryList(process, 12000, token);
+                if (!snapshot.Complete)
+                {
+                    progress?.Report("Cannot verify current MMC row list: " + snapshot.Error);
+                    return false;
+                }
+
+                var matches = snapshot.Rows.Where(row =>
+                    row.Name.Equals(entry.SettingName, StringComparison.CurrentCultureIgnoreCase)).ToArray();
+                if (matches.Length != 1)
+                {
+                    progress?.Report("The exact row does not have a unique current match. No dialog was opened.");
+                    return false;
+                }
+
+                var lists = FindNativeListViews(process.MainWindowHandle);
+                var target = lists.Select(handle => (
+                        Handle: handle,
+                        Count: (int)SendMessage(handle, LvmGetItemCount,
+                            IntPtr.Zero, IntPtr.Zero)))
+                    .OrderByDescending(item => item.Count).FirstOrDefault();
+                if (target.Handle == IntPtr.Zero || target.Count <= matches[0].Index)
+                    return false;
+
+                var access = ProcessVmOperation | ProcessVmRead |
+                             ProcessVmWrite | ProcessQueryLimitedInformation;
+                var processHandle = OpenProcess(access, false, process.Id);
+                if (processHandle == IntPtr.Zero)
+                {
+                    progress?.Report("Cannot access MMC at this elevation.");
+                    return false;
+                }
+
+                try
+                {
+                    var opened = SelectAndOpenNativeListViewRow(
+                        process, processHandle, target.Handle, matches[0].Index,
+                        out var selectedIndex, out var focusedIndex);
+                    progress?.Report(opened
+                        ? $"Exact MMC row opened: {entry.SettingName}"
+                        : $"MMC did not confirm the row selection (selected={selectedIndex}, focused={focusedIndex}).");
+                    return opened;
+                }
+                finally { CloseHandle(processHandle); }
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex) when (!IsFatal(ex))
+            {
+                CrashLogService.Write("MMC inventory exact navigation", ex);
+                progress?.Report("Exact MMC navigation failed: " + ex.Message);
+                return false;
+            }
+        }, token);
+    }
+
     private static Process StartEditor(
         GpoInfo gpo,
         string domainDistinguishedName)
