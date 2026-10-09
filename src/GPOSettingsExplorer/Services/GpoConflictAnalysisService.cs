@@ -47,10 +47,11 @@ public static class GpoConflictAnalysisService
                            (string.IsNullOrWhiteSpace(s.Value) ? "" : " = " + s.Value);
                 });
                 var plan = duplicate
-                    ? "CONSOLIDATE CANDIDATE: Compare target OUs, WMI/security filtering and scope. " +
-                      "If identical applicability is verified, keep the setting in the designated GPO, " +
-                      "back up both policies, then remove the duplicate setting from the other via its native editor. " +
-                      "Do not remove a link or an entire policy just to deduplicate one setting."
+                    ? "HOLD - NO MERGE RECOMMENDATION: equal configured values are not proof of equal application. " +
+                      "Run 'Verify RSoP / WMI / Security' to check a representative computer, then " +
+                      "review inheritance, sites, loopback and all affected OU targets. " +
+                      "Before an explicitly approved manual cleanup back up both policies separately. " +
+                      "Never remove a link or GPO merely to deduplicate one setting."
                     : "VALUE MISMATCH: Verify effective scope using gpresult/RSoP on a representative object. " +
                       "Compare the configured values and GPMC Link Order; choose the intended value, then " +
                       "edit the appropriate GPO or link in the native editor after separate backups. " +
