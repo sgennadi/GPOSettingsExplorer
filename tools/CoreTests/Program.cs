@@ -17,6 +17,8 @@ var tests = new (string Name, Action Body)[]
     ("GPP XML cache refreshes after file change", TestGppXmlCache),
     ("Script inventory cache invalidates on GPO modification", TestScriptCache),
     ("Automatic update checks respect 24-hour and retry windows", TestUpdateCheckSchedule),
+    ("Diagnostic queue never removes unsent logs, archives only after confirmation", TestDiagnosticQueue),
+    ("Public diagnostic reports redact identifiers and omit raw logs by default", TestGitHubDiagnosticsPrivacy),
     ("Blocked GitHub socket is treated as expected connectivity failure", TestBlockedUpdateConnectivity),
     ("Semantic XML diff ignores report timestamps and finds setting changes", TestSemanticXmlDiff)
 };
@@ -52,6 +54,113 @@ foreach (var failure in failures)
 }
 
 return 1;
+
+static void TestDiagnosticQueue()
+{
+    var root = Path.Combine(Path.GetTempPath(), "GPOSE-queue-" +
+        Guid.NewGuid().ToString("N"));
+    var errors = Path.Combine(root, "Errors");
+    var audit = Path.Combine(root, "Audit");
+    var state = Path.Combine(root, "State");
+    Directory.CreateDirectory(errors);
+    Directory.CreateDirectory(audit);
+    try
+    {
+        for (var i = 0; i < 3; i++)
+        {
+            var name = Path.Combine(errors, $"error-{20261009 + i}-000000.log");
+            File.WriteAllText(name,
+                $"Context: Test {i}\nVersion: 0.4.7.0\nSystem.InvalidOperationException: sample");
+            File.SetLastWriteTimeUtc(name, DateTime.UtcNow.AddMinutes(-4));
+        }
+
+        var service = new DiagnosticLogQueueService(errors, audit, state);
+        var pending = service.GetPending();
+        Assert(pending.Count == 3, "New diagnostics should be pending.");
+        Assert(service.ShouldOffer(pending.Count, DateTime.UtcNow),
+            "Three unsent logs should be eligible for an online offer.");
+        service.MarkOffered(DateTime.UtcNow);
+        Assert(!service.ShouldOffer(3, DateTime.UtcNow.AddHours(1)),
+            "One hour later the same log prompt should not repeat.");
+
+        Assert(Directory.GetFiles(errors, "*.log").Length == 3,
+            "Unsent offline logs should never be deleted.");
+        try
+        {
+            service.MarkSubmitted(pending, "https://untrusted.example/issues/123");
+            throw new InvalidOperationException("Non-GitHub acknowledgement unexpectedly cleared logs.");
+        }
+        catch (ArgumentException)
+        {
+        }
+
+        Assert(service.GetPending().Count == 3,
+            "Unconfirmed issues must not clear the local queue.");
+        var issue = "https://github.com/sgennadi/GPOSettingsExplorer/issues/123";
+        service.MarkSubmitted(pending, issue);
+        Assert(service.GetPending().Count == 0,
+            "Confirmed issue must remove matching entries from the pending queue.");
+        Assert(Directory.GetFiles(errors, "*.log").Length == 0,
+            "Confirmed sent logs should be moved out of the active queue.");
+        var archive = Path.Combine(state, "SentArchive");
+        Assert(Directory.GetFiles(archive).Length == 3,
+            "Confirmed issues must retain fourteen-day local copies.");
+        var reopened = new DiagnosticLogQueueService(errors, audit, state);
+        Assert(reopened.GetPending().Count == 0,
+            "Acknowledgement must survive application restart.");
+    }
+    finally
+    {
+        try { Directory.Delete(root, recursive: true); }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+    }
+}
+
+static void TestGitHubDiagnosticsPrivacy()
+{
+    var fake = "Context: CN=Student,OU=Clinic,DC=yosh,DC=ac,DC=il\n" +
+        @"Path: \\domain-server\SYSVOL\Policies\GPO" + "\n" +
+        "IP: 10.1.2.3\n" +
+        "User: student@example.com\n" +
+        "Token: super-secret-token\n" +
+        "SID: S-1-5-21-123-456-789\n";
+    var redacted = GitHubDiagnosticReportService.Redact(fake);
+    foreach (var secret in new[] {
+        "domain-server", "Clinic", "10.1.2.3", "student@example.com",
+        "super-secret-token", "S-1-5-21-123-456-789"
+    })
+        Assert(!redacted.Contains(secret, StringComparison.OrdinalIgnoreCase),
+            "Public diagnostic report left a sensitive detail: " + secret);
+
+    var folder = Path.Combine(Path.GetTempPath(), "GPOSE-privacy-" +
+        Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(folder);
+    try
+    {
+        var file = Path.Combine(folder, "error-privacy.log");
+        File.WriteAllText(file, "Context: Private Policy For Clinic\n" +
+            "Version: 0.4.7.0\n" +
+            "System.InvalidOperationException: Confidential Value\n" +
+            "Password: TopSecret\n");
+        var bytes = File.ReadAllBytes(file);
+        var item = new PendingDiagnosticLog(file, "Error",
+            Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)),
+            bytes.Length, DateTime.UtcNow.AddMinutes(-1));
+        var report = GitHubDiagnosticReportService.BuildReport(new[] { item });
+        Assert(report.Contains("Diagnostic-Fingerprint:", StringComparison.Ordinal),
+            "Reports must be recognized by multi-computer CI.");
+        Assert(!report.Contains("Private Policy", StringComparison.Ordinal) &&
+               !report.Contains("TopSecret", StringComparison.Ordinal),
+            "Default report must not contain private log text.");
+    }
+    finally
+    {
+        try { Directory.Delete(folder, recursive: true); }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+    }
+}
 
 static void TestScriptSanitizer()
 {
