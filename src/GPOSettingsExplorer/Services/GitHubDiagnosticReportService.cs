@@ -132,7 +132,7 @@ public static class GitHubDiagnosticReportService
         var issues = new List<(string Kind, string Fingerprint, string ExceptionType,
             string Version, string FileSha256, string Excerpt)>();
 
-        foreach (var file in files.Take(100))
+        foreach (var file in files.Take(250))
         {
             string source = "";
             try
@@ -165,7 +165,7 @@ public static class GitHubDiagnosticReportService
             var signature = Convert.ToHexString(SHA256.HashData(
                 Encoding.UTF8.GetBytes(identity.ToLowerInvariant())));
             var excerpt = includeRedactedExcerpts
-                ? Redact(source[..Math.Min(source.Length, 2200)])
+                ? Redact(source[..Math.Min(source.Length, 1000)])
                 : "";
             issues.Add((file.Kind, signature, type, version,
                 file.Sha256, excerpt));
