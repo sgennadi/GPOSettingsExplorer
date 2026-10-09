@@ -90,7 +90,13 @@ public sealed class SettingValueWindow : Window
                         ? "Open exact setting in GPO editor..."
                         : setting.Extension.Equals("RegistrySettings", StringComparison.OrdinalIgnoreCase)
                             ? "Open Administrative Templates (manual)..."
-                            : "Open related GPO editor section..."
+                            : setting.Extension.Equals("SoftwareInstallationSettings", StringComparison.OrdinalIgnoreCase)
+                                ? "Open Software installation (manual)..."
+                                : setting.Extension.Equals("PublicKeySettings", StringComparison.OrdinalIgnoreCase)
+                                    ? "Open Public Key Policies (manual)..."
+                                    : setting.Extension.Equals("NrptSettings", StringComparison.OrdinalIgnoreCase)
+                                        ? "Open Name Resolution Policy (manual)..."
+                                        : "Open related GPO editor section..."
             };
 
         open.Click += async (_, _) =>
@@ -132,10 +138,11 @@ public sealed class SettingValueWindow : Window
                 if (!exactNavigationAvailable)
                 {
                     navigationStatus.Foreground = UiStyle.WarningBrush;
+                    var sectionPath = GpoEditorNavigatorService.NavigationTarget(setting);
                     navigationStatus.Text =
                         setting.Extension.Equals("RegistrySettings", StringComparison.OrdinalIgnoreCase)
-                            ? "Opened the related Administrative Templates section. This raw registry.pol entry does not have a known matching ADMX policy editor; its value remains visible below."
-                            : "Opened the related MMC section. The exact row is not supported for this setting type; the value remains visible below.";
+                            ? "MMC opened for Administrative Templates. This raw registry.pol entry may not have a matching ADMX editor. Value retained below."
+                            : $"Section-only MMC navigation attempted: {sectionPath}. Exact row editing is unavailable for this report entry; the value remains visible.";
                     return;
                 }
 
@@ -277,6 +284,32 @@ public sealed class SettingValueWindow : Window
                 "Registry",
                 BuildRegistrySummary(
                     setting)));
+
+        if (setting.Extension.Equals("SoftwareInstallationSettings", StringComparison.OrdinalIgnoreCase) &&
+            (setting.SettingName.Contains("Trustee ", StringComparison.OrdinalIgnoreCase) ||
+             setting.SettingName.Contains("Applicability", StringComparison.OrdinalIgnoreCase)))
+        {
+            panel.Children.Add(new TextBlock
+            {
+                Text = "This is package security descriptor/auditing metadata from the GPO report, not a standalone Administrative Templates policy. Open Software installation and inspect the relevant package's security properties. The XML value below remains read-only.",
+                Foreground = UiStyle.WarningBrush,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(4, 8, 4, 4)
+            });
+        }
+
+        if (setting.Extension.Equals("PublicKeySettings", StringComparison.OrdinalIgnoreCase) ||
+            setting.Extension.Equals("NrptSettings", StringComparison.OrdinalIgnoreCase))
+        {
+            panel.Children.Add(new TextBlock
+            {
+                Text = "MMC section: " + GpoEditorNavigatorService.NavigationTarget(setting) +
+                    ". This XML summary does not identify a uniquely editable MMC field, so the program opens the related section without guessing a settings dialog.",
+                Foreground = UiStyle.AccentBrush,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(4, 8, 4, 4)
+            });
+        }
 
         if (setting.Extension.Equals("RegistrySettings", StringComparison.OrdinalIgnoreCase) &&
             setting.Value.Contains("AdmSetting=false", StringComparison.OrdinalIgnoreCase))
