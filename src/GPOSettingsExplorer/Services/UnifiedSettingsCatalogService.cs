@@ -51,14 +51,17 @@ public static class UnifiedSettingsCatalogService
 
         foreach (var setting in source)
         {
-            var admx = FindDefinition(setting, lookup);
+            var technical = SecurityXmlEntryClassifier.IsTechnicalDetail(setting);
+            // Low-level GPMC XML leaf entries must never match an ADMX
+            // editor by their generic label ('Registry', 'Member', etc.).
+            var admx = technical ? null : FindDefinition(setting, lookup);
             if (admx is not null)
                 usedDefinitions.Add(DefinitionId(admx, setting.Scope));
-            var observed = FindObserved(setting, observationsLookup);
+            var observed = technical ? null : FindObserved(setting, observationsLookup);
             if (observed is not null)
                 usedMmc.Add(observed);
 
-            var sources = "GPMC configured";
+            var sources = technical ? "GPMC XML detail" : "GPMC configured";
             if (admx is not null) sources += " + ADMX";
             if (observed is not null) sources += " + MMC";
 
@@ -68,18 +71,28 @@ public static class UnifiedSettingsCatalogService
                 GpoName = setting.GpoName,
                 SettingName = setting.SettingName,
                 Scope = setting.Scope,
-                Category = setting.Category,
-                State = setting.State,
-                Value = setting.Value,
+                Category = SecurityXmlEntryClassifier.InferLegacyCategory(setting)
+                           ?? setting.Category,
+                State = technical ? "XML detail" : setting.State,
+                Value = technical
+                    ? SecurityXmlEntryClassifier.DisplaySummary(setting)
+                    : setting.Value,
                 Sources = sources,
-                Capability = admx is not null && IsDirectAdmxSupported(admx)
-                    ? "ADMX editor (guarded)"
-                    : "View / supported editor",
+                Capability = technical
+                    ? "Inspect detail (read-only)"
+                    : admx is not null && IsDirectAdmxSupported(admx)
+                        ? "ADMX editor (guarded)"
+                        : "View / supported editor",
                 RegistryTarget = JoinTarget(setting.RegistryKey, setting.RegistryValue),
-                Explanation = "GPMC XML/index reports this configured setting. " +
-                    "Its effective application requires independent RSoP/WMI/Security evaluation." +
-                    (observed is null ? "" : " MMC value is a separate observation."),
-                Kind = "Configured",
+                Explanation = technical
+                    ? "This is a nested GPMC XML description, not an independent policy row. " +
+                      "Its full original value remains available in View details. " +
+                      "MMC can open only a related section; exact editing is not verified."
+                    : "GPMC XML/index reports this configured setting. " +
+                      "Its effective application requires independent RSoP/WMI/Security evaluation." +
+                      (observed is null ? "" : " MMC value is a separate observation."),
+                Kind = technical ? "GPMC detail" : "Configured",
+                IsTechnicalDetail = technical,
                 Configured = setting,
                 Admx = admx,
                 Mmc = observed
@@ -161,7 +174,8 @@ public static class UnifiedSettingsCatalogService
             {
                 "Configured" => 0,
                 "MMC observed" => 1,
-                _ => 2
+                "ADMX template" => 2,
+                _ => 3
             }).ThenBy(row => row.SettingName, StringComparer.CurrentCultureIgnoreCase)
               .ThenBy(row => row.GpoName, StringComparer.CurrentCultureIgnoreCase)
               .ToArray();
