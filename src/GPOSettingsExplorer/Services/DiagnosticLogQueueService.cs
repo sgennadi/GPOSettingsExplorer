@@ -179,6 +179,9 @@ public sealed class DiagnosticLogQueueService
                         File.Delete(log.Path);
                     else
                         File.Move(log.Path, archiveFile);
+                    // Retention counts from the confirmed submission, not
+                    // the age of the original (possibly months-old) error.
+                    File.SetLastWriteTimeUtc(archiveFile, DateTime.UtcNow);
                 }
                 catch (Exception e) when (e is IOException or UnauthorizedAccessException)
                 {
