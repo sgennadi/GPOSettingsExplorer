@@ -94,7 +94,7 @@ public static class MmcRouteAuditService
 
         report.AppendLine("### Observed MMC tree (maximum 220 nodes, depth 7)");
         var budget = 220;
-        SnapshotTree(root, report, 0, 7, ref budget, token);
+        SnapshotTree(root, report, 0, 7, ref budget, token, Array.Empty<string>());
         report.AppendLine();
         report.AppendLine($"### All indexed MMC section paths ({targets.Length})");
         report.AppendLine("This is a three-minute, read-only, bounded scan; any unchecked paths remain in the report.");
@@ -102,6 +102,7 @@ public static class MmcRouteAuditService
         var found = 0;
         var missing = 0;
         var errors = 0;
+        var skipped = 0;
         foreach (var target in targets)
         {
             token.ThrowIfCancellationRequested();
@@ -113,6 +114,14 @@ public static class MmcRouteAuditService
 
             progress?.Report($"Checking {found + missing + errors + 1}/{targets.Length}: {target.Path}");
             var segments = target.Path.Split(" > ", StringSplitOptions.RemoveEmptyEntries);
+            if (MmcInventorySafetyRules.ShouldSkipNode(segments, out var skipExplanation))
+            {
+                report.AppendLine("[SKIPPED] " + target.Path);
+                report.AppendLine("    " + skipExplanation);
+                skipped++;
+                continue;
+            }
+            MmcInventoryDialogGuard.ThrowIfDialogOpen(process);
             var node = root;
             var status = "FOUND";
             var detail = "";
@@ -173,7 +182,7 @@ public static class MmcRouteAuditService
         }
 
         report.AppendLine();
-        report.AppendLine($"SUMMARY: found={found}; missing={missing}; errors={errors}; total={targets.Length}");
+        report.AppendLine($"SUMMARY: found={found}; missing={missing}; errors={errors}; skipped={skipped}; total={targets.Length}");
         report.AppendLine("FOUND confirms only a matching MMC tree path. It does not prove exact setting-dialog navigation.");
         var directory = StoragePaths.Audit;
         Directory.CreateDirectory(directory);
@@ -234,7 +243,8 @@ public static class MmcRouteAuditService
 
     private static void SnapshotTree(
         AutomationElement parent, StringBuilder report, int depth,
-        int maxDepth, ref int remaining, CancellationToken token)
+        int maxDepth, ref int remaining, CancellationToken token,
+        IReadOnlyList<string> ancestors)
     {
         if (remaining <= 0 || depth > maxDepth)
             return;
@@ -255,11 +265,20 @@ public static class MmcRouteAuditService
                 break;
             try
             {
-                report.AppendLine(new string(' ', depth * 2) + "- " + node.Current.Name);
+                var name = node.Current.Name;
+                var path = ancestors.Append(name).ToArray();
+                report.AppendLine(new string(' ', depth * 2) + "- " + name);
+                if (MmcInventorySafetyRules.ShouldSkipNode(path, out var reason))
+                {
+                    report.AppendLine(new string(' ', depth * 2 + 2) +
+                        "[SKIPPED: unsafe snap-in] " + reason);
+                    continue;
+                }
                 if (depth < maxDepth)
                 {
                     Expand(node);
-                    SnapshotTree(node, report, depth + 1, maxDepth, ref remaining, token);
+                    SnapshotTree(node, report, depth + 1,
+                        maxDepth, ref remaining, token, path);
                 }
             }
             catch (COMException) { }

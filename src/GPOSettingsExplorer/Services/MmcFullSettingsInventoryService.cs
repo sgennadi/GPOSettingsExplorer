@@ -43,6 +43,7 @@ public static class MmcFullSettingsInventoryService
         var visited = 0;
         var reason = "Finished reachable MMC tree.";
         var interrupted = false;
+        var currentSection = "<MMC root>";
 
         void Deadline()
         {
@@ -168,7 +169,23 @@ public static class MmcFullSettingsInventoryService
             visited++;
             var parts = ancestors.Append(name).ToArray();
             var sectionPath = string.Join(" > ", parts);
+            currentSection = sectionPath;
             progress?.Report($"MMC inventory: {visited:N0} nodes / {observed.Count:N0} rows - {sectionPath}");
+
+            // CRITICAL: skip dangerous MMC snap-ins BEFORE Expand or Select.
+            // The Group Policy Scripts snap-in has crashed on production DCs.
+            // Skipping is observable in coverage, never represented as success.
+            if (MmcInventorySafetyRules.ShouldSkipNode(parts, out var skipReason))
+            {
+                sections.Add(new MmcInventorySection(
+                    sectionPath, "Skipped - unsafe snap-in", 0, skipReason));
+                progress?.Report("MMC inventory: skipped unstable snap-in - " + sectionPath);
+                return;
+            }
+
+            // A modal snap-in error blocks reliable UI Automation. Do not
+            // click through Microsoft's error dialog, or suppress it.
+            MmcInventoryDialogGuard.ThrowIfDialogOpen(process);
 
             try { Expand(node); }
             catch (Exception ex) when (ex is COMException or ElementNotAvailableException
@@ -179,12 +196,27 @@ public static class MmcFullSettingsInventoryService
                 return;
             }
 
+            MmcInventoryDialogGuard.ThrowIfDialogOpen(process);
+
             // MMC commonly populates descendants only after expanding a node.
-            var children = Children(node);
-            if (children.Count == 0)
+            IReadOnlyList<AutomationElement> children;
+            try
             {
-                Thread.Sleep(90);
                 children = Children(node);
+                if (children.Count == 0)
+                {
+                    Thread.Sleep(90);
+                    MmcInventoryDialogGuard.ThrowIfDialogOpen(process);
+                    children = Children(node);
+                }
+            }
+            catch (InvalidOperationException ex)
+            {
+                if (MmcInventoryDialogGuard.FindVisibleDialog(process.Id) is not null)
+                    throw;
+                sections.Add(new MmcInventorySection(sectionPath,
+                    "Read error", 0, "Failed to enumerate child sections: " + ex.Message));
+                return; // Other sibling sections can still be inspected.
             }
             // Categories may contain both subfolders AND policy rows. Reading
             // leaves only would silently miss policies directly in a parent.
@@ -197,8 +229,10 @@ public static class MmcFullSettingsInventoryService
             {
                 // Do not invoke or double-click a policy during inventory.
                 Thread.Sleep(185);
+                MmcInventoryDialogGuard.ThrowIfDialogOpen(process);
                 var snapshot = GpoEditorNavigatorService.ReadInventoryList(
                     process, MaxRowsPerSection, token);
+                MmcInventoryDialogGuard.ThrowIfDialogOpen(process);
 
                 if (!snapshot.Complete)
                 {
@@ -287,7 +321,10 @@ public static class MmcFullSettingsInventoryService
                 }
 
                 foreach (var child in children)
+                {
+                    MmcInventoryDialogGuard.ThrowIfDialogOpen(process);
                     Visit(child, parts);
+                }
             }
         }
 
@@ -305,11 +342,15 @@ public static class MmcFullSettingsInventoryService
                                    or COMException or ElementNotAvailableException)
         {
             interrupted = true;
-            reason = ex.Message;
+            reason = "At " + currentSection + ": " + ex.Message;
+            sections.Add(new MmcInventorySection(
+                currentSection, "Scan aborted", 0, reason));
         }
 
-        if (sections.Any(s => s.Status is "Read error" or "Selection failed" or "Truncated" or "No list"))
-            reason += " Some sections were inaccessible, incomplete or exposed only non-native MMC controls.";
+        if (sections.Any(s => s.Status is
+                "Read error" or "Selection failed" or "Truncated" or
+                "No list" or "Skipped - unsafe snap-in" or "Scan aborted"))
+            reason += " Some sections were inaccessible, deliberately skipped, or incomplete.";
 
         progress?.Report($"MMC scan: {observed.Count:N0} rows, {visited:N0} nodes; " +
                          (interrupted ? "PARTIAL: " + reason : "walk finished"));

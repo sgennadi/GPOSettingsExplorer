@@ -202,7 +202,7 @@
                                                VerticalAlignment="Center"
                                                Foreground="{DynamicResource UiMutedBrush}"/>
                                 </WrapPanel>
-                                <TextBlock Text="MMC inventory scans the tree and native policy lists shown by this computer's GPMC editor. Rows are observations, NOT effective RSoP; Not Configured is shown only if MMC explicitly reports it. Partial/inaccessible sections are tracked."
+                                <TextBlock Text="MMC inventory scans native policy lists. Unsafe MMC Scripts snap-ins are deliberately SKIPPED (use GPO Scripts tab). A modal snap-in error stops the scan; it is never auto-dismissed. Rows are observations, NOT effective RSoP; PARTIAL coverage lists skipped/inaccessible sections."
                                            TextWrapping="Wrap" Margin="4,3,4,4"
                                            Foreground="{DynamicResource UiWarningBrush}"/>
                                 <TextBlock x:Name="MmcInventoryCoverageText"

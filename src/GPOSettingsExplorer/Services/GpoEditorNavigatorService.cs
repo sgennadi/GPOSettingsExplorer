@@ -124,6 +124,14 @@ public sealed class GpoEditorNavigatorService
             !entry.Navigation.Equals("Exact MMC row candidate", StringComparison.Ordinal))
             return false;
 
+        // Inventory rows are not allowed to re-enter a snap-in excluded from
+        // unattended scanning, even through a saved/stale row selection.
+        if (MmcInventorySafetyRules.ShouldSkipNode(entry.TreeSegments, out var skipReason))
+        {
+            progress?.Report(skipReason);
+            return false;
+        }
+
         var process = StartEditor(gpo, domainDistinguishedName);
         return await Task.Run(() =>
         {
@@ -145,6 +153,7 @@ public sealed class GpoEditorNavigatorService
                 foreach (var segment in entry.TreeSegments)
                 {
                     token.ThrowIfCancellationRequested();
+                    MmcInventoryDialogGuard.ThrowIfDialogOpen(process);
                     current = current is null
                         ? FindTreeItem(tree, segment, TreeScope.Descendants, deadline, token)
                         : FindTreeItem(current, segment, TreeScope.Children, deadline, token);
@@ -168,6 +177,7 @@ public sealed class GpoEditorNavigatorService
                     TrySelectOrClick(current, doubleClick: false);
                     TryExpand(current);
                     Thread.Sleep(175);
+                    MmcInventoryDialogGuard.ThrowIfDialogOpen(process);
                 }
 
                 if (current is null)
@@ -175,8 +185,10 @@ public sealed class GpoEditorNavigatorService
 
                 TrySelectOrClick(current, doubleClick: false);
                 Thread.Sleep(400);
+                MmcInventoryDialogGuard.ThrowIfDialogOpen(process);
 
                 var snapshot = ReadInventoryList(process, 12000, token);
+                MmcInventoryDialogGuard.ThrowIfDialogOpen(process);
                 if (!snapshot.Complete)
                 {
                     progress?.Report("Cannot verify current MMC row list: " + snapshot.Error);
