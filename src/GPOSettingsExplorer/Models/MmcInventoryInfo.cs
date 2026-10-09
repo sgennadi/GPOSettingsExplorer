@@ -40,7 +40,7 @@ public sealed record MmcInventoryScanResult(
 {
     public bool IsComplete =>
         !Interrupted && Sections.All(s =>
-            s.Status is "Rows read" or "Empty list");
+            s.Status is "Rows read" or "Empty list" or "Folder only");
 
     public int Failures => Sections.Count(s =>
         s.Status is "Read error" or "Selection failed" or "Truncated" or "No list");
