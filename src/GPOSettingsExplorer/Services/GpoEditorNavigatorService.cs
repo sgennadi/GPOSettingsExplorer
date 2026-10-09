@@ -1347,9 +1347,6 @@ public sealed class GpoEditorNavigatorService
                     if (index < 0 || index >= count)
                         continue;
 
-                    // Keep the proven 0.4.5 native exact-name activation path.
-                    // An additional ListView readback could reject a valid hit
-                    // on systems where MMC does not expose its row text reliably.
                     builder.AppendLine($"  LVM_FINDITEMW exact match: row {index} of {count}.");
 
                     if (SelectAndOpenNativeListViewRow(
@@ -1476,7 +1473,9 @@ public sealed class GpoEditorNavigatorService
     {
         // The first column is Policy. Other columns contain settings/values
         // and cannot identify which policy would be opened.
-        var names = rows.Select(row => row.PolicyName).ToArray();
+        var names = rows
+            .Select(row => row.Text.Split(" | ", StringSplitOptions.None)[0])
+            .ToArray();
         var index = MmcPolicyNameMatcher.FindUniqueMatch(names, setting.SettingName);
         return index >= 0 ? rows[index] : null;
     }
@@ -1526,8 +1525,7 @@ public sealed class GpoEditorNavigatorService
         IntPtr processHandle,
         IntPtr listView,
         int count,
-        CancellationToken cancellationToken,
-        int? onlyIndex = null)
+        CancellationToken cancellationToken)
     {
         const int textCharacters =
             2048;
@@ -1594,28 +1592,52 @@ public sealed class GpoEditorNavigatorService
                         count,
                         2048));
 
-            var startIndex = onlyIndex.HasValue
-                ? Math.Clamp(onlyIndex.Value, 0, count)
-                : 0;
-            var endIndex = onlyIndex.HasValue
-                ? Math.Min(count, startIndex + 1)
-                : count;
-
-            for (var index = startIndex; index < endIndex; index++)
+            for (var index = 0;
+                 index < count;
+                 index++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var policyName = ReadNativeListViewText(
-                    processHandle, listView, remoteItem, itemSize,
-                    remoteText, textBytes, textCharacters, index, 0);
 
-                if (string.IsNullOrWhiteSpace(policyName))
+                var parts =
+                    new List<string>();
+
+                for (var subItem = 0;
+                     subItem < 3;
+                     subItem++)
+                {
+                    var text =
+                        ReadNativeListViewText(
+                            processHandle,
+                            listView,
+                            remoteItem,
+                            itemSize,
+                            remoteText,
+                            textBytes,
+                            textCharacters,
+                            index,
+                            subItem);
+
+                    if (!string.IsNullOrWhiteSpace(
+                            text))
+                    {
+                        parts.Add(
+                            text);
+                    }
+                }
+
+                if (parts.Count ==
+                    0)
+                {
                     continue;
+                }
 
-                var settingValue = ReadNativeListViewText(
-                    processHandle, listView, remoteItem, itemSize,
-                    remoteText, textBytes, textCharacters, index, 1);
-
-                result.Add(new NativeListViewRow(index, policyName, settingValue));
+                result.Add(
+                    new NativeListViewRow(
+                        index,
+                        string.Join(
+                            " | ",
+                            parts.Distinct(
+                                StringComparer.CurrentCultureIgnoreCase))));
             }
 
             return result;
@@ -1671,23 +1693,33 @@ public sealed class GpoEditorNavigatorService
             return string.Empty;
         }
 
-        // LVM_GETITEMTEXTW returns the exact number of UTF-16 characters
-        // copied. The remainder of the reused remote buffer may contain
-        // the tail of a *previous* policy, so never decode the entire buffer.
-        var copied = checked((int)SendMessage(
-            listView, LvmGetItemTextW, (IntPtr)index, remoteItem));
-        if (copied <= 0 || copied >= textCharacters)
-            return string.Empty;
+        _ =
+            SendMessage(
+                listView,
+                LvmGetItemTextW,
+                (IntPtr)index,
+                remoteItem);
 
-        var usefulBytes = checked(copied * sizeof(char));
-        var buffer = new byte[usefulBytes];
+        var buffer =
+            new byte[
+                textBytes];
+
         if (!ReadProcessMemory(
-                processHandle, remoteText, buffer, usefulBytes,
-                out var bytesRead) ||
-            bytesRead.ToUInt64() != (ulong)usefulBytes)
+                processHandle,
+                remoteText,
+                buffer,
+                buffer.Length,
+                out _))
+        {
             return string.Empty;
+        }
 
-        return MmcNativeListViewText.DecodeUtf16(buffer, copied);
+        return Encoding.Unicode
+            .GetString(
+                buffer)
+            .TrimEnd(
+                '\0')
+            .Trim();
     }
 
     private static bool SelectAndOpenNativeListViewRow(
@@ -1952,13 +1984,7 @@ public sealed class GpoEditorNavigatorService
 
     private sealed record NativeListViewRow(
         int Index,
-        string PolicyName,
-        string SettingValue)
-    {
-        public string Text => string.IsNullOrWhiteSpace(SettingValue)
-            ? PolicyName
-            : PolicyName + " | " + SettingValue;
-    }
+        string Text);
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     private struct NativeLvFindInfo
