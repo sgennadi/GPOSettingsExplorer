@@ -10,6 +10,7 @@ var tests = new (string Name, Action Body)[]
     ("Script searches distinguish content and file metadata", TestScriptSearchModes),
     ("Identical GPO script copies resolve without implicit mass edit", TestGpoScriptCopyResolution),
     ("Public Key, NRPT and MSI metadata route to the right MMC sections", TestExtendedMmcSectionRouting),
+    ("Security XML registry and restricted-group details remain read-only", TestSecurityXmlClassificationAndRoutes),
     ("MMC navigation does not confuse audit and registry with security options", TestMmcNavigationRouting),
     ("MMC policy names must match uniquely and exactly", TestMmcPolicyNameMatcher),
     ("MMC ADMX tree suffix is recognized only with unique section identity", TestMmcTreePathMatcher),
@@ -816,6 +817,111 @@ static void TestGpoScriptCopyResolution()
     Assert(GpoScriptCopyResolver.PreferredCopy(
         new GpoScriptSearchResult { Scripts = new[] { sourceA } })?.GpoId == gpoA,
         "One-copy result must open without a chooser.");
+}
+
+static void TestSecurityXmlClassificationAndRoutes()
+{
+    var groupXml = System.Xml.Linq.XElement.Parse(
+        "<Extension><RestrictedGroups><Group name='Local Administrators'>" +
+        "<Member name='DOMAIN\\Domain Admins' SID='S-1-5-21-42'/>" +
+        "</Group></RestrictedGroups></Extension>");
+    var groupMember = groupXml.Descendants()
+        .Single(x => x.Name.LocalName == "Member");
+    Assert(SecurityXmlEntryClassifier.InferCategory(groupMember) ==
+           SecurityXmlEntryClassifier.RestrictedGroupsSection,
+        "Member entries nested below group security data must be Restricted Groups.");
+
+    var registryXml = System.Xml.Linq.XElement.Parse(
+        "<Extension><Registry key='MACHINE\\Software\\Example'>" +
+        "<Permissions>ACL</Permissions></Registry></Extension>");
+    Assert(SecurityXmlEntryClassifier.InferCategory(
+        registryXml.Descendants().Single(x => x.Name.LocalName == "Registry")) ==
+           SecurityXmlEntryClassifier.RegistrySection,
+        "Security registry ACL XML must identify the Registry MMC section.");
+
+    var securityOptionXml = System.Xml.Linq.XElement.Parse(
+        "<Extension><SecurityOptions><Registry value='TRUE'/></SecurityOptions></Extension>");
+    Assert(SecurityXmlEntryClassifier.InferCategory(
+        securityOptionXml.Descendants().Single(x => x.Name.LocalName == "Registry")) is null,
+        "A registry field inside Security Options must not be mislabeled as Registry ACL.");
+
+    var unrelatedMember = System.Xml.Linq.XElement.Parse(
+        "<Extension><Setting><Member name='someone'/></Setting></Extension>");
+    Assert(SecurityXmlEntryClassifier.InferCategory(
+        unrelatedMember.Descendants().Single(x => x.Name.LocalName == "Member")) is null,
+        "Unrelated Member names without group ancestry must not become Restricted Groups.");
+
+    var gpo = Guid.NewGuid();
+    var legacyMember = new PolicySettingInfo
+    {
+        GpoId = gpo,
+        GpoName = "Example GPO",
+        Scope = "Computer",
+        Extension = "SecuritySettings",
+        Category = "SecuritySettings",
+        SettingName = "Member: DOMAIN\\Group.Yosh.AD.Limited.Administrators",
+        State = "Configured",
+        Value = "SID=S-1-5-21-42; Name=DOMAIN\\Group.Yosh.AD.Limited.Administrators"
+    };
+    var legacyRegistry = new PolicySettingInfo
+    {
+        GpoId = gpo,
+        GpoName = "Example GPO",
+        Scope = "Computer",
+        Extension = "SecuritySettings",
+        Category = "SecuritySettings",
+        SettingName = "Registry", State = "Configured",
+        Value = "Type=PermissionType; Path=MACHINE\\Software\\Example; SecurityDescriptor=ABC"
+    };
+    var nonMember = new PolicySettingInfo
+    {
+        GpoId = gpo, Scope = "Computer", Extension = "SecuritySettings",
+        Category = "SecuritySettings",
+        SettingName = "Member: not enough evidence",
+        State = "Configured", Value = "unknown"
+    };
+
+    Assert(SecurityXmlEntryClassifier.InferLegacyCategory(legacyMember) ==
+           SecurityXmlEntryClassifier.RestrictedGroupsSection,
+        "Legacy cached member XML with both SID and Name must resolve the related section.");
+    Assert(SecurityXmlEntryClassifier.InferLegacyCategory(legacyRegistry) ==
+           SecurityXmlEntryClassifier.RegistrySection,
+        "Legacy cached Registry XML must resolve the related section.");
+    Assert(SecurityXmlEntryClassifier.InferLegacyCategory(nonMember) is null,
+        "An ambiguous cached member must not be blindly routed to Restricted Groups.");
+
+    Assert(GpoEditorNavigatorService.NavigationTarget(legacyMember).EndsWith(
+        "Security Settings > Restricted Groups", StringComparison.Ordinal),
+        "Member XML should open Restricted Groups and not the generic Security Settings root.");
+    Assert(GpoEditorNavigatorService.NavigationTarget(legacyRegistry).EndsWith(
+        "Security Settings > Registry", StringComparison.Ordinal),
+        "Registry XML should open the Security Registry section rather than the generic root.");
+
+    var navigator = new GpoEditorNavigatorService();
+    Assert(!navigator.CanNavigateExactly(legacyMember) &&
+           !navigator.CanNavigateExactly(legacyRegistry),
+        "XML SecuritySettings detail must never claim verified exact MMC row editing.");
+
+    var unified = UnifiedSettingsCatalogService.Build(
+        new[] { legacyMember, legacyRegistry },
+        Array.Empty<AdmxPolicyDefinition>(),
+        null, gpo);
+    Assert(unified.ConfiguredCount == 0 &&
+           unified.Rows.Count(r => r.IsTechnicalDetail) == 2,
+        "Raw descriptor leaves must not count as independent configured policy settings.");
+    Assert(unified.Rows.All(r =>
+            r.Kind == "GPMC detail" && r.Capability.Contains("read-only", StringComparison.Ordinal) &&
+            r.Value.Length < 200 &&
+            r.State == "XML detail"),
+        "Unified All Settings must show concise read-only detail instead of raw security ACL dumps.");
+    Assert(unified.Rows.Single(r => r.SettingName == "Registry").Category ==
+           SecurityXmlEntryClassifier.RegistrySection,
+        "Old cached XML must be dynamically reclassified without full domain reindexing.");
+    Assert(legacyRegistry.Value.Contains("SecurityDescriptor=ABC", StringComparison.Ordinal),
+        "The original XML value must remain intact for the raw detail viewer.");
+    Assert(!SecurityXmlEntryClassifier.IsTechnicalDetail(nonMember) ||
+           SecurityXmlEntryClassifier.InferLegacyCategory(nonMember) is null,
+        "An unknown member label must not cause a confident navigation route.");
 }
 
 static void TestExtendedMmcSectionRouting()
