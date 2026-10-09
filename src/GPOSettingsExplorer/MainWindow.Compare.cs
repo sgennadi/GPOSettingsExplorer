@@ -177,11 +177,7 @@ public partial class MainWindow
             var link = _links.FirstOrDefault(l => conflict.GpoIds.Contains(l.GpoId));
             if (link is not null)
                 LinksGrid.SelectedItem = link;
-            var linksTab = MainTabs.Items.OfType<System.Windows.Controls.TabItem>()
-                .FirstOrDefault(t => (t.Header?.ToString() ?? "")
-                    .Equals("GPO Links", StringComparison.OrdinalIgnoreCase));
-            if (linksTab is not null)
-                MainTabs.SelectedItem = linksTab;
+            MainTabs.SelectedItem = GpoLinksTab;
             StatusText.Text = "Review GPO Links and filter/WMI conditions before changing Link Order.";
         }
         else
