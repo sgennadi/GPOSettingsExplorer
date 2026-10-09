@@ -4,6 +4,19 @@
 
 - No unreleased changes yet.
 
+## 0.5.0 - 2026-10-09
+
+- Script editor: editable code-page selection for Cyrillic (Windows-1251, DOS-866), Hebrew (Windows-1255, DOS-862), Unicode (UTF-8/16/32; BOM on/off), KOI8 and installed Windows/OEM pages. Safe source-file reload in a selected encoding and explicit DOS/Windows CRLF, Unix LF, classic Mac CR conversion.
+- Strict lossless encoding before SYSVOL write and local export, with detection of non-representable characters; preserve BOM and original mixed line endings unless explicitly converted.
+- Combined syntax and Unicode safety diagnostics without script execution: invisible Unicode, bidi overrides, stray U+FEFF, NBSP, dangerous control codes and smart punctuation, with line/column positioning and warnings for PowerShell 5.1 UTF-8 without BOM or unsuitable BAT encodings.
+- Diagnostics: explicit read-only MMC Route Audit of a selected GPO, bounded tree traversal, per-section FOUND/MISSING/ERROR logs and local report export through the existing diagnostic queue. Exact per-setting MMC navigation for known Security Options remains unchanged.
+- GPO Links: colored, searchable site/domain/OU hierarchy showing block inheritance, Enforced, disabled links and GPMC Link Order. Link Order mapping corrected against reverse gPLink storage; existing WRITE ENABLED editor used for changes and concurrent link updates rejected.
+- Compare & Conflicts: distinguish identical duplicate settings from differing-value candidates; show shared linked containers, potential inheritance overlap and uncertain/no scope evidence. Colored rows, per-GPO value breakdown, explainable consolidation recommendations, copyable remediation plan, navigation to protected settings/links editing.
+- Important: Link and conflict predictions are NOT RSoP. WMI/security filters, computer/user location, loopback, inheritance, sites and client-side extensions must be verified separately before cleanup or consolidation. No automatic cross-GPO mutation occurs.
+- Added regression tests for Cyrillic/Hebrew round-tripping, BOM, line endings, unsafe Unicode controls, reverse AD link precedence and duplicate/conflicting policy scope.
+
+
+
 ## 0.4.8 - 2026-10-09
 
 - Added GitHub API connectivity check before automatic/manual release lookups; offline machines skip update checks without creating false error logs or retrying every launch.
