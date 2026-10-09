@@ -36,17 +36,17 @@ public static class GpoScriptAuditEvidenceService
         var changed = !originalBytes.AsSpan().SequenceEqual(committedBytes);
         var before = Describe(
             originalBytes, originalText,
-            document.OriginalCodePage, document.OriginalEmitBom);
+            document.OriginalCodePage);
         var after = Describe(
             committedBytes, committedText,
-            document.CodePage, document.EmitBom);
+            document.CodePage);
         var summary = DescribeChangedRegion(originalText, committedText, changed);
 
         return new GpoScriptAuditEvidence(changed, before, after, summary);
     }
 
     private static string Describe(
-        byte[] bytes, string text, int codePage, bool expectedBom)
+        byte[] bytes, string text, int codePage)
     {
         var detected = ScriptEncodingService.DetectBom(bytes);
         var bom = detected.BomLength > 0;
@@ -73,6 +73,9 @@ public static class GpoScriptAuditEvidenceService
 
         var before = Lines(originalText);
         var after = Lines(committedText);
+        if (before.SequenceEqual(after, StringComparer.Ordinal))
+            return "Only line endings changed; script commands and logical lines are identical.";
+
         var commonPrefix = 0;
         while (commonPrefix < Math.Min(before.Length, after.Length) &&
                before[commonPrefix].Equals(after[commonPrefix], StringComparison.Ordinal))
