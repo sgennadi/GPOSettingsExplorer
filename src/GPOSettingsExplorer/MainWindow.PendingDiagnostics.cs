@@ -41,7 +41,13 @@ public partial class MainWindow
         _checkingPendingDiagnostics = true;
         try
         {
-            var items = await Task.Run(_diagnosticQueue.GetPending);
+            var items = await Task.Run(() =>
+            {
+                // Only acknowledged files in SentArchive may expire offline.
+                // Never delete pending error reports without a confirmed issue.
+                _diagnosticQueue.CleanupSubmittedArchive();
+                return _diagnosticQueue.GetPending();
+            });
             if (items.Count < DiagnosticLogQueueService.AutomaticOfferThreshold ||
                 !_diagnosticQueue.ShouldOffer(items.Count, DateTime.UtcNow))
             {
