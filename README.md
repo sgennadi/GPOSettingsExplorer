@@ -14,7 +14,7 @@ Download the latest portable build from:
 
 **[GitHub Releases](https://github.com/sgennadi/GPOSettingsExplorer/releases/latest)**
 
-Current release: **v0.7.0**
+Current release: **v0.7.1**
 
 Available packages:
 
@@ -28,6 +28,10 @@ The builds are self-contained. A separate .NET runtime installation is not requi
 **All Settings** is now the primary search, inspection and edit workspace. It merges configured GPMC XML index entries, available ADMX templates, and optional rows observed in the read-only MMC inventory. Search by setting, category, GPO, registry target, source or value, or filter by source/state/GPO. Each row distinguishes its evidence and safest supported editing route. Configure an ADMX template by explicitly choosing a GPO; configured security or ADMX settings continue through the existing backup/preview/write-guarded editors. Unsupported/custom MMC entries are read-only, not silently edited.
 
 The old raw data grids were **not removed**: expand **Advanced sources and diagnostics** under All Settings for original GPMC, MMC and ADMX views. Previously separate GPP editors are now in **Preferences (GPP)** to keep the main tab bar compact. Existing user workspaces are migrated from their old tab positions. Settings absent from GPMC XML are never assumed Not Configured; ADMX template rows explicitly show **Template - state unknown**.
+
+### MMC route-audit accuracy (0.7.1)
+
+MMC Route Audit now resolves the standard decorated **Administrative Templates: Policy definitions (ADMX files) retrieved from the central store** tree label without accepting unsafe partial names. The audit checks indexed paths first, then captures a bounded 1,500-node / depth-12 tree snapshot. Its report separates FOUND/MISSING/ERROR/SKIPPED/UNCHECKED routes and explicitly marks incomplete snapshots PARTIAL. It does not claim that all 14,000+ ADMX definitions were enumerated or that FOUND proves an exact editable policy row.
 
 ### MMC Full Settings Inventory (0.6.0; safer navigation in 0.6.1)
 
