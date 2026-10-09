@@ -58,7 +58,8 @@ public sealed class GpoEditorNavigatorService
     private static bool CanNavigateToSection(PolicySettingInfo setting) =>
         setting.Extension.Equals("SecuritySettings", StringComparison.OrdinalIgnoreCase) ||
         setting.Extension.Equals("AuditSettings", StringComparison.OrdinalIgnoreCase) ||
-        setting.Extension.Equals("RegistrySettings", StringComparison.OrdinalIgnoreCase);
+        setting.Extension.Equals("RegistrySettings", StringComparison.OrdinalIgnoreCase) ||
+        GpoPolicySectionRoutes.Resolve(setting).Count > 0;
 
     public async Task<bool> OpenAtSettingAsync(
         GpoInfo gpo,
@@ -395,6 +396,10 @@ public sealed class GpoEditorNavigatorService
     private static IReadOnlyList<string> BuildTreePath(
         PolicySettingInfo setting)
     {
+        var mappedSection = GpoPolicySectionRoutes.Resolve(setting);
+        if (mappedSection.Count > 0)
+            return mappedSection;
+
         var scope =
             setting.Scope.Equals("User", StringComparison.OrdinalIgnoreCase)
                 ? "User Configuration"
