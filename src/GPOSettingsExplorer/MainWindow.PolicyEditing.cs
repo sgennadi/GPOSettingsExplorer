@@ -435,6 +435,8 @@ public partial class MainWindow
         SettingsCountText.Text = $"{_settings.Count:N0} configured settings";
 
         await PersistCurrentSettingsCacheAsync();
+        if (AllSettingsTab.IsSelected)
+            await RefreshUnifiedCatalogAsync();
     }
 
     private async void BackupSelectedGpo_Click(object sender, RoutedEventArgs e)
