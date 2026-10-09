@@ -288,8 +288,8 @@ public static class MmcFullSettingsInventoryService
             reason = ex.Message;
         }
 
-        if (sections.Any(s => s.Status is "Read error" or "Selection failed" or "Truncated"))
-            reason += " Some sections were inaccessible or incomplete.";
+        if (sections.Any(s => s.Status is "Read error" or "Selection failed" or "Truncated" or "No list"))
+            reason += " Some sections were inaccessible, incomplete or exposed only non-native MMC controls.";
 
         progress?.Report($"MMC scan: {observed.Count:N0} rows, {visited:N0} nodes; " +
                          (interrupted ? "PARTIAL: " + reason : "walk finished"));
