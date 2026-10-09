@@ -483,7 +483,7 @@ public partial class MainWindow
         await EditGpoScriptAsync(selected, result.LineNumber);
     }
 
-    private static void ScriptCopies_PreviewMouseDoubleClick(
+    private void ScriptCopies_PreviewMouseDoubleClick(
         object sender,
         MouseButtonEventArgs e)
     {
