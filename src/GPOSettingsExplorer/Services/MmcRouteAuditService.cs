@@ -121,7 +121,13 @@ public static class MmcRouteAuditService
                 skipped++;
                 continue;
             }
-            MmcInventoryDialogGuard.ThrowIfDialogOpen(process);
+            var preexistingDialog = MmcInventoryDialogGuard.FindVisibleDialog(process.Id);
+            if (preexistingDialog is not null)
+            {
+                report.AppendLine("[NOT CHECKED] " + target.Path);
+                report.AppendLine("    MMC dialog blocks safe inspection: " + preexistingDialog);
+                break;
+            }
             var node = root;
             var status = "FOUND";
             var detail = "";
@@ -130,6 +136,7 @@ public static class MmcRouteAuditService
                 token.ThrowIfCancellationRequested();
                 try
                 {
+                    MmcInventoryDialogGuard.ThrowIfDialogOpen(process);
                     // The root of the MMC policy tree has computer/user branches;
                     // every deeper level must be an immediate child.
                     var child = i == 0
@@ -154,6 +161,14 @@ public static class MmcRouteAuditService
                         detail = $"Stopped at segment {i + 1}/{segments.Length}: {segments[i]}. " +
                             $"Visible children: {DescribeChildren(node)}";
                         break;
+                    }
+
+                    var actualLabel = node is null ? "" : child.Current.Name ?? "";
+                    if (!actualLabel.Equals(segments[i], StringComparison.CurrentCultureIgnoreCase) &&
+                        MmcTreePathMatcher.SectionNameMatches(actualLabel, segments[i]))
+                    {
+                        detail += (detail.Length == 0 ? "" : " ") +
+                            $"Display-name alias at segment {i + 1}: {actualLabel}.";
                     }
 
                     node = child;
