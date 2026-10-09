@@ -28,14 +28,16 @@ public static class MmcRouteAuditService
         var report = new StringBuilder();
         report.AppendLine("GPO SETTINGS EXPLORER - MMC ROUTE AUDIT (READ ONLY)");
         report.AppendLine($"Generated UTC: {DateTimeOffset.UtcNow:O}");
-        report.AppendLine($"GPO: {gpo.DisplayName} ({gpo.Id:B})");
+        report.AppendLine($"Reference MMC GPO: {gpo.DisplayName} ({gpo.Id:B})");
+        report.AppendLine($"GPOs represented in settings index: {settings.Select(x => x.GpoId).Distinct().Count()}");
+        report.AppendLine("One MMC editor is used as a representative policy tree.");
+        report.AppendLine("Individual GPOs can expose different policy nodes or installed CSEs.");
         report.AppendLine($"Domain: {gpo.DomainName}");
         report.AppendLine("Mode: tree inspection only; no properties dialogs and no SYSVOL/AD writes.");
         report.AppendLine("The MMC process remains open for the operator after the scan.");
         report.AppendLine();
 
         var targets = settings
-            .Where(s => s.GpoId == gpo.Id)
             .Select(s => new
             {
                 s.Extension, s.SettingName,
@@ -94,7 +96,8 @@ public static class MmcRouteAuditService
         var budget = 220;
         SnapshotTree(root, report, 0, 7, ref budget, token);
         report.AppendLine();
-        report.AppendLine($"### Declared report paths ({targets.Length})");
+        report.AppendLine($"### All indexed MMC section paths ({targets.Length})");
+        report.AppendLine("This is a three-minute, read-only, bounded scan; any unchecked paths remain in the report.");
 
         var found = 0;
         var missing = 0;
