@@ -20,6 +20,7 @@ public sealed record UnifiedSettingInfo
     public string RegistryTarget { get; init; } = string.Empty;
     public string Explanation { get; init; } = string.Empty;
     public string Kind { get; init; } = string.Empty;
+    public bool IsTechnicalDetail { get; init; }
     public PolicySettingInfo? Configured { get; init; }
     public AdmxPolicyDefinition? Admx { get; init; }
     public MmcInventoryEntry? Mmc { get; init; }
