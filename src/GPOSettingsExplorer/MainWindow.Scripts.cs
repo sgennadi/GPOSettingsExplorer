@@ -649,27 +649,39 @@ public partial class MainWindow
                     $"Automatic backup before editing script '{script.FileName}'"));
 
             SetBusy(true, "Writing and verifying script in SYSVOL...");
-            await StaTask.Run(() =>
-                _gpoScriptService.SaveDocument(
+            var saveEvidence = await StaTask.Run(() =>
+                _gpoScriptService.SaveDocumentWithEvidence(
                     gpo,
                     context.DomainDistinguishedName,
                     script,
                     document));
 
-            try
+            // No committed change means no successful EDIT audit record.
+            // Never store raw script source in persistent audit JSONL: startup
+            // and logon scripts sometimes embed credentials or access tokens.
+            if (saveEvidence.Changed)
             {
-                _auditService.Write(
-                    "Edit GPO Script",
-                    "GPO Script",
-                    script.FileName,
-                    $"GPO: {gpo.DisplayName}; Assignment: {script.Assignment}; Path: {script.FullPath}; Backup: {backupPath}");
-            }
-            catch (Exception auditError)
-            {
-                CrashLogService.Write("GPO script saved but audit logging failed", auditError);
+                try
+                {
+                    _auditService.Write(
+                        "Edit GPO Script",
+                        "GPO Script",
+                        script.FileName,
+                        $"GPO: {gpo.DisplayName}; Assignment: {script.Assignment}; " +
+                        $"Path: {script.FullPath}; Backup: {backupPath}; " +
+                        $"Verified change: {saveEvidence.ChangeSummary}",
+                        before: saveEvidence.Before,
+                        after: saveEvidence.After);
+                }
+                catch (Exception auditError)
+                {
+                    CrashLogService.Write("GPO script saved but audit logging failed", auditError);
+                }
             }
 
-            StatusText.Text = $"Saved and verified {script.FileName}. Backup: {backupPath}";
+            StatusText.Text = saveEvidence.Changed
+                ? $"Saved and byte-verified {script.FileName}. Backup: {backupPath}"
+                : $"No byte changes committed for {script.FileName}. Backup: {backupPath}";
 
             try
             {
@@ -678,14 +690,19 @@ public partial class MainWindow
                 var matches = await RecalculateCurrentGpoScriptSearchAsync(showValidationMessages: false);
 
                 var note = removedMarkdownFence ? " Markdown wrapper removed." : string.Empty;
+                var resultDescription = saveEvidence.Changed
+                    ? $"Saved and verified {script.FileName}."
+                    : $"No byte changes committed for {script.FileName}.";
                 StatusText.Text = matches is null
-                    ? $"Saved {script.FileName}.{note} Backup: {backupPath}"
-                    : $"Saved {script.FileName}.{note} Search refreshed: {matches.Value:N0} unique match(es) remain. Backup: {backupPath}";
+                    ? $"{resultDescription}{note} Backup: {backupPath}"
+                    : $"{resultDescription}{note} Search refreshed: {matches.Value:N0} unique match(es) remain. Backup: {backupPath}";
             }
             catch (Exception refreshError)
             {
                 CrashLogService.Write("GPO script saved but refresh failed", refreshError);
-                StatusText.Text = $"Saved {script.FileName}. Backup: {backupPath}. Refresh failed; use Refresh manually.";
+                StatusText.Text = saveEvidence.Changed
+                    ? $"Saved {script.FileName}. Backup: {backupPath}. Refresh failed; use Refresh manually."
+                    : $"No byte changes committed for {script.FileName}. Backup: {backupPath}. Refresh failed; use Refresh manually.";
             }
         }
         finally

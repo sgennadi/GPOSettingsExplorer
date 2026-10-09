@@ -21,6 +21,7 @@ var tests = new (string Name, Action Body)[]
     ("Public diagnostic reports redact identifiers and omit raw logs by default", TestGitHubDiagnosticsPrivacy),
     ("Blocked GitHub socket is treated as expected connectivity failure", TestBlockedUpdateConnectivity),
     ("Script encodings preserve Cyrillic and Hebrew and reject loss", TestScriptEncodingRoundTrips),
+    ("Script audit records verified hashes and safe before/after metadata", TestScriptAuditEvidence),
     ("Unicode script safety warns on bidi and invisible special characters", TestScriptUnicodeSafety),
     ("GPMC Link Order reverses gPLink storage order", TestGpoLinkOrderPrecedence),
     ("GPO conflicts distinguish duplicate values and linked mismatches", TestGpoConflictAnalysis),
@@ -228,6 +229,63 @@ static void TestScriptUnicodeSafety()
         "Hidden BOM/bidi controls must warn strongly.");
     Assert(findings.Any(x => x.Line == 3),
         "Diagnostics must retain source line positions.");
+}
+
+static void TestScriptAuditEvidence()
+{
+    var secret = "credential=PrivateTestSecret";
+    var beforeText = "@echo off\r\nset " + secret + "\r\necho before\r\n";
+    var afterText = "@echo off\r\nset " + secret + "\r\necho after\r\n";
+    var oldBytes = ScriptEncodingService.Encode(beforeText, 65001, false);
+    var newBytes = ScriptEncodingService.Encode(afterText, 65001, false);
+    var document = new GpoScriptDocument
+    {
+        OriginalText = beforeText,
+        OriginalCodePage = 65001,
+        OriginalEmitBom = false,
+        CodePage = 65001,
+        EmitBom = false,
+        Text = afterText
+    };
+
+    var evidence = GpoScriptAuditEvidenceService.Create(oldBytes, newBytes, document);
+    Assert(evidence.Changed, "Different actual bytes should produce a modified audit result.");
+    Assert(evidence.Before.Contains("SHA-256:", StringComparison.Ordinal) &&
+           evidence.After.Contains("SHA-256:", StringComparison.Ordinal) &&
+           evidence.Before.Contains("Bytes:", StringComparison.Ordinal) &&
+           evidence.After.Contains("Bytes:", StringComparison.Ordinal) &&
+           evidence.Before != evidence.After,
+        "Audit before/after must contain distinct verified file fingerprints.");
+    Assert(evidence.ChangeSummary.Contains("Changed text region:", StringComparison.Ordinal),
+        "A text edit must identify the affected line range.");
+    Assert(!evidence.Before.Contains(secret, StringComparison.Ordinal) &&
+           !evidence.After.Contains(secret, StringComparison.Ordinal) &&
+           !evidence.ChangeSummary.Contains(secret, StringComparison.Ordinal),
+        "Audit records must never include script commands or embedded secrets.");
+
+    var same = GpoScriptAuditEvidenceService.Create(oldBytes, oldBytes, document);
+    Assert(!same.Changed &&
+           same.ChangeSummary.Contains("No byte change", StringComparison.Ordinal),
+        "An unchanged file must not be reported as an actual saved modification.");
+
+    var lfText = beforeText.Replace("\r\n", "\n", StringComparison.Ordinal);
+    var lfBytes = ScriptEncodingService.Encode(lfText, 65001, false);
+    var newlines = GpoScriptAuditEvidenceService.Create(oldBytes, lfBytes, document);
+    Assert(newlines.Changed &&
+           newlines.ChangeSummary.Contains("line endings", StringComparison.Ordinal),
+        "Only changed EOL markers must not be reported as edited commands.");
+
+    var unicode = ScriptEncodingService.Encode(beforeText, 1200, true);
+    var unicodeDocument = new GpoScriptDocument
+    {
+        OriginalCodePage = 65001,
+        CodePage = 1200,
+        EmitBom = true
+    };
+    var formatted = GpoScriptAuditEvidenceService.Create(oldBytes, unicode, unicodeDocument);
+    Assert(formatted.Changed &&
+           formatted.ChangeSummary.Contains("File format changed", StringComparison.Ordinal),
+        "A BOM/encoding-only change should have a meaningful audit explanation.");
 }
 
 static void TestGpoLinkOrderPrecedence()

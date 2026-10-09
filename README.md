@@ -14,7 +14,7 @@ Download the latest portable build from:
 
 **[GitHub Releases](https://github.com/sgennadi/GPOSettingsExplorer/releases/latest)**
 
-Current release: **v0.5.1**
+Current release: **v0.5.2**
 
 Available packages:
 
@@ -29,7 +29,7 @@ The GPO Scripts tab provides a rich, portable AvalonEdit editor with syntax colo
 
 The editor provides line numbers, word wrap, visible tabs/spaces, adjustable font size, find/replace/replace all, Undo/Redo, goto line, comment/uncomment, indent/outdent, keyboard shortcuts, and export to a local copy. The syntax check uses the PowerShell AST parser **without executing script content**. BAT/CMD supports useful static warnings such as unresolved and duplicate labels, but this is not a full CMD interpreter. Diagnostics can be opened by line.
 
-Saving still requires explicitly enabling WRITE mode, creates a GPO backup, previews the change, verifies the SYSVOL file bytes, and reports save/rollback errors without discarding the edited text. Test on an isolated GPO before editing production scripts.
+Saving still requires explicitly enabling WRITE mode, creates a GPO backup, previews the change, verifies the SYSVOL file bytes, and reports save/rollback errors without discarding the edited text. From v0.5.2 onward, successful script edits also record SHA-256/size/encoding/BOM/line-ending evidence in the audit Before and After fields, plus a changed-line summary; script source and embedded credentials are not logged. A no-op does not generate a misleading script edit audit event. Older empty Before/After fields remain historical and can only be investigated using surviving GPO backups. Test on an isolated GPO before editing production scripts.
 
 ### Diagnostics on multiple computers
 
