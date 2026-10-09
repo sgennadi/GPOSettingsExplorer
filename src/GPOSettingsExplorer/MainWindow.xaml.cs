@@ -754,6 +754,7 @@ public partial class MainWindow : Window
     {
         StopDiagnosticQueueMonitor();
         _indexCancellation?.Cancel();
+        _mmcInventoryCancellation?.Cancel();
         base.OnClosed(e);
     }
 }
