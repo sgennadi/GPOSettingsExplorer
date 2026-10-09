@@ -48,6 +48,7 @@ public partial class MainWindow : Window
         _wmiView.Filter = FilterWmi;
 
         InitializeSecurityUi();
+        InitializeMmcInventoryUi();
         InitializeWorkspaceUi();
     }
 
@@ -753,6 +754,7 @@ public partial class MainWindow : Window
     {
         StopDiagnosticQueueMonitor();
         _indexCancellation?.Cancel();
+        _mmcInventoryCancellation?.Cancel();
         base.OnClosed(e);
     }
 }
