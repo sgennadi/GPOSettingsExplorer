@@ -271,8 +271,7 @@ public sealed class DiagnosticsWindow : Window
             return;
         }
 
-        var settings = _indexedSettings()
-            .Where(item => item.GpoId == gpo.Id).ToArray();
+        var settings = _indexedSettings().ToArray();
         if (settings.Length == 0)
         {
             MessageBox.Show(this,
@@ -282,8 +281,8 @@ public sealed class DiagnosticsWindow : Window
         }
 
         if (MessageBox.Show(this,
-                "Read the MMC policy tree and test section paths for '" +
-                    gpo.DisplayName + "'?\n\n" +
+                "Read MMC policy tree using '" + gpo.DisplayName +
+                    "' and test distinct paths from ALL indexed GPOs?\n\n" +
                     "This diagnostic does not edit AD or SYSVOL. It opens an MMC window and " +
                     "may take up to three minutes. Results stay local until you choose to send diagnostics.",
                 "Read-only MMC route audit",
