@@ -255,8 +255,7 @@ public partial class MainWindow
 
         if (row.Configured is not null)
         {
-            SettingsGrid.SelectedItem = row.Configured;
-            await EditSelectedSettingAsync();
+            await EditConfiguredSettingAsync(row.Configured);
             await RefreshUnifiedCatalogAsync();
             return;
         }
