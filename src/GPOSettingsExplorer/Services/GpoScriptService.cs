@@ -322,6 +322,15 @@ public sealed class GpoScriptService
         GpoScriptInfo script,
         GpoScriptDocument document)
     {
+        _ = SaveDocumentWithEvidence(gpo, domainDistinguishedName, script, document);
+    }
+
+    public GpoScriptAuditEvidence SaveDocumentWithEvidence(
+        GpoInfo gpo,
+        string domainDistinguishedName,
+        GpoScriptInfo script,
+        GpoScriptDocument document)
+    {
         EditingGuard.EnsureEnabled(
             "Edit GPO script");
         if (!script.Exists ||
@@ -414,7 +423,7 @@ public sealed class GpoScriptService
             if (expectedBytes.AsSpan().SequenceEqual(original))
             {
                 GpoScriptCacheService.Invalidate(gpo);
-                return;
+                return GpoScriptAuditEvidenceService.Create(original, expectedBytes, document);
             }
 
             stage = "checking SYSVOL source version";
@@ -456,6 +465,7 @@ public sealed class GpoScriptService
                 throw new IOException("SYSVOL content changed after the GPO commit.");
 
             GpoScriptCacheService.Invalidate(gpo);
+            return GpoScriptAuditEvidenceService.Create(original, finalBytes, document);
         }
         catch (Exception ex)
         {
