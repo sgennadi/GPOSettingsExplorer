@@ -27,6 +27,7 @@ var tests = new (string Name, Action Body)[]
     ("GPO conflicts distinguish duplicate values and linked mismatches", TestGpoConflictAnalysis),
     ("RSoP verification rejects missing, excluded and nested GPOs", TestRsopVerificationEvidence),
     ("MMC inventory verifies source, path, scope and incomplete coverage", TestMmcFullInventoryReconciliation),
+    ("MMC inventory skips fragile Scripts snap-ins before automation", TestMmcInventorySnapinSafety),
     ("Semantic XML diff ignores report timestamps and finds setting changes", TestSemanticXmlDiff)
 };
 
@@ -408,6 +409,65 @@ static void TestRsopVerificationEvidence()
         "Computer", new[] { a, b });
     Assert(!noFlags.AllApplied && !noFlags.AnyExcluded,
         "Missing security and WMI application flags must never imply applied.");
+}
+
+static void TestMmcInventorySnapinSafety()
+{
+    var startup = new[]
+    {
+        "01.06.Yosh-DC-AD.Events.Falcon",
+        "Computer Configuration", "Policies", "Windows Settings",
+        "Scripts (Startup/Shutdown)"
+    };
+    Assert(MmcInventorySafetyRules.ShouldSkipNode(startup, out var message) &&
+           message.Contains("GPO Scripts", StringComparison.Ordinal),
+        "Scripts (Startup/Shutdown) must be excluded before Expand/Select.");
+
+    var logon = new[]
+    {
+        "Example GPO", "User Configuration", "Policies", "Windows Settings",
+        "Scripts (Logon/Logoff)"
+    };
+    Assert(MmcInventorySafetyRules.ShouldSkipNode(logon, out _),
+        "User logon/logoff Scripts snap-in must also be excluded.");
+
+    var unrelated = new[]
+    {
+        "Example GPO", "Computer Configuration", "Policies",
+        "Administrative Templates", "System", "Scripts"
+    };
+    Assert(!MmcInventorySafetyRules.ShouldSkipNode(unrelated, out _),
+        "An unrelated Administrative Templates Scripts category must not be blocked.");
+
+    var safe = new[]
+    {
+        "Example GPO", "Computer Configuration", "Policies",
+        "Windows Settings", "Security Settings", "Local Policies", "Security Options"
+    };
+    Assert(!MmcInventorySafetyRules.ShouldSkipNode(safe, out _),
+        "Security Options and unrelated safe settings must remain discoverable.");
+
+    var result = new MmcInventoryScanResult(
+        Array.Empty<MmcInventoryEntry>(),
+        new[] { new MmcInventorySection(
+            string.Join(" > ", startup), "Skipped - unsafe snap-in", 0,
+            "Skip documented in coverage") },
+        5, false, "Completed safe nodes.", DateTimeOffset.Now);
+    Assert(!result.IsComplete && result.Failures == 1 &&
+           result.Coverage.Contains("PARTIAL", StringComparison.Ordinal),
+        "Intentionally skipped snap-ins must keep inventory coverage PARTIAL.");
+
+    var modalAbort = result with
+    {
+        Sections = new[] { new MmcInventorySection(
+            "Computer Configuration", "Scan aborted", 0,
+            "MMC reported a visible modal error") },
+        Interrupted = true,
+        CompletionReason = "MMC modal dialog was detected"
+    };
+    Assert(modalAbort.Failures == 1 && !modalAbort.IsComplete &&
+           modalAbort.Coverage.Contains("modal", StringComparison.OrdinalIgnoreCase),
+        "A modal MMC error must never be reported as a complete scan.");
 }
 
 static void TestMmcFullInventoryReconciliation()
