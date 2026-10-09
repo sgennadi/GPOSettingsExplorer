@@ -39,7 +39,8 @@ public sealed record MmcInventoryScanResult(
     DateTimeOffset CollectedAt)
 {
     public bool IsComplete =>
-        !Interrupted && Sections.All(s =>
+        !Interrupted && NodesVisited > 0 && Sections.Count > 0 && Rows.Count > 0 &&
+        Sections.All(s =>
             s.Status is "Rows read" or "Empty list" or "Folder only");
 
     public int Failures => Sections.Count(s =>
