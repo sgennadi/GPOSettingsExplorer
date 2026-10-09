@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Input;
 using GPOSettingsExplorer.Models;
+using GPOSettingsExplorer.Services;
 
 namespace GPOSettingsExplorer;
 
@@ -95,7 +96,7 @@ public partial class MainWindow
         var differences = _conflictRows.Count - duplicates;
         StatusText.Text =
             $"{differences:N0} differing-value candidates; {duplicates:N0} identical-value duplicates. " +
-            "Scope overlap is indicative, not effective RSoP.";
+            "Scope overlap is indicative, not effective RSoP. Open a finding to verify RSoP/WMI/security on a computer.";
     }
 
     private void CompareSearchBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
@@ -141,7 +142,7 @@ public partial class MainWindow
         var rows = source.ToArray();
         ConflictGrid.ItemsSource = rows;
         ConflictCountText.Text =
-            $"{rows.Length:N0} shown / {_conflictRows.Count:N0} differences and duplicates (RSoP not proven)";
+            $"{rows.Length:N0} shown / {_conflictRows.Count:N0} differences and duplicates (verify each sample before cleanup)";
     }
 
     private void ConflictGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e) =>
@@ -155,7 +156,18 @@ public partial class MainWindow
         if (ConflictGrid.SelectedItem is not GpoConflictInfo conflict)
             return;
 
-        var details = new GpoConflictDetailWindow(conflict) { Owner = this };
+        // Snapshot UI collections on the dispatcher before starting any remote checks.
+        var gpos = _gpos.ToArray();
+        var filters = _wmiFilters.ToArray();
+        var domainDn = _domainContext?.DomainDistinguishedName ?? string.Empty;
+        var details = new GpoConflictDetailWindow(
+            conflict,
+            (computer, user) => Task.Run(() =>
+                new GpoApplicabilityVerificationService().Verify(
+                    conflict, gpos, filters, domainDn, computer, user)))
+        {
+            Owner = this
+        };
         if (details.ShowDialog() != true)
             return;
 
