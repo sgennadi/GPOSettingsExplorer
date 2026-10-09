@@ -208,15 +208,15 @@ public static class MmcRouteAuditService
     {
         var condition = new PropertyCondition(
             AutomationElement.ControlTypeProperty, ControlType.TreeItem);
-        var children = parent.FindAll(TreeScope.Children, condition);
-        foreach (AutomationElement child in children)
-        {
-            var actual = child.Current.Name?.Trim() ?? "";
-            if (actual.Equals(segment, StringComparison.CurrentCultureIgnoreCase) ||
-                actual.StartsWith(segment + " (", StringComparison.CurrentCultureIgnoreCase))
-                return child;
-        }
-        return null;
+        var children = parent.FindAll(TreeScope.Children, condition)
+            .Cast<AutomationElement>().ToArray();
+        var labels = children.Select(child => child.Current.Name ?? "").ToArray();
+        var index = MmcTreePathMatcher.FindUniqueIndex(labels, segment);
+        if (index == MmcTreePathMatcher.Ambiguous)
+            throw new InvalidOperationException(
+                $"Ambiguous MMC child section '{segment}': multiple matching nodes. " +
+                "Exact navigation was refused.");
+        return index < 0 ? null : children[index];
     }
 
     private static void Expand(AutomationElement node)
