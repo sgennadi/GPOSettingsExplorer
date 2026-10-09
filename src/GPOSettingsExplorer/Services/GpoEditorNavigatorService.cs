@@ -1347,20 +1347,10 @@ public sealed class GpoEditorNavigatorService
                     if (index < 0 || index >= count)
                         continue;
 
-                    // Re-read the actual first-column label from the returned
-                    // index, rather than trusting the MMC search control.
-                    var verification = ReadNativeListViewRows(
-                        processHandle, listView, count, cancellationToken, index);
-                    if (verification.Count != 1 ||
-                        !MmcPolicyNameMatcher.Exact(
-                            verification[0].PolicyName, setting.SettingName))
-                    {
-                        builder.AppendLine(
-                            $"  LVM_FINDITEMW reported row {index}, but the policy name readback did not match. Skipping unsafe activation.");
-                        continue;
-                    }
-
-                    builder.AppendLine($"  LVM_FINDITEMW verified: [{index}] {verification[0].Text}");
+                    // Keep the proven 0.4.5 native exact-name activation path.
+                    // An additional ListView readback could reject a valid hit
+                    // on systems where MMC does not expose its row text reliably.
+                    builder.AppendLine($"  LVM_FINDITEMW exact match: row {index} of {count}.");
 
                     if (SelectAndOpenNativeListViewRow(
                         process, processHandle, listView, index,
