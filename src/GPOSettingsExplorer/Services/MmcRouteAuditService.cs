@@ -163,7 +163,7 @@ public static class MmcRouteAuditService
                         break;
                     }
 
-                    var actualLabel = node is null ? "" : child.Current.Name ?? "";
+                    var actualLabel = child.Current.Name ?? "";
                     if (!actualLabel.Equals(segments[i], StringComparison.CurrentCultureIgnoreCase) &&
                         MmcTreePathMatcher.SectionNameMatches(actualLabel, segments[i]))
                     {
