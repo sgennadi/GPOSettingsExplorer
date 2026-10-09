@@ -14,7 +14,7 @@ Download the latest portable build from:
 
 **[GitHub Releases](https://github.com/sgennadi/GPOSettingsExplorer/releases/latest)**
 
-Current release: **v0.5.0**
+Current release: **v0.5.1**
 
 Available packages:
 
@@ -57,8 +57,8 @@ performing automatic repairs or posting private log bodies.
 
 - The script editor supports ANSI/OEM, Cyrillic, Hebrew and Unicode code pages, BOM choices, source-file re-decode, explicit DOS/Unix/Mac EOL conversion and static Unicode hazard diagnostics. Conversion uses strict encoders so unrepresentable characters cannot silently turn into question marks. SYSVOL writes retain the existing GPO backup/preview/byte-verification requirements.
 - In Diagnostics, select a GPO and use **Audit MMC paths** after indexing its settings. This read-only scanner checks the actual MMC tree and saves a local `MmcRouteAudit-*.txt` report with found/missing sections. Existing opt-in diagnostics review can submit an anonymized summary to GitHub.
-- GPO Links includes **Hierarchy / Order**: colored site/domain/OU hierarchy, link priority (1 = highest within that container), Enforced, disabled and blocked inheritance. The existing protected link editor handles authorized changes.
-- Compare & Conflicts shows both duplicate and differing settings, overlap evidence derived from loaded links, and a per-GPO visual explanation and proposed consolidation/priority review steps. Recommendations are proposals only: confirm effective RSoP and filtering before any change.
+- The single **GPO Hierarchy & Links** tab has a live, searchable site/domain/OU tree on the left and link management on the right, with a resizable divider. OU selection filters its direct links; selecting a GPO link in the tree selects the matching row for editing. A shortcut is available on the GPOs tab; the full hierarchy window is still available. Link order 1 is highest only within the same container.
+- Compare & Conflicts shows both duplicate and differing settings, overlap evidence derived from loaded links, and a per-GPO explanation. Its **Verify RSoP / WMI / Security** action checks a named sample computer, its gpresult XML, assigned WMI filters and GPO AD security descriptors. Missing, denied or unverifiable evidence fails closed. Even a passing sample does NOT establish equivalent domain-wide application or justify automatic merging. No merge/unlink occurs.
 - The LAN Manager authentication setting continues to use the proven native MMC exact-row opening mechanism.
 
 ## Main features
