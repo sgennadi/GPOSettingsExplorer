@@ -24,6 +24,7 @@ var tests = new (string Name, Action Body)[]
     ("Unicode script safety warns on bidi and invisible special characters", TestScriptUnicodeSafety),
     ("GPMC Link Order reverses gPLink storage order", TestGpoLinkOrderPrecedence),
     ("GPO conflicts distinguish duplicate values and linked mismatches", TestGpoConflictAnalysis),
+    ("RSoP verification rejects missing, excluded and nested GPOs", TestRsopVerificationEvidence),
     ("Semantic XML diff ignores report timestamps and finds setting changes", TestSemanticXmlDiff)
 };
 
@@ -294,6 +295,54 @@ static void TestGpoConflictAnalysis()
     Assert(inactive.All(x => !x.IsPotentialOverlap &&
         x.OverlapStatus == "Not simultaneously active"),
         "Disabled GPO configuration scope must not count as an active overlap.");
+}
+
+static void TestRsopVerificationEvidence()
+{
+    var a = Guid.NewGuid();
+    var b = Guid.NewGuid();
+
+    static string Gpo(Guid id, bool allowed = true) =>
+        $"<GPO><ID>{{{id:D}}}</ID><Enabled>true</Enabled>" +
+        $"<FilterAllowed>{allowed.ToString().ToLowerInvariant()}</FilterAllowed>" +
+        "<AccessDenied>false</AccessDenied></GPO>";
+
+    var xml = "<Rsop xmlns='urn:example:rsop'><ComputerResults>" +
+        Gpo(a) + Gpo(b) + "</ComputerResults>" +
+        "<UserResults><GPO><ID>{00000000-0000-0000-0000-000000000001}</ID></GPO></UserResults></Rsop>";
+    var match = GpoApplicabilityVerificationService.AssessRsopXml(
+        xml, "Computer", new[] { a, b });
+    Assert(match.AllApplied && !match.AnyExcluded,
+        "Both identified and explicitly allowed applied GPOs must pass as a sample.");
+
+    var denied = GpoApplicabilityVerificationService.AssessRsopXml(
+        "<Rsop><ComputerResults>" + Gpo(a) + Gpo(b, false) +
+        "</ComputerResults></Rsop>", "Computer", new[] { a, b });
+    Assert(!denied.AllApplied && denied.AnyExcluded,
+        "An explicitly filtered GPO must block the sample.");
+
+    var unknown = GpoApplicabilityVerificationService.AssessRsopXml(
+        "<Rsop><ComputerResults>" + Gpo(a) +
+        "</ComputerResults></Rsop>", "Computer", new[] { a, b });
+    Assert(!unknown.AllApplied && !unknown.AnyExcluded,
+        "An absent GPO must remain unknown, not a proven exclusion.");
+
+    var nested = GpoApplicabilityVerificationService.AssessRsopXml(
+        "<Rsop><ComputerResults><ExtensionData><GPO>" +
+        $"<ID>{{{a:D}}}</ID><FilterAllowed>true</FilterAllowed>" +
+        "<AccessDenied>false</AccessDenied></GPO></ExtensionData>" +
+        Gpo(b) + "</ComputerResults></Rsop>",
+        "Computer", new[] { a, b });
+    Assert(!nested.AllApplied && !nested.AnyExcluded,
+        "Nested extension references must not masquerade as applied GPOs.");
+
+    var noFlags = GpoApplicabilityVerificationService.AssessRsopXml(
+        "<Rsop><ComputerResults>" +
+        $"<GPO><ID>{{{a:D}}}</ID></GPO>" +
+        Gpo(b) + "</ComputerResults></Rsop>",
+        "Computer", new[] { a, b });
+    Assert(!noFlags.AllApplied && !noFlags.AnyExcluded,
+        "Missing security and WMI application flags must never imply applied.");
 }
 
 static void TestScriptSanitizer()
