@@ -186,6 +186,99 @@ public static class MmcFullSettingsInventoryService
                 Thread.Sleep(90);
                 children = Children(node);
             }
+            // Categories may contain both subfolders AND policy rows. Reading
+            // leaves only would silently miss policies directly in a parent.
+            if (!Select(node))
+            {
+                sections.Add(new MmcInventorySection(sectionPath, "Selection failed", 0,
+                    "MMC did not expose verifiable selection; potential rows in this category are unknown."));
+            }
+            else
+            {
+                // Do not invoke or double-click a policy during inventory.
+                Thread.Sleep(185);
+                var snapshot = GpoEditorNavigatorService.ReadInventoryList(
+                    process, MaxRowsPerSection, token);
+
+                if (!snapshot.Complete)
+                {
+                    sections.Add(new MmcInventorySection(sectionPath,
+                        "Read error", snapshot.Rows.Count, snapshot.Error));
+                }
+                else if (!snapshot.HasList)
+                {
+                    sections.Add(new MmcInventorySection(sectionPath,
+                        children.Count > 0 ? "Folder only" : "No list", 0,
+                        children.Count > 0
+                            ? "Container has child sections but no native list."
+                            : "No native SysListView32; custom/virtualized view may hide policy rows."));
+                }
+                else
+                {
+                    var childNames = new HashSet<string>(StringComparer.CurrentCultureIgnoreCase);
+                    foreach (var child in children)
+                    {
+                        try { childNames.Add((child.Current.Name ?? "").Trim()); }
+                        catch (Exception ex) when (ex is COMException or ElementNotAvailableException) { }
+                    }
+
+                    // Folder references in the MMC right pane are not policies.
+                    // Keep rows with values even if labels collide with a folder.
+                    var rows = snapshot.Rows.Where(row =>
+                        !childNames.Contains(row.Name) ||
+                        row.Value.Length > 0 || row.Additional.Length > 0).ToArray();
+
+                    if (rows.Length == 0)
+                    {
+                        sections.Add(new MmcInventorySection(sectionPath,
+                            children.Count > 0 ? "Folder only" : "Empty list", 0,
+                            "No non-folder native policy rows were observed."));
+                    }
+                    else
+                    {
+                        var scopeIndex = Array.FindIndex(parts, item =>
+                            item.Contains("Computer Configuration", StringComparison.OrdinalIgnoreCase) ||
+                            item.Contains("User Configuration", StringComparison.OrdinalIgnoreCase));
+                        var scope = scopeIndex < 0 ? "Unknown" :
+                            parts[scopeIndex].Contains("User Configuration", StringComparison.OrdinalIgnoreCase)
+                                ? "User" : "Computer";
+                        var editorPath = scopeIndex >= 0
+                            ? parts.Skip(scopeIndex).ToArray() : parts;
+                        var directNames = rows.GroupBy(row => row.Name,
+                            StringComparer.CurrentCultureIgnoreCase)
+                            .ToDictionary(group => group.Key, group => group.Count(),
+                                StringComparer.CurrentCultureIgnoreCase);
+
+                        foreach (var row in rows)
+                        {
+                            Deadline();
+                            var navigation = scopeIndex >= 0 && directNames[row.Name] == 1
+                                ? "Exact MMC row candidate"
+                                : "Section only / ambiguous";
+                            var entry = new MmcInventoryEntry
+                            {
+                                GpoId = gpo.Id,
+                                GpoName = gpo.DisplayName,
+                                Scope = scope,
+                                SectionPath = sectionPath,
+                                TreeSegments = editorPath,
+                                SettingName = row.Name,
+                                MmcState = ParseState(row.Value),
+                                MmcValue = string.Join(" | ", new[] { row.Value, row.Additional }
+                                    .Where(value => value.Length > 0)),
+                                Source = "MMC native list",
+                                Navigation = navigation
+                            };
+                            observed.Add(MmcInventoryReconciliation.Reconcile(
+                                entry, configured, catalog));
+                        }
+
+                        sections.Add(new MmcInventorySection(
+                            sectionPath, "Rows read", rows.Length));
+                    }
+                }
+            }
+
             if (children.Count > 0)
             {
                 if (parts.Length >= MaxTreeDepth)
@@ -194,81 +287,10 @@ public static class MmcFullSettingsInventoryService
                         $"Tree depth limit of {MaxTreeDepth} reached while child nodes remain."));
                     return;
                 }
+
                 foreach (var child in children)
                     Visit(child, parts);
-                return;
             }
-
-            if (!Select(node))
-            {
-                sections.Add(new MmcInventorySection(sectionPath, "Selection failed", 0,
-                    "MMC did not expose a verifiable selection for this leaf."));
-                return;
-            }
-
-            // Do not invoke/double-click a setting: the scan is read-only.
-            Thread.Sleep(185);
-            var snapshot = GpoEditorNavigatorService.ReadInventoryList(
-                process, MaxRowsPerSection, token);
-
-            if (!snapshot.Complete)
-            {
-                sections.Add(new MmcInventorySection(sectionPath,
-                    "Read error", snapshot.Rows.Count, snapshot.Error));
-                return;
-            }
-
-            if (!snapshot.HasList)
-            {
-                sections.Add(new MmcInventorySection(sectionPath, "No list", 0,
-                    "No native SysListView32. MMC may use a custom/virtualized view."));
-                return;
-            }
-            if (snapshot.Rows.Count == 0)
-            {
-                sections.Add(new MmcInventorySection(sectionPath, "Empty list", 0,
-                    "The selected MMC section displayed no native rows."));
-                return;
-            }
-
-            var scopeIndex = Array.FindIndex(parts, item =>
-                item.Contains("Computer Configuration", StringComparison.OrdinalIgnoreCase) ||
-                item.Contains("User Configuration", StringComparison.OrdinalIgnoreCase));
-            var scope = scopeIndex < 0 ? "Unknown" :
-                parts[scopeIndex].Contains("User Configuration", StringComparison.OrdinalIgnoreCase)
-                    ? "User" : "Computer";
-            var editorPath = scopeIndex >= 0 ? parts.Skip(scopeIndex).ToArray() : parts;
-            var directNames = snapshot.Rows.GroupBy(row => row.Name,
-                StringComparer.CurrentCultureIgnoreCase)
-                .ToDictionary(group => group.Key, group => group.Count(),
-                    StringComparer.CurrentCultureIgnoreCase);
-
-            foreach (var row in snapshot.Rows)
-            {
-                Deadline();
-                var navigation = scopeIndex >= 0 && directNames[row.Name] == 1
-                    ? "Exact MMC row candidate"
-                    : "Section only / ambiguous";
-                var entry = new MmcInventoryEntry
-                {
-                    GpoId = gpo.Id,
-                    GpoName = gpo.DisplayName,
-                    Scope = scope,
-                    SectionPath = sectionPath,
-                    TreeSegments = editorPath,
-                    SettingName = row.Name,
-                    MmcState = ParseState(row.Value),
-                    MmcValue = string.Join(" | ", new[] { row.Value, row.Additional }
-                        .Where(value => value.Length > 0)),
-                    Source = "MMC native list",
-                    Navigation = navigation
-                };
-                observed.Add(MmcInventoryReconciliation.Reconcile(
-                    entry, configured, catalog));
-            }
-
-            sections.Add(new MmcInventorySection(sectionPath,
-                "Rows read", snapshot.Rows.Count));
         }
 
         try
