@@ -65,6 +65,27 @@
         <Setter Property="FontWeight" Value="SemiBold"/>
     </Style>
 
+    <!-- Clickable deduplicated-script count, using the shared accent palette. -->
+    <Style x:Key="UiScriptCopiesButton" TargetType="{x:Type Button}"
+           BasedOn="{StaticResource {x:Type Button}}">
+        <Setter Property="Padding" Value="5,2"/>
+        <Setter Property="Margin" Value="1"/>
+        <Setter Property="MinWidth" Value="65"/>
+        <Setter Property="MinHeight" Value="23"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="Background" Value="{StaticResource UiAccentSoftBrush}"/>
+        <Setter Property="Foreground" Value="{StaticResource UiAccentBrush}"/>
+        <Setter Property="ToolTip" Value="Click to see all physical GPO copies of the identical script"/>
+        <Style.Triggers>
+            <Trigger Property="IsEnabled" Value="False">
+                <Setter Property="Background" Value="{StaticResource UiUnassignedRowBrush}"/>
+                <Setter Property="Foreground" Value="{StaticResource UiMutedBrush}"/>
+                <Setter Property="FontWeight" Value="Normal"/>
+                <Setter Property="ToolTip" Value="One physical copy"/>
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
     <Style x:Key="UiWriteModeToggle" TargetType="{x:Type ToggleButton}">
         <Setter Property="Padding" Value="10,5"/>
         <Setter Property="MinHeight" Value="28"/>
