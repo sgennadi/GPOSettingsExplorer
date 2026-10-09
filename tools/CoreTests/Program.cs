@@ -10,6 +10,7 @@ var tests = new (string Name, Action Body)[]
     ("Script searches distinguish content and file metadata", TestScriptSearchModes),
     ("MMC navigation does not confuse audit and registry with security options", TestMmcNavigationRouting),
     ("MMC policy names must match uniquely and exactly", TestMmcPolicyNameMatcher),
+    ("MMC UTF-16 list-view buffers do not leak previous policy tails", TestMmcNativeTextBuffer),
     ("Domain connection pins LDAP and SYSVOL", TestDomainConnectionPaths),
     ("DPAPI current-user round trip", TestDpapiRoundTrip),
     ("GPP XML cache refreshes after file change", TestGppXmlCache),
@@ -158,6 +159,39 @@ static void TestScriptSearchModes()
     finally
     {
         Directory.Delete(root, recursive: true);
+    }
+}
+
+static void TestMmcNativeTextBuffer()
+{
+    const string policy = "Network security: LAN Manager authentication level";
+    const string staleTail = " ire n next password change online identities.";
+    var actual = System.Text.Encoding.Unicode.GetBytes(policy);
+    var buffer = System.Text.Encoding.Unicode.GetBytes(policy + staleTail);
+
+    var decoded = MmcNativeListViewText.DecodeUtf16(buffer, policy.Length);
+    Assert(decoded == policy,
+        "Native MMC policy-name read contains old buffer contents beyond LVM_GETITEMTEXTW returned length.");
+    Assert(decoded.Length == policy.Length,
+        "MMC native ListView text reader produced extra characters.");
+
+    var names = Enumerable.Range(0, 100)
+        .Select(index => index == 69 ? decoded : $"Other policy {index}")
+        .ToArray();
+    Assert(MmcPolicyNameMatcher.FindUniqueMatch(names, policy) == 69,
+        "MMC Security Options failed to find the target policy at row 69.");
+    Assert(MmcNativeListViewText.PolicyColumn(
+        policy + " | Send NTLMv2 response only") == policy,
+        "MMC fallback incorrectly matched the second (value) column.");
+    Assert(MmcNativeListViewText.DecodeUtf16(Array.Empty<byte>(), 0) == string.Empty,
+        "Empty remote text should be safe.");
+    try
+    {
+        MmcNativeListViewText.DecodeUtf16(actual, actual.Length);
+        throw new InvalidOperationException("MMC text decoding accepted more UTF-16 chars than the supplied buffer.");
+    }
+    catch (ArgumentOutOfRangeException)
+    {
     }
 }
 
