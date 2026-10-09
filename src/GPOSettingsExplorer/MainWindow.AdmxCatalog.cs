@@ -115,6 +115,15 @@ public partial class MainWindow
             return;
         }
 
+        await ConfigureAdmxDefinitionAsync(selectedDefinition);
+    }
+
+    // Reused by Unified Settings and by the advanced ADMX source grid.
+    private async Task ConfigureAdmxDefinitionAsync(AdmxPolicyDefinition selectedDefinition)
+    {
+        if (_domainContext is null)
+            return;
+
         var picker = new PolicyTargetPickerWindow(_gpos, selectedDefinition)
         {
             Owner = this
