@@ -1485,6 +1485,114 @@ public sealed class GpoEditorNavigatorService
         return index >= 0 ? rows[index] : null;
     }
 
+    /// <summary>
+    /// Capture an MMC right-hand native list without opening any policy dialog.
+    /// The current section must already be selected by the inventory walker.
+    /// Only observed cells are returned; missing cells remain unknown.
+    /// </summary>
+    public static MmcNativeListSnapshot ReadInventoryList(
+        Process process,
+        int maxRows,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        process.Refresh();
+        if (process.HasExited || process.MainWindowHandle == IntPtr.Zero)
+            return new MmcNativeListSnapshot(
+                Array.Empty<MmcNativeListRow>(), false, false,
+                "MMC process is closed or its main window is unavailable.");
+
+        var lists = FindNativeListViews(process.MainWindowHandle);
+        if (lists.Count == 0)
+            return MmcNativeListSnapshot.NoList();
+
+        // Multiple ListViews can exist inside MMC. Prefer the populated right
+        // pane and do not read the same row from more than one pane.
+        var candidate = lists.Select(handle =>
+        {
+            var count = (int)SendMessage(handle, LvmGetItemCount,
+                IntPtr.Zero, IntPtr.Zero);
+            return (Handle: handle, Count: count);
+        }).Where(item => item.Count >= 0)
+          .OrderByDescending(item => item.Count)
+          .FirstOrDefault();
+
+        if (candidate.Handle == IntPtr.Zero)
+            return new MmcNativeListSnapshot(
+                Array.Empty<MmcNativeListRow>(), true, false,
+                "MMC list control could not be queried.");
+
+        if (candidate.Count == 0)
+            return new MmcNativeListSnapshot(
+                Array.Empty<MmcNativeListRow>(), true, true, "");
+
+        if (candidate.Count > maxRows)
+            return new MmcNativeListSnapshot(
+                Array.Empty<MmcNativeListRow>(), true, false,
+                $"Native MMC list contains {candidate.Count:N0} rows, exceeding the per-section limit of {maxRows:N0}. Nothing was silently truncated.");
+
+        var access = ProcessVmOperation | ProcessVmRead |
+                     ProcessVmWrite | ProcessQueryLimitedInformation;
+        var processHandle = OpenProcess(access, inheritHandle: false, process.Id);
+        if (processHandle == IntPtr.Zero)
+            return new MmcNativeListSnapshot(
+                Array.Empty<MmcNativeListRow>(), true, false,
+                $"Cannot read MMC list at the current elevation (Win32 {Marshal.GetLastWin32Error()}).");
+
+        const int maxChars = 2048;
+        var textBytes = checked(maxChars * sizeof(char));
+        var itemSize = Marshal.SizeOf<NativeLvItem>();
+        IntPtr remoteText = IntPtr.Zero;
+        IntPtr remoteItem = IntPtr.Zero;
+        try
+        {
+            remoteText = VirtualAllocEx(processHandle, IntPtr.Zero,
+                (UIntPtr)textBytes, MemCommit | MemReserve, PageReadWrite);
+            remoteItem = VirtualAllocEx(processHandle, IntPtr.Zero,
+                (UIntPtr)itemSize, MemCommit | MemReserve, PageReadWrite);
+            if (remoteText == IntPtr.Zero || remoteItem == IntPtr.Zero)
+                return new MmcNativeListSnapshot(
+                    Array.Empty<MmcNativeListRow>(), true, false,
+                    "Cannot allocate temporary remote text buffers for MMC list read.");
+
+            var rows = new List<MmcNativeListRow>(candidate.Count);
+            for (var index = 0; index < candidate.Count; index++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var name = ReadNativeListViewText(
+                    processHandle, candidate.Handle, remoteItem, itemSize,
+                    remoteText, textBytes, maxChars, index, 0);
+                var value = ReadNativeListViewText(
+                    processHandle, candidate.Handle, remoteItem, itemSize,
+                    remoteText, textBytes, maxChars, index, 1);
+                var extra = ReadNativeListViewText(
+                    processHandle, candidate.Handle, remoteItem, itemSize,
+                    remoteText, textBytes, maxChars, index, 2);
+                if (string.IsNullOrWhiteSpace(name))
+                    return new MmcNativeListSnapshot(
+                        rows, true, false,
+                        $"MMC returned a blank or unreadable policy name at row {index + 1} of {candidate.Count}; the section is incomplete.");
+                rows.Add(new MmcNativeListRow(index, name, value, extra));
+            }
+            return new MmcNativeListSnapshot(rows, true, true, "");
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException &&
+                                   ex is not OutOfMemoryException)
+        {
+            return new MmcNativeListSnapshot(
+                Array.Empty<MmcNativeListRow>(), true, false,
+                "MMC native list read failed: " + ex.Message);
+        }
+        finally
+        {
+            if (remoteText != IntPtr.Zero)
+                VirtualFreeEx(processHandle, remoteText, UIntPtr.Zero, MemRelease);
+            if (remoteItem != IntPtr.Zero)
+                VirtualFreeEx(processHandle, remoteItem, UIntPtr.Zero, MemRelease);
+            CloseHandle(processHandle);
+        }
+    }
+
     private static IReadOnlyList<IntPtr> FindNativeListViews(
         IntPtr parent)
     {
