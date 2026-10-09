@@ -148,6 +148,74 @@
             </TabItem>
 
             <TabItem x:Name="AllSettingsTab" Header="All Settings">
+                <Grid Margin="6">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <DockPanel Grid.Row="0" LastChildFill="True">
+                        <StackPanel DockPanel.Dock="Top">
+                            <WrapPanel>
+                                <TextBlock Text="Find any setting:" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                                <TextBox x:Name="UnifiedSearchBox" Width="330" MinWidth="170"
+                                         TextChanged="UnifiedSearchBox_TextChanged"
+                                         ToolTip="Search ADMX templates, GPMC configured settings and verified MMC inventory."/>
+                                <TextBlock Text="Source:" VerticalAlignment="Center"/>
+                                <ComboBox x:Name="UnifiedSourceCombo" Width="155"
+                                          SelectionChanged="UnifiedFilterChanged"
+                                          ToolTip="Show all available evidence or only one source."/>
+                                <TextBlock Text="State:" VerticalAlignment="Center"/>
+                                <ComboBox x:Name="UnifiedStateCombo" Width="135"
+                                          SelectionChanged="UnifiedFilterChanged"/>
+                            </WrapPanel>
+                            <WrapPanel>
+                                <CheckBox x:Name="UnifiedAllGposCheckBox"
+                                          Content="All GPOs" IsChecked="True"
+                                          VerticalAlignment="Center" Margin="5,0,6,0"
+                                          Checked="UnifiedFilterChanged"
+                                          Unchecked="UnifiedFilterChanged"/>
+                                <ComboBox x:Name="UnifiedGpoFilterCombo"
+                                          Width="320" MinWidth="190"
+                                          DisplayMemberPath="DisplayName"
+                                          ItemsSource="{Binding ElementName=GpoGrid, Path=ItemsSource}"
+                                          SelectionChanged="UnifiedFilterChanged"
+                                          ToolTip="Select one GPO to compare its configured settings with ADMX templates."/>
+                                <Button Content="Refresh catalog" Click="RefreshUnifiedSettings_Click"/>
+                                <Button Content="Edit / Configure..."
+                                        Style="{StaticResource UiPrimaryButton}"
+                                        Click="EditUnifiedSetting_Click"/>
+                                <Button Content="Open GPO" Click="OpenUnifiedSettingGpo_Click"/>
+                                <Button Content="Export CSV" Click="ExportUnifiedSettings_Click"/>
+                            </WrapPanel>
+                            <TextBlock x:Name="UnifiedSettingsCountText"
+                                       Margin="4,3,4,5" TextWrapping="Wrap"
+                                       Foreground="{DynamicResource UiMutedBrush}"
+                                       Text="Unified catalog loads configured GPMC settings and ADMX templates. MMC scanning is optional."/>
+                        </StackPanel>
+                        <DataGrid x:Name="UnifiedSettingsGrid" AutoGenerateColumns="False" IsReadOnly="True"
+                                  RowStyle="{StaticResource UiPolicyRowStyle}"
+                                  SelectionMode="Single"
+                                  MouseDoubleClick="UnifiedSettingsGrid_MouseDoubleClick"
+                                  ToolTip="Double-click to open the safest available editor or inspect the selected setting.">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Setting" Binding="{Binding SettingName}" Width="2.2*"/>
+                                <DataGridTextColumn Header="GPO / Target" Binding="{Binding GpoName}" Width="1.5*"/>
+                                <DataGridTextColumn Header="Scope" Binding="{Binding Scope}" Width="95"/>
+                                <DataGridTextColumn Header="State" Binding="{Binding State}" Width="150"/>
+                                <DataGridTextColumn Header="Value" Binding="{Binding Value}" Width="1.4*"/>
+                                <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="1.6*"/>
+                                <DataGridTextColumn Header="Source evidence" Binding="{Binding Sources}" Width="170"/>
+                                <DataGridTextColumn Header="Edit capability" Binding="{Binding Capability}" Width="185"/>
+                                <DataGridTextColumn Header="Registry target" Binding="{Binding RegistryTarget}" Width="1.5*"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </DockPanel>
+                    <Expander x:Name="AdvancedSourcesExpander" Grid.Row="1"
+                              Header="Advanced sources and diagnostics (GPMC / MMC / ADMX)"
+                              IsExpanded="False"
+                              ToolTip="Original source lists and manual MMC inventory live here. All existing editing commands remain available.">
+                        <Border BorderBrush="{DynamicResource {x:Static SystemColors.ControlDarkBrushKey}}"
+                                BorderThickness="1" Padding="2" MaxHeight="430">
                 <TabControl x:Name="AllSettingsSubTabs" Margin="3">
                     <TabItem Header="Configured GPMC settings">
                 <DockPanel Margin="6">
@@ -242,7 +310,32 @@
                             </TabControl>
                         </DockPanel>
                     </TabItem>
+            <TabItem x:Name="AdmxCatalogTab"
+                     Header="ADMX definitions (advanced)">
+                <DockPanel Margin="6">
+                    <WrapPanel DockPanel.Dock="Top">
+                        <TextBlock Text="Search all Administrative Template policies:" VerticalAlignment="Center"/>
+                        <TextBox x:Name="AdmxSearchBox" Width="440" TextChanged="AdmxSearchBox_TextChanged"/>
+                        <Button Content="Load catalog" Click="LoadAdmxCatalog_Click"/>
+                        <Button Content="Configure in GPO..." Click="ConfigureAdmxPolicy_Click"/>
+                        <TextBlock x:Name="AdmxCountText" Margin="16,0,0,0" VerticalAlignment="Center" Foreground="DimGray"/>
+                    </WrapPanel>
+                    <DataGrid x:Name="AdmxGrid" MouseDoubleClick="AdmxGrid_MouseDoubleClick">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Setting" Binding="{Binding DisplayName}" Width="2*"/>
+                            <DataGridTextColumn Header="Scope" Binding="{Binding Scope}" Width="100"/>
+                            <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="1.7*"/>
+                            <DataGridTextColumn Header="ADMX" Binding="{Binding AdmxFile}" Width="160"/>
+                            <DataGridTextColumn Header="Registry key" Binding="{Binding Key}" Width="1.5*"/>
+                            <DataGridTextColumn Header="Registry value" Binding="{Binding ValueName}" Width="1.1*"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </DockPanel>
+            </TabItem>
                 </TabControl>
+                        </Border>
+                    </Expander>
+                </Grid>
             </TabItem>
 
             <TabItem x:Name="GpoScriptsTab"
@@ -380,29 +473,6 @@
                         </DataGrid.Columns>
                     </DataGrid>
                 </Grid>
-            </TabItem>
-
-            <TabItem x:Name="AdmxCatalogTab"
-                     Header="ADMX Catalog">
-                <DockPanel Margin="6">
-                    <WrapPanel DockPanel.Dock="Top">
-                        <TextBlock Text="Search all Administrative Template policies:" VerticalAlignment="Center"/>
-                        <TextBox x:Name="AdmxSearchBox" Width="440" TextChanged="AdmxSearchBox_TextChanged"/>
-                        <Button Content="Load catalog" Click="LoadAdmxCatalog_Click"/>
-                        <Button Content="Configure in GPO..." Click="ConfigureAdmxPolicy_Click"/>
-                        <TextBlock x:Name="AdmxCountText" Margin="16,0,0,0" VerticalAlignment="Center" Foreground="DimGray"/>
-                    </WrapPanel>
-                    <DataGrid x:Name="AdmxGrid" MouseDoubleClick="AdmxGrid_MouseDoubleClick">
-                        <DataGrid.Columns>
-                            <DataGridTextColumn Header="Setting" Binding="{Binding DisplayName}" Width="2*"/>
-                            <DataGridTextColumn Header="Scope" Binding="{Binding Scope}" Width="100"/>
-                            <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="1.7*"/>
-                            <DataGridTextColumn Header="ADMX" Binding="{Binding AdmxFile}" Width="160"/>
-                            <DataGridTextColumn Header="Registry key" Binding="{Binding Key}" Width="1.5*"/>
-                            <DataGridTextColumn Header="Registry value" Binding="{Binding ValueName}" Width="1.1*"/>
-                        </DataGrid.Columns>
-                    </DataGrid>
-                </DockPanel>
             </TabItem>
 
             <TabItem Header="GPP Data Sources"
