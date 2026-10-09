@@ -191,10 +191,15 @@
                                        Margin="4,3,4,5" TextWrapping="Wrap"
                                        Foreground="{DynamicResource UiMutedBrush}"
                                        Text="Unified catalog loads configured GPMC settings and ADMX templates. MMC scanning is optional."/>
+                            <TextBlock x:Name="UnifiedSelectedDetailsText"
+                                       Margin="4,1,4,5" TextWrapping="Wrap"
+                                       Foreground="{DynamicResource UiMutedBrush}"
+                                       Text="Select a setting to see source evidence, read state and supported editing route."/>
                         </StackPanel>
                         <DataGrid x:Name="UnifiedSettingsGrid" AutoGenerateColumns="False" IsReadOnly="True"
                                   RowStyle="{StaticResource UiPolicyRowStyle}"
                                   SelectionMode="Single"
+                                  SelectionChanged="UnifiedSettingsGrid_SelectionChanged"
                                   MouseDoubleClick="UnifiedSettingsGrid_MouseDoubleClick"
                                   ToolTip="Double-click to open the safest available editor or inspect the selected setting.">
                             <DataGrid.Columns>
