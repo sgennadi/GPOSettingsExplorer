@@ -734,7 +734,7 @@ public sealed class GpoScriptService
         if (!validUtf8 || (batchScript && bytes.All(value => value <= 0x7F)))
         {
             Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
-            return (Encoding.GetEncoding(checked((int)GetACP())), 0, false);
+            return (ScriptEncodingService.Strict(ScriptEncodingService.SystemAnsiCodePage), 0, false);
         }
 
         return (new UTF8Encoding(false), 0, false);
