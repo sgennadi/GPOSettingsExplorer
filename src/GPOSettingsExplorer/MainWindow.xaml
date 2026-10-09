@@ -1505,6 +1505,8 @@
                                     <TextBox x:Name="LinkSearchBox" MinWidth="160" Width="245"
                                              TextChanged="LinkSearchBox_TextChanged"/>
                                     <Button Content="Refresh links" Click="LoadLinks_Click"/>
+                                    <Button Content="All links" Click="ShowAllGpoLinks_Click"
+                                            ToolTip="Clear OU selection and show every direct GPO link."/>
                                 </WrapPanel>
                                 <WrapPanel>
                                     <Button Content="New link..." Click="NewLink_Click"/>
