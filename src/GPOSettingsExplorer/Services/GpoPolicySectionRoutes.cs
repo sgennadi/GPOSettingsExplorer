@@ -21,6 +21,14 @@ public static class GpoPolicySectionRoutes
             return new[] { scope, "Policies", "Windows Settings", "Name Resolution Policy" };
         }
 
+        if (setting.Extension.Equals("SoftwareInstallationSettings", StringComparison.OrdinalIgnoreCase))
+        {
+            // GPO XML may expose nested Trustee Permissions/Auditing from an
+            // MSI package's security descriptor. These are package metadata,
+            // not separate Security Options or Administrative Templates.
+            return new[] { scope, "Policies", "Software Settings", "Software installation" };
+        }
+
         if (!setting.Extension.Equals("PublicKeySettings", StringComparison.OrdinalIgnoreCase))
             return Array.Empty<string>();
 
