@@ -4,6 +4,15 @@
 
 - No unreleased changes yet.
 
+## 0.5.2 - 2026-10-09
+
+- Fix empty `Before` / `After` for newly committed **Edit GPO Script** audit events. Capture original SYSVOL file bytes and return before/after evidence only after script byte verification and GPO Scripts extension commit.
+- Store exact SHA-256 hashes, byte lengths, logical line counts, code pages, actual BOM presence and line-ending styles in the two audit columns, plus a changed-line region summary in Details. Protect script content and possible embedded credentials: raw source code is not copied into JSONL audit entries.
+- Distinguish text edits from encoding/BOM-only and line-ending-only changes. Do not write a false successful edit event when no bytes changed.
+- The audit detail view explains fingerprint-only records and warns that historical entries with blank Before/After cannot be reconstructed from the JSONL log alone; the dated GPO backup may help manual recovery.
+- Add CoreTests for verified before/after fingerprints, no-op writes, secret-safe audit output, line endings and encoding-only changes.
+- Audit entries are append-only; do not silently deduplicate records with the same script name, since repeat saves may be legitimate.
+
 ## 0.5.1 - 2026-10-09
 
 - Main window title now displays the running assembly version.
