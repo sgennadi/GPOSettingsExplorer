@@ -14,7 +14,7 @@ Download the latest portable build from:
 
 **[GitHub Releases](https://github.com/sgennadi/GPOSettingsExplorer/releases/latest)**
 
-Current release: **v0.6.1**
+Current release: **v0.7.0**
 
 Available packages:
 
@@ -22,6 +22,12 @@ Available packages:
 - `GPOSettingsExplorer-win-arm64-portable.zip` — Windows on ARM64.
 
 The builds are self-contained. A separate .NET runtime installation is not required.
+
+### Unified Settings workspace (0.7.0)
+
+**All Settings** is now the primary search, inspection and edit workspace. It merges configured GPMC XML index entries, available ADMX templates, and optional rows observed in the read-only MMC inventory. Search by setting, category, GPO, registry target, source or value, or filter by source/state/GPO. Each row distinguishes its evidence and safest supported editing route. Configure an ADMX template by explicitly choosing a GPO; configured security or ADMX settings continue through the existing backup/preview/write-guarded editors. Unsupported/custom MMC entries are read-only, not silently edited.
+
+The old raw data grids were **not removed**: expand **Advanced sources and diagnostics** under All Settings for original GPMC, MMC and ADMX views. Previously separate GPP editors are now in **Preferences (GPP)** to keep the main tab bar compact. Existing user workspaces are migrated from their old tab positions. Settings absent from GPMC XML are never assumed Not Configured; ADMX template rows explicitly show **Template - state unknown**.
 
 ### MMC Full Settings Inventory (0.6.0; safer navigation in 0.6.1)
 
