@@ -629,7 +629,7 @@ public partial class MainWindow
             ?? throw new InvalidOperationException("The Active Directory connection is no longer available.");
 
         document.Text = ScriptTextSanitizer.StripOuterMarkdownFence(editedText, out _);
-        if (document.Text.Equals(document.OriginalText, StringComparison.Ordinal))
+        if (!document.HasChanges)
         {
             StatusText.Text = "No changes to " + script.FileName;
             return;
