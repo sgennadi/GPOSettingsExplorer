@@ -72,6 +72,9 @@ public sealed class SettingValueWindow : Window
                 Text =
                     exactNavigationAvailable
                         ? $"Exact MMC target: {GpoEditorNavigatorService.NavigationTarget(setting)}"
+                        : securitySectionLabel is not null
+                            ? "Read-only XML detail. Related MMC section (manual navigation only): " +
+                              GpoEditorNavigatorService.NavigationTarget(setting)
                         : setting.Extension.Equals(
                             "RegistrySettings",
                             StringComparison.OrdinalIgnoreCase) &&
