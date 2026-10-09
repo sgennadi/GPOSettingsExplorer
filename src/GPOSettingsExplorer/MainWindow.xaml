@@ -221,7 +221,8 @@
                               ToolTip="Original source lists and manual MMC inventory live here. All existing editing commands remain available.">
                         <Border BorderBrush="{DynamicResource {x:Static SystemColors.ControlDarkBrushKey}}"
                                 BorderThickness="1" Padding="2" MaxHeight="430">
-                <TabControl x:Name="AllSettingsSubTabs" Margin="3">
+                <TabControl x:Name="AllSettingsSubTabs" Margin="3"
+                            SelectionChanged="AllSettingsSubTabs_SelectionChanged">
                     <TabItem Header="Configured GPMC settings">
                 <DockPanel Margin="6">
                     <WrapPanel DockPanel.Dock="Top">
