@@ -26,13 +26,16 @@ public sealed partial class GpoScriptEditorWindow : Window
     private readonly TextBox _findBox;
     private readonly TextBox _replaceBox;
     private readonly TextBox _lineBox;
+    private readonly ComboBox _encodingCombo;
+    private readonly ComboBox _eolCombo;
+    private readonly CheckBox _bomCheck;
     private readonly Button _saveButton;
     private readonly Button _cancelButton;
     private readonly DataGrid _diagnosticGrid;
     private readonly Expander _diagnosticsPanel;
     private bool _saving;
     private bool _saveSucceeded;
-    private readonly string _originalText;
+    private string _originalText;
 
     public string ScriptText => _editor.Text;
 
@@ -262,6 +265,48 @@ public sealed partial class GpoScriptEditorWindow : Window
         options.Children.Add(ToolButton("Copy all", (_, _) => Clipboard.SetText(_editor.Text)));
         options.Children.Add(ToolButton("Export local copy...", (_, _) => ExportLocalCopy()));
 
+        var formatTools = new WrapPanel { Margin = new Thickness(0, 4, 0, 3) };
+        formatTools.Children.Add(new TextBlock
+        {
+            Text = "Encoding", VerticalAlignment = VerticalAlignment.Center
+        });
+        _encodingCombo = new ComboBox
+        {
+            MinWidth = 245, MaxWidth = 410, IsTextSearchEnabled = true,
+            ToolTip = "Strict code pages: Windows 1251/1255, DOS 866/862, Unicode, KOI8 and all installed encodings.",
+            ItemsSource = ScriptEncodingService.AvailableCodePages()
+        };
+        _encodingCombo.SelectedItem = _encodingCombo.Items
+            .OfType<ScriptEncodingChoice>()
+            .FirstOrDefault(item => item.CodePage == document.CodePage);
+        _encodingCombo.SelectionChanged += (_, _) => EncodingChanged();
+        formatTools.Children.Add(_encodingCombo);
+
+        _bomCheck = new CheckBox
+        {
+            Content = "BOM", IsChecked = document.EmitBom,
+            VerticalAlignment = VerticalAlignment.Center,
+            ToolTip = "Unicode byte-order mark; no BOM for Windows ANSI/OEM encoding."
+        };
+        _bomCheck.Checked += (_, _) => BomChanged();
+        _bomCheck.Unchecked += (_, _) => BomChanged();
+        formatTools.Children.Add(_bomCheck);
+        formatTools.Children.Add(new TextBlock
+        {
+            Text = "EOL", VerticalAlignment = VerticalAlignment.Center
+        });
+        _eolCombo = new ComboBox { Width = 170 };
+        _eolCombo.Items.Add(new ComboBoxItem { Content = "DOS / Windows CRLF", Tag = "\r\n" });
+        _eolCombo.Items.Add(new ComboBoxItem { Content = "Unix LF", Tag = "\n" });
+        _eolCombo.Items.Add(new ComboBoxItem { Content = "Classic Mac CR", Tag = "\r" });
+        _eolCombo.SelectedItem = _eolCombo.Items.OfType<ComboBoxItem>()
+            .FirstOrDefault(item => (string)item.Tag == document.NewLine);
+        _eolCombo.SelectionChanged += (_, _) => ConvertLineEndings();
+        formatTools.Children.Add(_eolCombo);
+
+        formatTools.Children.Add(ToolButton("Reload as encoding...", (_, _) => ReloadInSelectedEncoding()));
+        formatTools.Children.Add(ToolButton("Pre-save check", async (_, _) => await ValidateAsync(true)));
+
         _editor = new TextEditor
         {
             Text = document.Text,
@@ -309,6 +354,7 @@ public sealed partial class GpoScriptEditorWindow : Window
         var toolbarContainer = new StackPanel();
         toolbarContainer.Children.Add(tools);
         toolbarContainer.Children.Add(options);
+        toolbarContainer.Children.Add(formatTools);
         var toolbarScroller = new ScrollViewer
         {
             Content = toolbarContainer,
@@ -346,7 +392,8 @@ public sealed partial class GpoScriptEditorWindow : Window
                 e.Cancel = true;
                 return;
             }
-            if (_saveSucceeded || _editor.Text.Equals(_originalText, StringComparison.Ordinal))
+            if (_saveSucceeded ||
+                (_editor.Text.Equals(_originalText, StringComparison.Ordinal) && !_document.FormatChanged))
                 return;
 
             if (MessageBox.Show(this,
