@@ -183,6 +183,44 @@ public static class UnifiedSettingsCatalogService
             message);
     }
 
+    public static AdmxPolicyDefinition? ResolveDefinition(
+        PolicySettingInfo setting,
+        IReadOnlyList<AdmxPolicyDefinition> policies)
+    {
+        // A setting opened from Global Search or the advanced GPMC grid must
+        // use the same conservative identity rules as Unified Settings.
+        // In particular, a shared display name is NOT sufficient.
+        var scoped = policies
+            .Where(policy => Scopes(policy.Scope).Any(scope =>
+                scope.Equals(setting.Scope, StringComparison.OrdinalIgnoreCase)))
+            .Where(policy => policy.DisplayName.Equals(
+                setting.SettingName, StringComparison.CurrentCultureIgnoreCase))
+            .ToArray();
+
+        if (scoped.Length == 0)
+            return null;
+
+        var sameCategory = scoped.Where(policy =>
+            CategoriesAgree(setting.Category, policy.Category)).ToArray();
+        if (sameCategory.Length == 1)
+            return sameCategory[0];
+
+        if (string.IsNullOrWhiteSpace(setting.RegistryKey) ||
+            string.IsNullOrWhiteSpace(setting.RegistryValue))
+            return null;
+
+        var sameRegistry = scoped.Where(policy =>
+            (KeyEqual(setting.RegistryKey, policy.Key) &&
+             setting.RegistryValue.Equals(policy.ValueName,
+                 StringComparison.OrdinalIgnoreCase)) ||
+            policy.Elements.Any(element =>
+                KeyEqual(setting.RegistryKey, element.Key) &&
+                setting.RegistryValue.Equals(element.ValueName,
+                    StringComparison.OrdinalIgnoreCase)))
+            .ToArray();
+        return sameRegistry.Length == 1 ? sameRegistry[0] : null;
+    }
+
     public static bool IsDirectAdmxSupported(AdmxPolicyDefinition definition) =>
         definition.Elements.All(e => e.Type != AdmxElementType.Unknown);
 
