@@ -57,6 +57,15 @@ public sealed class SettingValueWindow : Window
             footer,
             Dock.Bottom);
 
+        var manualSecuritySection =
+            SecurityXmlEntryClassifier.InferLegacyCategory(setting);
+        var securitySectionLabel = manualSecuritySection switch
+        {
+            SecurityXmlEntryClassifier.RegistrySection => "Registry (manual section)",
+            SecurityXmlEntryClassifier.RestrictedGroupsSection => "Restricted Groups (manual section)",
+            _ => null
+        };
+
         var navigationStatus =
             new TextBlock
             {
@@ -88,6 +97,8 @@ public sealed class SettingValueWindow : Window
                 Content =
                     exactNavigationAvailable
                         ? "Open exact setting in GPO editor..."
+                        : securitySectionLabel is not null
+                            ? "Open " + securitySectionLabel + "..."
                         : setting.Extension.Equals("RegistrySettings", StringComparison.OrdinalIgnoreCase)
                             ? "Open Administrative Templates (manual)..."
                             : setting.Extension.Equals("SoftwareInstallationSettings", StringComparison.OrdinalIgnoreCase)
@@ -277,13 +288,27 @@ public sealed class SettingValueWindow : Window
         panel.Children.Add(
             Meta(
                 "Category",
-                setting.Category));
+                manualSecuritySection ?? setting.Category));
 
         panel.Children.Add(
             Meta(
                 "Registry",
                 BuildRegistrySummary(
                     setting)));
+
+        if (SecurityXmlEntryClassifier.IsTechnicalDetail(setting))
+        {
+            panel.Children.Add(new TextBlock
+            {
+                Text = "GPMC XML detail (read-only). This entry describes a member, " +
+                    "security descriptor, or registry ACL rather than an independently " +
+                    "editable setting. MMC opens only a related section. The original " +
+                    "full value is preserved below for inspection.",
+                Foreground = UiStyle.WarningBrush,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(4, 8, 4, 4)
+            });
+        }
 
         if (setting.Extension.Equals("SoftwareInstallationSettings", StringComparison.OrdinalIgnoreCase) &&
             (setting.SettingName.Contains("Trustee ", StringComparison.OrdinalIgnoreCase) ||
