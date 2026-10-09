@@ -12,6 +12,7 @@ var tests = new (string Name, Action Body)[]
     ("Public Key, NRPT and MSI metadata route to the right MMC sections", TestExtendedMmcSectionRouting),
     ("MMC navigation does not confuse audit and registry with security options", TestMmcNavigationRouting),
     ("MMC policy names must match uniquely and exactly", TestMmcPolicyNameMatcher),
+    ("MMC ADMX tree suffix is recognized only with unique section identity", TestMmcTreePathMatcher),
     ("Domain connection pins LDAP and SYSVOL", TestDomainConnectionPaths),
     ("DPAPI current-user round trip", TestDpapiRoundTrip),
     ("GPP XML cache refreshes after file change", TestGppXmlCache),
@@ -856,6 +857,58 @@ static void TestExtendedMmcSectionRouting()
         Extension = "RegistrySettings", Scope = "Computer", SettingName = "Registry: raw"
     });
     Assert(notMapped.Count == 0, "Raw registry.pol navigation must remain unchanged.");
+}
+
+static void TestMmcTreePathMatcher()
+{
+    const string expected = "Administrative Templates";
+    const string central =
+        "Administrative Templates: Policy definitions (ADMX files) retrieved from the central store";
+    const string local =
+        "Administrative Templates: Policy definitions (ADMX files) retrieved from the local computer";
+
+    Assert(MmcTreePathMatcher.SectionNameMatches(central, expected),
+        "Central-store ADMX caption must match the actual MMC Administrative Templates node.");
+    Assert(MmcTreePathMatcher.SectionNameMatches(local, expected),
+        "Local ADMX caption must match without assuming a domain central store.");
+    Assert(MmcTreePathMatcher.SectionNameMatches("  Administrative   Templates  ", expected),
+        "Excess whitespace must not hide an otherwise exact tree section.");
+    Assert(MmcTreePathMatcher.SectionNameMatches(
+        "Administrative Templates", expected), "Unmodified MMC section must still match.");
+    Assert(!MmcTreePathMatcher.SectionNameMatches(
+        "Administrative Templates: Unrelated policy extension", expected),
+        "No generic prefix matching is allowed for a decorated MMC node.");
+    Assert(!MmcTreePathMatcher.SectionNameMatches(
+        "Administrative Templates (vendor custom)", expected),
+        "A same-prefix third-party MMC section must not be mistaken for ADMX.");
+    Assert(!MmcTreePathMatcher.SectionNameMatches(
+        "Administrative Templates: Policy definitions (ADMX files) retrieved from unknown place",
+        expected), "Unknown ADMX source descriptions must not bypass exact identity.");
+    Assert(!MmcTreePathMatcher.SectionNameMatches(
+        central, "Software installation"),
+        "ADMX special alias cannot accidentally match another MMC section.");
+    Assert(!MmcTreePathMatcher.SectionNameMatches(
+        "Scripts (Startup/Shutdown)", "Scripts"),
+        "Safety rules must not be bypassed through arbitrary child-prefix matching.");
+
+    var siblings = new[]
+    {
+        "Software Settings", "Windows Settings", central
+    };
+    Assert(MmcTreePathMatcher.FindUniqueIndex(siblings, expected) == 2,
+        "The provided YOSH-DC03 report must resolve Administrative Templates as a found path.");
+    Assert(MmcTreePathMatcher.FindUniqueIndex(
+        new[] { central, "Administrative Templates" }, expected) == 1,
+        "Exact matches must win over a recognized decorated alias.");
+    Assert(MmcTreePathMatcher.FindUniqueIndex(
+        new[] { central, central }, expected) == MmcTreePathMatcher.Ambiguous,
+        "Duplicate aliases must not produce an arbitrary navigation target.");
+    Assert(MmcTreePathMatcher.FindUniqueIndex(
+        new[] { expected, expected }, expected) == MmcTreePathMatcher.Ambiguous,
+        "Duplicate exact labels must be reported as ambiguous.");
+    Assert(MmcTreePathMatcher.FindUniqueIndex(
+        new[] { central }, "Windows Settings") == MmcTreePathMatcher.NotFound,
+        "Unrelated section names must still report missing.");
 }
 
 static void TestMmcPolicyNameMatcher()
