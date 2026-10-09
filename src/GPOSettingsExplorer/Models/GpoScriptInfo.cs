@@ -84,7 +84,7 @@ public sealed class GpoScriptDocument
     public string Text { get; set; } = string.Empty;
     public int CodePage { get; set; }
     public bool EmitBom { get; set; }
-    public string OriginalSha256 { get; init; } = string.Empty;
+    public string OriginalSha256 { get; set; } = string.Empty;
     public string NewLine { get; set; } = Environment.NewLine;
     public string OriginalText { get; set; } = string.Empty;
     public int OriginalCodePage { get; set; }
