@@ -62,6 +62,13 @@
                 <Button Content="Diagnostics"
                         Click="Diagnostics_Click"/>
 
+                <Button x:Name="PendingDiagnosticsButton"
+                        Content="Diagnostics pending"
+                        Style="{StaticResource UiPendingDiagnosticsButton}"
+                        ToolTip="Review accumulated local diagnostics and choose whether to submit them."
+                        Visibility="Collapsed"
+                        Click="PendingDiagnostics_Click"/>
+
                 <Button x:Name="UpdateButton"
                         Content="Check updates"
                         Click="CheckUpdates_Click"/>
