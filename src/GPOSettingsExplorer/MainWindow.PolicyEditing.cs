@@ -32,11 +32,16 @@ public partial class MainWindow
 
     private async Task EditSelectedSettingAsync()
     {
-        if (_domainContext is null ||
-            SettingsGrid.SelectedItem is not PolicySettingInfo setting)
-        {
+        if (SettingsGrid.SelectedItem is PolicySettingInfo setting)
+            await EditConfiguredSettingAsync(setting);
+    }
+
+    // Called directly by Unified Settings; no dependence on whether the
+    // advanced legacy DataGrid is visible or has an active search filter.
+    private async Task EditConfiguredSettingAsync(PolicySettingInfo setting)
+    {
+        if (_domainContext is null)
             return;
-        }
 
         var gpo = _gpos.FirstOrDefault(item => item.Id == setting.GpoId);
         if (gpo is null)
