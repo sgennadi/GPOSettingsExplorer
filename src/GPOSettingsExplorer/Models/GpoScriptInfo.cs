@@ -66,6 +66,12 @@ public sealed class GpoScriptSearchResult
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .Count();
 
+    public bool HasMultipleCopies => CopyCount > 1;
+
+    public string CopiesLabel => CopyCount == 1
+        ? "1 copy"
+        : $"{CopyCount:N0} copies";
+
     public int GpoReferenceCount =>
         Scripts
             .Select(item => item.GpoId)
