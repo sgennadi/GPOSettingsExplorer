@@ -14,7 +14,7 @@ public sealed class GpoScriptCopyPickerWindow : Window
     public GpoScriptCopyPickerWindow(
         IReadOnlyList<GpoScriptInfo> copies)
     {
-        Title = "Choose GPO Script Copy";
+        Title = $"Identical script copies ({copies.Count})";
         Width = 920;
         Height = 520;
         MinWidth = 640;
@@ -40,8 +40,10 @@ public sealed class GpoScriptCopyPickerWindow : Window
         var open =
             new Button
             {
-                Content = "Edit selected",
-                IsDefault = true
+                Content = "Edit selected copy",
+                IsDefault = true,
+                Style = (Style)FindResource("UiPrimaryButton"),
+                ToolTip = "Only the selected physical file is edited. Other identical GPO scripts are unaffected."
             };
 
         open.Click += (_, _) =>
@@ -53,12 +55,23 @@ public sealed class GpoScriptCopyPickerWindow : Window
         };
 
         footer.Children.Add(open);
-        footer.Children.Add(
-            new Button
-            {
-                Content = "Cancel",
-                IsCancel = true
-            });
+
+        var copyPath = new Button
+        {
+            Content = "Copy path",
+            ToolTip = "Copy the selected script's complete SYSVOL path"
+        };
+        copyPath.Click += (_, _) =>
+        {
+            if (SelectedScript is { } selected)
+                Clipboard.SetText(selected.FullPath);
+        };
+        footer.Children.Add(copyPath);
+        footer.Children.Add(new Button
+        {
+            Content = "Close",
+            IsCancel = true
+        });
 
         var header =
             new StackPanel
@@ -73,7 +86,8 @@ public sealed class GpoScriptCopyPickerWindow : Window
         header.Children.Add(
             new TextBlock
             {
-                Text = "This same script content exists in more than one GPO.",
+                Text = $"Identical script content: {copies.Count} physical copies",
+                Foreground = UiStyle.AccentBrush,
                 FontSize = UiStyle.HeadingFontSize,
                 FontWeight = FontWeights.SemiBold,
                 TextWrapping = TextWrapping.Wrap
@@ -82,7 +96,7 @@ public sealed class GpoScriptCopyPickerWindow : Window
         header.Children.Add(
             new TextBlock
             {
-                Text = "Choose the physical copy to edit. Search results stay deduplicated.",
+                Text = "All copies share identical file bytes, but each GPO has its own script file. Select a copy to open it, or close to return to the deduplicated search results.",
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 4, 0, 0)
             });

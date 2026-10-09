@@ -4,6 +4,17 @@
 
 - No unreleased changes yet.
 
+## 0.4.7 - 2026-10-09
+
+- GPO Scripts search: identical script files are deduplicated into one content match; the **Copies** column is an accent-colored, clickable count. Click it to see which GPOs contain the identical script, copy the SYSVOL path, or explicitly edit another physical copy.
+- Double-clicking a search result opens one deterministic physical file without forcing the copy chooser; preferred context is the selected script/GPO. A GPO change still affects **only** that single physical file and remains subject to WRITE ENABLED, backup, confirmation and byte verification.
+- Added section-only MMC navigation for `PublicKeySettings` (Root Certificate Settings, certificate-related sections), `NrptSettings` (Name Resolution Policy) and `SoftwareInstallationSettings` (Software installation).
+- Clarified that `SoftwareInstallationSettings` Trustee Auditing / Trustee Permissions entries are nested package security metadata, not separately editable Security Options. The Setting Value window retains the reported XML summary and labels manual navigation.
+- Improved captions to distinguish attempted section navigation from a confirmed exact policy dialog; keep raw `registry.pol` metadata handling as before.
+- Added regression tests for multiple identical script copies, per-GPO selection and extended MMC section routing. The user-confirmed LAN Manager native exact-lookup algorithm is unchanged.
+
+
+
 ## 0.4.6 - 2026-10-09
 
 - Preserve the **field-tested v0.4.5 exact MMC Security Options navigation** unchanged. The user confirmed that `Network security: LAN Manager authentication level` opens correctly in v0.4.5.

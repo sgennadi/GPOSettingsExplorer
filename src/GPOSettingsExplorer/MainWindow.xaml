@@ -281,9 +281,17 @@
                             <DataGridTextColumn Header="Match"
                                                 Binding="{Binding LineText}"
                                                 Width="3*"/>
-                            <DataGridTextColumn Header="Copies"
-                                                Binding="{Binding CopyCount}"
-                                                Width="70"/>
+                            <DataGridTemplateColumn Header="Copies" Width="110">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Button Content="{Binding CopiesLabel}"
+                                                Style="{StaticResource UiScriptCopiesButton}"
+                                                IsEnabled="{Binding HasMultipleCopies}"
+                                                PreviewMouseDoubleClick="ScriptCopies_PreviewMouseDoubleClick"
+                                                Click="ScriptCopies_Click"/>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
                             <DataGridTextColumn Header="GPO refs"
                                                 Binding="{Binding GpoReferenceCount}"
                                                 Width="80"/>
