@@ -17,6 +17,9 @@ public sealed class WorkspaceState
     // v1 groups ADMX under All Settings and GPP editors under Preferences.
     // Legacy v0 indices are migrated once when restoring older workspace files.
     public int NavigationLayoutVersion { get; set; }
+    public int PreferencesTabIndex { get; set; }
+    public int AdvancedSourceTabIndex { get; set; }
+    public bool AdvancedSourcesExpanded { get; set; }
     public Guid? SelectedGpoId { get; set; }
     public string GpoSearch { get; set; } = string.Empty;
     public string SettingsSearch { get; set; } = string.Empty;
