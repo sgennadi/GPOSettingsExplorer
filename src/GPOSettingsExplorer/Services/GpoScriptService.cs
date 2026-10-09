@@ -390,11 +390,19 @@ public sealed class GpoScriptService
 
         try
         {
-            var textToWrite = document.Text.Equals(
-                    document.OriginalText, StringComparison.Ordinal) &&
-                document.NewLine == document.OriginalNewLine
-                    ? document.Text
-                    : ScriptEncodingService.NormalizeNewlines(document.Text, document.NewLine);
+            // A mixed-EOL script must not silently lose its existing per-line
+            // endings when the operator edits unrelated text or only changes
+            // the code page. Explicit Convert EOL normalizes editor text.
+            var explicitEolChange = document.NewLine != document.OriginalNewLine;
+            var mixedOriginal = ScriptEncodingService.HasMixedNewlines(
+                document.OriginalText);
+            var normalize = explicitEolChange ||
+                (!mixedOriginal && !document.Text.Equals(
+                    document.OriginalText, StringComparison.Ordinal));
+            var textToWrite = normalize
+                ? ScriptEncodingService.NormalizeNewlines(
+                    document.Text, document.NewLine)
+                : document.Text;
 
             var bytesToWrite = ScriptEncodingService.Encode(
                 textToWrite, document.CodePage, document.EmitBom);
