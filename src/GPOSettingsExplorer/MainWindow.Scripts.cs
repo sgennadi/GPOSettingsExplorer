@@ -468,70 +468,81 @@ public partial class MainWindow
         MouseButtonEventArgs e)
     {
         if (GpoScriptSearchResultsGrid.SelectedItem is not GpoScriptSearchResult result)
-        {
             return;
-        }
 
-        var script =
-            SelectScriptCopyForEditing(
-                result);
-
-        if (script is null)
-        {
+        // Browsing copies is explicit, via the count. A normal double-click
+        // opens a single physical GPO file without an intermediate picker.
+        var selected = GetPreferredGpoScriptCopy(result);
+        if (selected is null)
             return;
-        }
 
-        await EditGpoScriptAsync(
-            script,
-            result.LineNumber);
+        StatusText.Text = result.HasMultipleCopies
+            ? $"Opening {selected.FileName} in '{selected.GpoName}' only. Click Copies to choose a different GPO."
+            : $"Opening {selected.FileName} in '{selected.GpoName}'.";
+
+        await EditGpoScriptAsync(selected, result.LineNumber);
     }
 
-    private GpoScriptInfo? SelectScriptCopyForEditing(
-        GpoScriptSearchResult result)
+    private static void ScriptCopies_PreviewMouseDoubleClick(
+        object sender,
+        MouseButtonEventArgs e)
     {
-        var copies =
-            result.Scripts
-                .GroupBy(
-                    item =>
-                        item.FullPath,
-                    StringComparer.OrdinalIgnoreCase)
-                .Select(group =>
-                    group.First())
-                .OrderBy(
-                    item =>
-                        item.GpoName,
-                    StringComparer.CurrentCultureIgnoreCase)
-                .ThenBy(
-                    item =>
-                        item.Scope,
-                    StringComparer.OrdinalIgnoreCase)
-                .ThenBy(
-                    item =>
-                        item.EventName,
-                    StringComparer.OrdinalIgnoreCase)
-                .ToArray();
+        // Prevent DataGrid's row-double-click from opening a script when
+        // the operator is intentionally clicking the copies counter.
+        e.Handled = true;
+    }
 
-        if (copies.Length == 0)
+    private async void ScriptCopies_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        e.Handled = true;
+        if (sender is not Button { DataContext: GpoScriptSearchResult result })
+            return;
+
+        var copies = GpoScriptCopyResolver.PhysicalCopies(result);
+        if (copies.Count < 2)
+            return;
+
+        var picker = new GpoScriptCopyPickerWindow(copies)
         {
-            return null;
+            Owner = this
+        };
+
+        if (picker.ShowDialog() == true && picker.SelectedScript is { } selected)
+            await EditGpoScriptAsync(selected, result.LineNumber);
+    }
+
+    private GpoScriptInfo? GetPreferredGpoScriptCopy(GpoScriptSearchResult result)
+    {
+        var selected = GpoScriptsGrid.SelectedItem as GpoScriptInfo;
+        if (selected is not null &&
+            result.Scripts.Any(item =>
+                item.FullPath.Equals(selected.FullPath, StringComparison.OrdinalIgnoreCase)))
+        {
+            return GpoScriptCopyResolver.PreferredCopy(
+                result, selected.GpoId, selected.FullPath);
         }
 
-        if (copies.Length == 1)
+        if (_selectedGpoScriptGpoIds.Count == 1)
         {
-            return copies[0];
+            var requestedGpo = _selectedGpoScriptGpoIds.First();
+            var scoped = GpoScriptCopyResolver.PreferredCopy(result, requestedGpo);
+            if (scoped is not null && scoped.GpoId == requestedGpo)
+                return scoped;
         }
 
-        var picker =
-            new GpoScriptCopyPickerWindow(
-                copies)
-            {
-                Owner =
-                    this
-            };
+        if (GpoGrid.SelectedItem is GpoInfo activeGpo)
+        {
+            var scoped = GpoScriptCopyResolver.PreferredCopy(result, activeGpo.Id);
+            if (scoped is not null && scoped.GpoId == activeGpo.Id)
+                return scoped;
+        }
 
-        return picker.ShowDialog() == true
-            ? picker.SelectedScript
-            : null;
+        // Search results are ordered predictably, never changed in bulk.
+        // The GPO name and physical path remain visible in the editor;
+        // saving remains subject to backup and change preview.
+        return GpoScriptCopyResolver.PreferredCopy(result);
     }
 
     private async Task EditGpoScriptAsync(
