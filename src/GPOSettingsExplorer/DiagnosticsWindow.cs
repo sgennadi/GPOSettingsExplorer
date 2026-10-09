@@ -11,6 +11,9 @@ public sealed class DiagnosticsWindow : Window
     private readonly DiagnosticsService _service;
     private readonly GpmService _gpmService;
     private readonly Func<GpoInfo?> _selectedGpo;
+    private readonly Func<IReadOnlyList<PolicySettingInfo>> _indexedSettings;
+    private readonly Func<string> _domainDn;
+    private CancellationTokenSource? _mmcCancellation;
     private readonly DataGrid _grid;
     private readonly TextBlock _status;
 
@@ -20,7 +23,9 @@ public sealed class DiagnosticsWindow : Window
     public DiagnosticsWindow(
         DiagnosticsService service,
         GpmService gpmService,
-        Func<GpoInfo?> selectedGpo)
+        Func<GpoInfo?> selectedGpo,
+        Func<IReadOnlyList<PolicySettingInfo>> indexedSettings,
+        Func<string> domainDn)
     {
         _service =
             service;
@@ -28,8 +33,9 @@ public sealed class DiagnosticsWindow : Window
         _gpmService =
             gpmService;
 
-        _selectedGpo =
-            selectedGpo;
+        _selectedGpo = selectedGpo;
+        _indexedSettings = indexedSettings;
+        _domainDn = domainDn;
 
         Title =
             "Diagnostics";
@@ -131,6 +137,14 @@ public sealed class DiagnosticsWindow : Window
             support);
 
         toolbar.Children.Add(openLogs);
+
+        var mmcAudit = new Button
+        {
+            Content = "Audit MMC paths...",
+            ToolTip = "Read-only scan of MMC policy tree for the selected GPO. No policy settings are changed."
+        };
+        mmcAudit.Click += async (_, _) => await AuditMmcPathsAsync(mmcAudit);
+        toolbar.Children.Add(mmcAudit);
 
         var reviewPending = new Button
         {
@@ -243,6 +257,70 @@ public sealed class DiagnosticsWindow : Window
         Loaded +=
             (_, _) =>
                 Refresh();
+        Closing += (_, _) => _mmcCancellation?.Cancel();
+    }
+
+    private async Task AuditMmcPathsAsync(Button button)
+    {
+        var gpo = _selectedGpo();
+        if (gpo is null || string.IsNullOrWhiteSpace(_domainDn()))
+        {
+            MessageBox.Show(this,
+                "Select a GPO in the main GPOs tab and connect to the domain first.",
+                "MMC route audit", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var settings = _indexedSettings().ToArray();
+        if (settings.Length == 0)
+        {
+            MessageBox.Show(this,
+                "The selected GPO has no indexed settings. Build the settings index first.",
+                "MMC route audit", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        if (MessageBox.Show(this,
+                "Read MMC policy tree using '" + gpo.DisplayName +
+                    "' and test distinct paths from ALL indexed GPOs?\n\n" +
+                    "This diagnostic does not edit AD or SYSVOL. It opens an MMC window and " +
+                    "may take up to three minutes. Results stay local until you choose to send diagnostics.",
+                "Read-only MMC route audit",
+                MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
+            return;
+
+        button.IsEnabled = false;
+        _mmcCancellation = new CancellationTokenSource();
+        _status.Text = "Opening MMC tree (READ ONLY)...";
+        try
+        {
+            var progress = new Progress<string>(value => _status.Text = value);
+            var report = await MmcRouteAuditService.RunAsync(
+                gpo, _domainDn(), settings, progress, _mmcCancellation.Token);
+            _status.Text = "MMC audit saved. Use Review local logs to inspect it.";
+            MessageBox.Show(this,
+                "MMC route audit saved locally:\n" + report +
+                "\n\nReport shows found/missing paths and MMC tree nodes. " +
+                "It does not claim that policy-property dialogs opened.",
+                "MMC route audit", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (OperationCanceledException)
+        {
+            _status.Text = "MMC audit cancelled; no AD/SYSVOL data changed.";
+        }
+        catch (Exception ex)
+        {
+            _status.Text = "MMC route audit failed. Review the local error logs.";
+            CrashLogService.Write("MMC route audit", ex);
+            ErrorDialog.Show(this, "MMC route audit",
+                "Could not complete a read-only MMC tree scan.", ex);
+        }
+        finally
+        {
+            button.IsEnabled = true;
+            _mmcCancellation?.Dispose();
+            _mmcCancellation = null;
+        }
     }
 
     private void Refresh()

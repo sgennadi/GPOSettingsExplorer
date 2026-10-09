@@ -32,7 +32,17 @@ public sealed class GpoConflictInfo
     public string Gpos { get; init; } = string.Empty;
     public string Variants { get; init; } = string.Empty;
     public IReadOnlyList<Guid> GpoIds { get; init; } = Array.Empty<Guid>();
+    public string Kind { get; init; } = "Different values";
+    public string OverlapStatus { get; init; } = "Unknown";
+    public string LinkEvidence { get; init; } = string.Empty;
+    public string Recommendation { get; init; } = string.Empty;
+    public string PriorityNote { get; init; } = string.Empty;
+    public bool IsPotentialOverlap { get; init; }
+    public IReadOnlyList<PolicySettingInfo> Participants { get; init; } =
+        Array.Empty<PolicySettingInfo>();
 
     public string SearchText =>
+        Kind + " " + OverlapStatus + " " + LinkEvidence + " " +
+        Recommendation + " " +
         $"{Scope} {SettingName} {Category} {RegistryKey} {RegistryValue} {Gpos} {Variants}";
 }

@@ -1448,6 +1448,8 @@
                         <TextBlock Text="Search links:" VerticalAlignment="Center"/>
                         <TextBox x:Name="LinkSearchBox" Width="360" TextChanged="LinkSearchBox_TextChanged"/>
                         <Button Content="Load links" Click="LoadLinks_Click"/>
+                        <Button Content="Hierarchy / Order..." Click="ShowGpoHierarchy_Click"
+                                ToolTip="Show site/domain/OU tree, link order and inheritance states"/>
                         <Button Content="New link..." Click="NewLink_Click"/>
                         <Button Content="Edit link..." Click="EditLink_Click"/>
                         <Button Content="Remove link" Click="RemoveLink_Click"/>
@@ -1609,7 +1611,8 @@
                                   DisplayMemberPath="DisplayName"
                                   Margin="4"/>
                         <Button Content="Compare" Click="CompareGpos_Click"/>
-                        <Button Content="Find conflicts" Click="FindConflicts_Click"/>
+                        <Button Content="Find conflicts &amp; duplicates" Click="FindConflicts_Click"/>
+                        <Button Content="Explain / Actions..." Click="ConflictDetails_Click"/>
                         <CheckBox x:Name="CompareDifferencesOnlyCheck"
                                   Content="Differences only"
                                   IsChecked="True"
@@ -1647,19 +1650,23 @@
                             </DockPanel>
                         </TabItem>
 
-                        <TabItem Header="Potential Conflicts">
+                        <TabItem Header="Conflicts &amp; Duplicates">
                             <DockPanel>
                                 <TextBlock x:Name="ConflictCountText"
                                            DockPanel.Dock="Top"
                                            Margin="6"
                                            Foreground="DimGray"/>
-                                <DataGrid x:Name="ConflictGrid" MouseDoubleClick="ConflictGrid_MouseDoubleClick">
+                                <DataGrid x:Name="ConflictGrid" MouseDoubleClick="ConflictGrid_MouseDoubleClick"
+                                          RowStyle="{StaticResource UiConflictRowStyle}">
                                     <DataGrid.Columns>
+                                        <DataGridTextColumn Header="Type" Binding="{Binding Kind}" Width="120"/>
+                                        <DataGridTextColumn Header="Overlap" Binding="{Binding OverlapStatus}" Width="165"/>
                                         <DataGridTextColumn Header="Scope" Binding="{Binding Scope}" Width="90"/>
                                         <DataGridTextColumn Header="Setting" Binding="{Binding SettingName}" Width="1.8*"/>
                                         <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="1.4*"/>
                                         <DataGridTextColumn Header="GPOs" Binding="{Binding Gpos}" Width="2*"/>
                                         <DataGridTextColumn Header="States / values" Binding="{Binding Variants}" Width="2.2*"/>
+                                        <DataGridTextColumn Header="Recommended action" Binding="{Binding Recommendation}" Width="2.5*"/>
                                         <DataGridTextColumn Header="Registry key" Binding="{Binding RegistryKey}" Width="1.4*"/>
                                         <DataGridTextColumn Header="Registry value" Binding="{Binding RegistryValue}" Width="1.1*"/>
                                     </DataGrid.Columns>

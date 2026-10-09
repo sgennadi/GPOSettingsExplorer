@@ -293,24 +293,26 @@ public sealed class GpoScriptService
         return "<matched path>";
     }
 
-    public GpoScriptDocument ReadDocument(string path)
+    public GpoScriptDocument ReadDocument(string path, int? forcedCodePage = null)
     {
         var bytes = File.ReadAllBytes(path);
         var (encoding, bomLength, emitBom) = DetectEncoding(bytes, path);
-        var text = encoding.GetString(bytes, bomLength, bytes.Length - bomLength);
-        var newLine = text.Contains("\r\n", StringComparison.Ordinal)
-            ? "\r\n"
-            : text.Contains('\n') ? "\n"
-            : text.Contains('\r') ? "\r" : Environment.NewLine;
+        var codePage = forcedCodePage ?? encoding.CodePage;
+        var text = ScriptEncodingService.Strict(codePage)
+            .GetString(bytes, bomLength, bytes.Length - bomLength);
+        var newLine = ScriptEncodingService.DetectNewline(text);
 
         return new GpoScriptDocument
         {
             Text = text,
-            CodePage = encoding.CodePage,
+            CodePage = codePage,
+            OriginalCodePage = codePage,
             EmitBom = emitBom,
+            OriginalEmitBom = emitBom,
             OriginalSha256 = Convert.ToHexString(SHA256.HashData(bytes)),
             OriginalText = text,
-            NewLine = newLine
+            NewLine = newLine,
+            OriginalNewLine = newLine
         };
     }
 
@@ -341,9 +343,16 @@ public sealed class GpoScriptService
                 "The selected script is outside this GPO's SYSVOL folder and will not be modified.");
         }
 
-        var encoding =
-            Encoding.GetEncoding(
-                document.CodePage);
+        // Strict encoder: reject lossy conversions of Cyrillic and Hebrew.
+        if (!ScriptEncodingService.CanRoundTrip(document.Text, document.CodePage,
+                out var conversionError))
+            throw new InvalidOperationException(
+                "Cannot encode the script without replacing characters: " + conversionError);
+
+        if (document.EmitBom && !ScriptEncodingService.SupportsBom(document.CodePage))
+            throw new InvalidOperationException("BOM is unavailable for this code page.");
+
+        var encoding = ScriptEncodingService.Strict(document.CodePage);
 
         var original =
             File.ReadAllBytes(
@@ -363,7 +372,10 @@ public sealed class GpoScriptService
                 ReadText(
                     fullPath),
                 document.Text,
-                $"SYSVOL path: {fullPath}",
+                $"SYSVOL path: {fullPath}; code page {document.OriginalCodePage} -> {document.CodePage};" +
+                $" BOM {document.OriginalEmitBom} -> {document.EmitBom};" +
+                $" EOL {ScriptEncodingService.DisplayLineEnding(document.OriginalNewLine)} -> " +
+                ScriptEncodingService.DisplayLineEnding(document.NewLine),
                 "Save"));
 
         var temp =
@@ -378,15 +390,25 @@ public sealed class GpoScriptService
 
         try
         {
-            var textToWrite =
-                document.Text.Equals(document.OriginalText, StringComparison.Ordinal)
-                    ? document.Text
-                    : NormalizeLineEndings(document.Text, document.NewLine);
-            WriteText(
-                temp,
-                textToWrite,
-                encoding,
-                document.EmitBom);
+            // A mixed-EOL script must not silently lose its existing per-line
+            // endings when the operator edits unrelated text or only changes
+            // the code page. Explicit Convert EOL normalizes editor text.
+            var explicitEolChange = document.NewLine != document.OriginalNewLine;
+            var mixedOriginal = ScriptEncodingService.HasMixedNewlines(
+                document.OriginalText);
+            var normalize = explicitEolChange ||
+                (!mixedOriginal && !document.Text.Equals(
+                    document.OriginalText, StringComparison.Ordinal));
+            var textToWrite = normalize
+                ? ScriptEncodingService.NormalizeNewlines(
+                    document.Text, document.NewLine)
+                : document.Text;
+
+            var bytesToWrite = ScriptEncodingService.Encode(
+                textToWrite, document.CodePage, document.EmitBom);
+            using (var staged = new FileStream(
+                temp, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                staged.Write(bytesToWrite);
 
             expectedBytes = File.ReadAllBytes(temp);
             if (expectedBytes.AsSpan().SequenceEqual(original))
@@ -690,15 +712,9 @@ public sealed class GpoScriptService
         byte[] bytes,
         string? path = null)
     {
-        if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE)
-            return (new UnicodeEncoding(false, true), 2, true);
-
-        if (bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF)
-            return (new UnicodeEncoding(true, true), 2, true);
-
-        if (bytes.Length >= 3 &&
-            bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
-            return (new UTF8Encoding(true), 3, true);
+        var (bomCodePage, bomLength) = ScriptEncodingService.DetectBom(bytes);
+        if (bomCodePage != 0)
+            return (ScriptEncodingService.Strict(bomCodePage), bomLength, true);
 
         var sample = bytes.Take(Math.Min(bytes.Length, 256)).ToArray();
         var oddZeros = sample.Where((value, index) => index % 2 == 1 && value == 0).Count();

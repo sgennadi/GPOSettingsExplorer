@@ -126,9 +126,9 @@ public partial class MainWindow
             new DiagnosticsWindow(
                 _diagnosticsService,
                 _gpmService,
-                () =>
-                    GpoGrid.SelectedItem
-                    as GpoInfo)
+                () => GpoGrid.SelectedItem as GpoInfo,
+                () => _settings.ToArray(),
+                () => _domainContext?.DomainDistinguishedName ?? string.Empty)
             {
                 Owner =
                     this

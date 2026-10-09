@@ -77,55 +77,25 @@ public partial class MainWindow
         StatusText.Text = $"Compared '{left.DisplayName}' with '{right.DisplayName}'";
     }
 
-    private void FindConflicts_Click(object sender, RoutedEventArgs e)
+    private async void FindConflicts_Click(object sender, RoutedEventArgs e)
     {
         if (!EnsureSettingsIndexAvailable())
             return;
 
-        _conflictRows = _settings
-            .GroupBy(PolicyIdentity, StringComparer.OrdinalIgnoreCase)
-            .Select(group =>
-            {
-                var byGpo = group
-                    .GroupBy(item => item.GpoId)
-                    .Select(g => g.First())
-                    .OrderBy(item => item.GpoName, StringComparer.CurrentCultureIgnoreCase)
-                    .ToArray();
+        // Link evidence matters. If the link index has never been loaded,
+        // try AD once; an unavailable link index remains explicitly Unknown.
+        if (_linkTargets.Count == 0 && _domainContext is not null)
+            await LoadLinksAsync();
 
-                var variants = byGpo
-                    .Select(NormalizeVariant)
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .ToArray();
-
-                if (byGpo.Length < 2 || variants.Length <= 1)
-                    return null;
-
-                var sample = byGpo[0];
-
-                return new GpoConflictInfo
-                {
-                    Identity = group.Key,
-                    Scope = sample.Scope,
-                    SettingName = sample.SettingName,
-                    Category = sample.Category,
-                    RegistryKey = sample.RegistryKey,
-                    RegistryValue = sample.RegistryValue,
-                    Gpos = string.Join(" | ", byGpo.Select(item => item.GpoName)),
-                    Variants = string.Join(" | ", byGpo.Select(item =>
-                        $"{item.GpoName}: {item.State}" +
-                        (string.IsNullOrWhiteSpace(item.Value) ? string.Empty : $" = {item.Value}"))),
-                    GpoIds = byGpo.Select(item => item.GpoId).Distinct().ToArray()
-                };
-            })
-            .Where(item => item is not null)
-            .Cast<GpoConflictInfo>()
-            .OrderBy(item => item.Scope, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(item => item.SettingName, StringComparer.CurrentCultureIgnoreCase)
-            .ToArray();
-
+        _conflictRows = GPOSettingsExplorer.Services.GpoConflictAnalysisService.Analyze(
+            _settings.ToArray(), _links.ToArray(), _gpos.ToArray());
         ApplyConflictFilter();
         CompareResultTabs.SelectedIndex = 1;
-        StatusText.Text = $"Found {_conflictRows.Count:N0} potential setting conflicts";
+        var duplicates = _conflictRows.Count(r => r.Kind == "Duplicate");
+        var differences = _conflictRows.Count - duplicates;
+        StatusText.Text =
+            $"{differences:N0} differing-value candidates; {duplicates:N0} identical-value duplicates. " +
+            "Scope overlap is indicative, not effective RSoP.";
     }
 
     private void CompareSearchBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
@@ -170,18 +140,45 @@ public partial class MainWindow
 
         var rows = source.ToArray();
         ConflictGrid.ItemsSource = rows;
-        ConflictCountText.Text = $"{rows.Length:N0} shown / {_conflictRows.Count:N0} potential conflicts";
+        ConflictCountText.Text =
+            $"{rows.Length:N0} shown / {_conflictRows.Count:N0} differences and duplicates (RSoP not proven)";
     }
 
-    private void ConflictGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+    private void ConflictGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e) =>
+        ShowConflictDetails();
+
+    private void ConflictDetails_Click(object sender, RoutedEventArgs e) =>
+        ShowConflictDetails();
+
+    private void ShowConflictDetails()
     {
         if (ConflictGrid.SelectedItem is not GpoConflictInfo conflict)
             return;
 
-        SettingsSearchBox.Text = conflict.SettingName;
-        MainTabs.SelectedIndex = 1;
-        _settingsView.Refresh();
-        StatusText.Text = $"Showing all occurrences of: {conflict.SettingName}";
+        var details = new GpoConflictDetailWindow(conflict) { Owner = this };
+        if (details.ShowDialog() != true)
+            return;
+
+        if (details.ReviewLinks)
+        {
+            // Leave link editing to the existing safety-guarded UI.
+            var link = _links.FirstOrDefault(l => conflict.GpoIds.Contains(l.GpoId));
+            if (link is not null)
+                LinksGrid.SelectedItem = link;
+            var linksTab = MainTabs.Items.OfType<System.Windows.Controls.TabItem>()
+                .FirstOrDefault(t => (t.Header?.ToString() ?? "")
+                    .Equals("GPO Links", StringComparison.OrdinalIgnoreCase));
+            if (linksTab is not null)
+                MainTabs.SelectedItem = linksTab;
+            StatusText.Text = "Review GPO Links and filter/WMI conditions before changing Link Order.";
+        }
+        else
+        {
+            SettingsSearchBox.Text = conflict.SettingName;
+            MainTabs.SelectedIndex = 1;
+            _settingsView.Refresh();
+            StatusText.Text = $"Showing all occurrences of: {conflict.SettingName}";
+        }
     }
 
     private bool EnsureSettingsIndexAvailable()

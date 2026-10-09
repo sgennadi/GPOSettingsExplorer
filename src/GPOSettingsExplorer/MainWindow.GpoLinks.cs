@@ -62,6 +62,42 @@ public partial class MainWindow
         }
     }
 
+    private async void ShowGpoHierarchy_Click(object sender, RoutedEventArgs e)
+    {
+        if (_domainContext is null)
+            return;
+
+        if (_linkTargets.Count == 0)
+            await LoadLinksAsync();
+
+        if (_linkTargets.Count == 0)
+            return;
+
+        var hierarchy = new GpoHierarchyWindow(_linkTargets, _links.ToArray())
+        {
+            Owner = this
+        };
+
+        if (hierarchy.ShowDialog() != true || hierarchy.SelectedLink is not { } chosen)
+            return;
+
+        var selected = _links.FirstOrDefault(link =>
+            link.GpoId == chosen.GpoId &&
+            link.TargetDn.Equals(chosen.TargetDn, StringComparison.OrdinalIgnoreCase));
+        if (selected is null)
+        {
+            await LoadLinksAsync();
+            selected = _links.FirstOrDefault(link =>
+                link.GpoId == chosen.GpoId &&
+                link.TargetDn.Equals(chosen.TargetDn, StringComparison.OrdinalIgnoreCase));
+        }
+        if (selected is null)
+            return;
+
+        LinksGrid.SelectedItem = selected;
+        await EditSelectedLinkAsync();
+    }
+
     private async void NewLink_Click(object sender, RoutedEventArgs e)
     {
         if (_domainContext is null)

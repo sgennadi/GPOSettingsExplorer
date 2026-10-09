@@ -18,7 +18,8 @@ public sealed partial class GpoScriptEditorWindow
         var caret = _editor.TextArea.Caret;
         _positionText.Text =
             $"Ln {caret.Line}, Col {caret.Column} / {_editor.Document.LineCount} lines";
-        var changed = !_editor.Text.Equals(_originalText, StringComparison.Ordinal);
+        var changed = !_editor.Text.Equals(_originalText, StringComparison.Ordinal) ||
+            _document.FormatChanged;
         _dirtyText.Text = changed ? "● Unsaved changes" : "Saved / unchanged";
         _dirtyText.Foreground = changed ? UiStyle.WarningBrush : UiStyle.SuccessBrush;
 
@@ -244,14 +245,118 @@ public sealed partial class GpoScriptEditorWindow
         UpdateStatus();
     }
 
+    private void EncodingChanged()
+    {
+        if (_encodingCombo.SelectedItem is not ScriptEncodingChoice choice)
+            return;
+
+        _document.CodePage = choice.CodePage;
+        var hasBom = ScriptEncodingService.SupportsBom(choice.CodePage);
+        _bomCheck.IsEnabled = hasBom;
+        if (!hasBom)
+        {
+            _document.EmitBom = false;
+            _bomCheck.IsChecked = false;
+        }
+
+        if (!ScriptEncodingService.CanRoundTrip(
+                _editor.Text, choice.CodePage, out var message))
+            _validationMessage =
+                "Encoding loss risk: " + message + " (Save blocked)";
+        else
+            _validationMessage = "Encoding selected; no conversion until Save";
+
+        UpdateStatus();
+    }
+
+    private void BomChanged()
+    {
+        if (!ScriptEncodingService.SupportsBom(_document.CodePage))
+        {
+            _document.EmitBom = false;
+            return;
+        }
+
+        _document.EmitBom = _bomCheck.IsChecked == true;
+        UpdateStatus();
+    }
+
+    private void ConvertLineEndings()
+    {
+        if (_eolCombo.SelectedItem is not ComboBoxItem { Tag: string newline })
+            return;
+        if (newline == _document.NewLine &&
+            !ScriptEncodingService.HasMixedNewlines(_editor.Text))
+            return;
+
+        var converted = ScriptEncodingService.NormalizeNewlines(_editor.Text, newline);
+        if (converted != _editor.Text)
+        {
+            _editor.Document.BeginUpdate();
+            try { _editor.Document.Replace(0, _editor.Document.TextLength, converted); }
+            finally { _editor.Document.EndUpdate(); }
+        }
+        _document.NewLine = newline;
+        _validationMessage = "Converted line endings to " +
+            ScriptEncodingService.DisplayLineEnding(newline);
+        UpdateStatus();
+    }
+
+    private void ReloadInSelectedEncoding()
+    {
+        if (_encodingCombo.SelectedItem is not ScriptEncodingChoice choice)
+            return;
+        if ((_editor.Text != _originalText || _document.FormatChanged) &&
+            MessageBox.Show(this,
+                "Reload the file from SYSVOL using this code page? All unsaved editor changes will be discarded.",
+                "Reload script", MessageBoxButton.YesNo,
+                MessageBoxImage.Warning) != MessageBoxResult.Yes)
+            return;
+
+        try
+        {
+            var loaded = new GpoScriptService().ReadDocument(
+                _script.FullPath, choice.CodePage);
+            _editor.Text = loaded.Text;
+            _originalText = loaded.Text;
+            _document.Text = loaded.Text;
+            _document.OriginalText = loaded.Text;
+            _document.OriginalSha256 = loaded.OriginalSha256;
+            _document.CodePage = choice.CodePage;
+            _document.OriginalCodePage = choice.CodePage;
+            _document.EmitBom = loaded.EmitBom;
+            _document.OriginalEmitBom = loaded.EmitBom;
+            _document.NewLine = loaded.NewLine;
+            _document.OriginalNewLine = loaded.NewLine;
+            _bomCheck.IsChecked = loaded.EmitBom;
+            _eolCombo.SelectedItem = _eolCombo.Items
+                .OfType<ComboBoxItem>().FirstOrDefault(
+                    item => (string)item.Tag == loaded.NewLine);
+            _validationMessage = "Reloaded source bytes using code page " + choice.CodePage;
+            UpdateStatus();
+        }
+        catch (Exception error)
+        {
+            ErrorDialog.Show(this, "Reload script",
+                "Cannot decode the original bytes using this code page. Editor text was preserved.",
+                error);
+        }
+    }
+
     private async Task<IReadOnlyList<ScriptDiagnostic>> ValidateAsync(bool showPanel)
     {
         var text = _editor.Text;
         _validationMessage = "Checking syntax without running the script...";
         UpdateStatus();
 
-        var diagnostics = await Task.Run(
-            () => ScriptSyntaxService.Analyze(text, _script.FileName));
+        var codePage = _document.CodePage;
+        var bom = _document.EmitBom;
+        var newline = _document.NewLine;
+        var diagnostics = await Task.Run(() =>
+            ScriptSyntaxService.Analyze(text, _script.FileName)
+                .Concat(ScriptTextSafetyService.Analyze(
+                    text, _script.FileName, codePage, bom, newline))
+                .ToArray());
 
         // A save may have started in the meantime or the text may have changed.
         if (!text.Equals(_editor.Text, StringComparison.Ordinal))
@@ -273,7 +378,7 @@ public sealed partial class GpoScriptEditorWindow
             : $"Syntax check: {errors} error(s), {warnings} warning(s), {infos} note(s)";
         _diagnosticsPanel.Header =
             $"Syntax diagnostics: {errors} error(s) / {warnings} warning(s)";
-        if (showPanel || diagnostics.Count > 0)
+        if (showPanel || diagnostics.Length > 0)
             _diagnosticsPanel.IsExpanded = true;
 
         UpdateStatus();
@@ -285,10 +390,21 @@ public sealed partial class GpoScriptEditorWindow
         if (_saving || !EditingGuard.IsEnabled)
             return;
 
-        if (_editor.Text.Equals(_originalText, StringComparison.Ordinal))
+        if (_editor.Text.Equals(_originalText, StringComparison.Ordinal) &&
+            !_document.FormatChanged)
         {
             _saveSucceeded = true;
             DialogResult = true;
+            return;
+        }
+
+        if (!ScriptEncodingService.CanRoundTrip(
+                _editor.Text, _document.CodePage, out var conversionError))
+        {
+            MessageBox.Show(this,
+                "Conversion would replace or lose characters. Choose another code page.\n\n" +
+                    conversionError,
+                "Unsafe script encoding", MessageBoxButton.OK, MessageBoxImage.Error);
             return;
         }
 
@@ -371,19 +487,10 @@ public sealed partial class GpoScriptEditorWindow
 
         try
         {
-            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
-            Encoding encoding = _document.CodePage switch
-            {
-                65001 => new UTF8Encoding(_document.EmitBom),
-                1200 => new UnicodeEncoding(false, _document.EmitBom),
-                1201 => new UnicodeEncoding(true, _document.EmitBom),
-                _ => Encoding.GetEncoding(_document.CodePage)
-            };
-
-            var text = _editor.Text.Replace("\r\n", "\n", StringComparison.Ordinal)
-                .Replace("\r", "\n", StringComparison.Ordinal)
-                .Replace("\n", _document.NewLine, StringComparison.Ordinal);
-            File.WriteAllText(target, text, encoding);
+            var text = ScriptEncodingService.NormalizeNewlines(
+                _editor.Text, _document.NewLine);
+            File.WriteAllBytes(target, ScriptEncodingService.Encode(
+                text, _document.CodePage, _document.EmitBom));
 
             _validationMessage = "Local copy exported; GPO unchanged";
             UpdateStatus();
