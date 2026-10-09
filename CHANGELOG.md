@@ -4,6 +4,16 @@
 
 - No unreleased changes yet.
 
+## 0.6.1 - 2026-10-09
+
+- Prevent MMC Full Settings Inventory from entering **Scripts (Startup/Shutdown)** and **Scripts (Logon/Logoff)** snap-ins through UI Automation. A production DC screenshot showed an MMC snap-in error in the former. These nodes are safely excluded **before expansion/selection** and listed as **Skipped - unsafe snap-in** under Coverage, not fabricated as complete data.
+- Use the built-in **GPO Scripts** view for script assignments and content; MMC inventory no longer activates fragile script property pages in the background.
+- Add a read-only visible MMC modal dialog guard. A snap-in error popup aborts the current automated scan with **PARTIAL** coverage and a diagnostic message. The app never auto-clicks Microsoft error dialogs or chooses permanent ignore; the dedicated MMC session remains available to the operator.
+- Improve MMC scan failure diagnostics to show the last section being visited; child enumeration errors can be reported per section without discarding other reachable branches.
+- Apply the same Scripts exclusion to **MMC Route Audit** tree snapshots/route checks and deny exact inventory edit navigation into these unsafe snap-ins.
+- Add regression tests for safe script-node exclusions, unrelated Administrative Templates categories, partial coverage and modal abort behavior.
+- CI success is not proof of a healthy snap-in on the domain controller; test v0.6.1 on a nonproduction reference GPO and investigate Windows snap-in crashes separately.
+
 ## 0.6.0 - 2026-10-09
 
 - Added **MMC Full Settings Inventory** as an inner view of the existing **All Settings** tab (no new top-level tab). Select a reference GPO and explicitly launch a read-only native MMC tree and policy list scan; cancel while running.
