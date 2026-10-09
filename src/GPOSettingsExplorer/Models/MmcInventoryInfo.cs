@@ -40,10 +40,10 @@ public sealed record MmcInventoryScanResult(
 {
     public bool IsComplete =>
         !Interrupted && Sections.All(s =>
-            s.Status is "Rows read" or "No list" or "Empty list");
+            s.Status is "Rows read" or "Empty list");
 
     public int Failures => Sections.Count(s =>
-        s.Status is "Read error" or "Selection failed" or "Truncated");
+        s.Status is "Read error" or "Selection failed" or "Truncated" or "No list");
 
     public string Coverage =>
         $"{Rows.Count:N0} observed rows / {NodesVisited:N0} tree nodes / " +
