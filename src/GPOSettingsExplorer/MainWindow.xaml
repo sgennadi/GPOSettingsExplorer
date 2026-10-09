@@ -1732,6 +1732,8 @@
                                     <DataGrid.Columns>
                                         <DataGridTextColumn Header="Type" Binding="{Binding Kind}" Width="120"/>
                                         <DataGridTextColumn Header="Overlap" Binding="{Binding OverlapStatus}" Width="165"/>
+                                        <DataGridTextColumn Header="RSoP / WMI / Security check"
+                                                            Binding="{Binding VerificationStatus}" Width="210"/>
                                         <DataGridTextColumn Header="Scope" Binding="{Binding Scope}" Width="90"/>
                                         <DataGridTextColumn Header="Setting" Binding="{Binding SettingName}" Width="1.8*"/>
                                         <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="1.4*"/>
