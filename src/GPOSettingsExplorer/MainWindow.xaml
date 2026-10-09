@@ -147,8 +147,9 @@
                 </DockPanel>
             </TabItem>
 
-            <TabItem x:Name="AllSettingsTab"
-                     Header="All Settings">
+            <TabItem x:Name="AllSettingsTab" Header="All Settings">
+                <TabControl x:Name="AllSettingsSubTabs" Margin="3">
+                    <TabItem Header="Configured GPMC settings">
                 <DockPanel Margin="6">
                     <WrapPanel DockPanel.Dock="Top">
                         <TextBlock Text="Search all configured settings:" VerticalAlignment="Center"/>
@@ -172,6 +173,76 @@
                         </DataGrid.Columns>
                     </DataGrid>
                 </DockPanel>
+                    </TabItem>
+                    <TabItem Header="MMC Full Settings Inventory">
+                        <DockPanel Margin="6">
+                            <StackPanel DockPanel.Dock="Top">
+                                <WrapPanel>
+                                    <TextBlock Text="Reference GPO:" VerticalAlignment="Center"/>
+                                    <ComboBox x:Name="MmcInventoryGpoCombo" Width="350" MinWidth="220"
+                                              DisplayMemberPath="DisplayName"
+                                              ItemsSource="{Binding ElementName=GpoGrid, Path=ItemsSource}"
+                                              ToolTip="One GPO editor is inspected per scan. The resulting MMC policy view is local to this computer."/>
+                                    <Button x:Name="MmcInventoryScanButton"
+                                            Content="Scan MMC (read-only)"
+                                            Style="{StaticResource UiPrimaryButton}"
+                                            Click="ScanMmcInventory_Click"/>
+                                    <Button x:Name="MmcInventoryCancelButton"
+                                            Content="Cancel scan" IsEnabled="False"
+                                            Click="CancelMmcInventory_Click"/>
+                                </WrapPanel>
+                                <WrapPanel>
+                                    <TextBlock Text="Search:" VerticalAlignment="Center"/>
+                                    <TextBox x:Name="MmcInventorySearchBox" Width="290" MinWidth="175"
+                                             TextChanged="MmcInventorySearchBox_TextChanged"/>
+                                    <Button Content="Open exact in MMC..." Click="OpenMmcInventoryRow_Click"
+                                            ToolTip="Open only a uniquely verified literal row in the standard MMC editor. No automatic GPO write."/>
+                                    <Button Content="Export CSV..." Click="ExportMmcInventory_Click"/>
+                                    <TextBlock x:Name="MmcInventoryShownCountText" Margin="12,0,0,0"
+                                               VerticalAlignment="Center"
+                                               Foreground="{DynamicResource UiMutedBrush}"/>
+                                </WrapPanel>
+                                <TextBlock Text="MMC inventory scans the tree and native policy lists shown by this computer's GPMC editor. Rows are observations, NOT effective RSoP; Not Configured is shown only if MMC explicitly reports it. Partial/inaccessible sections are tracked."
+                                           TextWrapping="Wrap" Margin="4,3,4,4"
+                                           Foreground="{DynamicResource UiWarningBrush}"/>
+                                <TextBlock x:Name="MmcInventoryCoverageText"
+                                           Text="No MMC inventory yet. Select a reference GPO and scan."
+                                           TextWrapping="Wrap" Margin="4,2,4,6"
+                                           Foreground="{DynamicResource UiAccentBrush}"/>
+                            </StackPanel>
+                            <TabControl x:Name="MmcInventoryResultTabs">
+                                <TabItem Header="Observed settings / rows">
+                                    <DataGrid x:Name="MmcInventoryGrid" IsReadOnly="True"
+                                              MouseDoubleClick="MmcInventoryGrid_MouseDoubleClick"
+                                              AutoGenerateColumns="False">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Setting / row" Binding="{Binding SettingName}" Width="2*"/>
+                                            <DataGridTextColumn Header="Scope" Binding="{Binding Scope}" Width="90"/>
+                                            <DataGridTextColumn Header="MMC state" Binding="{Binding MmcState}" Width="160"/>
+                                            <DataGridTextColumn Header="MMC value" Binding="{Binding MmcValue}" Width="1.5*"/>
+                                            <DataGridTextColumn Header="Section path" Binding="{Binding SectionPath}" Width="2*"/>
+                                            <DataGridTextColumn Header="GPMC XML" Binding="{Binding GpmcMatch}" Width="1.8*"/>
+                                            <DataGridTextColumn Header="ADMX" Binding="{Binding AdmxMatch}" Width="1.4*"/>
+                                            <DataGridTextColumn Header="Edit route" Binding="{Binding Navigation}" Width="170"/>
+                                            <DataGridTextColumn Header="Source" Binding="{Binding Source}" Width="140"/>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </TabItem>
+                                <TabItem Header="Coverage / skipped sections">
+                                    <DataGrid x:Name="MmcInventorySectionsGrid" IsReadOnly="True"
+                                              AutoGenerateColumns="False">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="130"/>
+                                            <DataGridTextColumn Header="Rows" Binding="{Binding RowCount}" Width="80"/>
+                                            <DataGridTextColumn Header="MMC section" Binding="{Binding Path}" Width="2.3*"/>
+                                            <DataGridTextColumn Header="Diagnostic" Binding="{Binding Details}" Width="2*"/>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </TabItem>
+                            </TabControl>
+                        </DockPanel>
+                    </TabItem>
+                </TabControl>
             </TabItem>
 
             <TabItem x:Name="GpoScriptsTab"
