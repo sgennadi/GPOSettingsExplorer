@@ -284,6 +284,16 @@ static void TestGpoConflictAnalysis()
         "Both links in the same OU should produce evidence of potential scope overlap.");
     Assert(findings.Any(x => x.Recommendation.Contains("back up both", StringComparison.OrdinalIgnoreCase)),
         "The deduplication plan must recommend independent backups.");
+
+    var disabled = policies.Select(g => new GpoInfo
+    {
+        Id = g.Id, DisplayName = g.DisplayName,
+        ComputerEnabled = g.Id == a
+    }).ToArray();
+    var inactive = GpoConflictAnalysisService.Analyze(settings, links, disabled);
+    Assert(inactive.All(x => !x.IsPotentialOverlap &&
+        x.OverlapStatus == "Not simultaneously active"),
+        "Disabled GPO configuration scope must not count as an active overlap.");
 }
 
 static void TestScriptSanitizer()
