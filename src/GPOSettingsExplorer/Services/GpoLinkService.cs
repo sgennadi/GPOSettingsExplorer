@@ -198,6 +198,9 @@ public sealed class GpoLinkService
             throw new IOException(
                 "GPO links changed in Active Directory during preview. Reload before applying.");
 
+        // gPLink is stored on the target AD container; a GPO-content backup
+        // does not capture this attribute. Store the before-state separately.
+        GpoLinkSnapshotService.Save(targetDn, raw);
         WriteLinks(entry, links);
     }
 
@@ -227,6 +230,13 @@ public sealed class GpoLinkService
                 $"GPO: {gpoId:B}",
                 "Remove"));
 
+        entry.RefreshCache(new[] { "gPLink" });
+        var latest = Convert.ToString(entry.Properties["gPLink"].Value) ?? string.Empty;
+        if (!latest.Equals(raw, StringComparison.Ordinal))
+            throw new IOException(
+                "GPO links changed in Active Directory during removal preview. Reload before applying.");
+
+        GpoLinkSnapshotService.Save(targetDn, raw);
         WriteLinks(entry, links);
     }
 
@@ -238,15 +248,11 @@ public sealed class GpoLinkService
                 DomainConnectionState.BuildLdapPath(
                     targetDn));
 
-        entry.RefreshCache(
-            new[]
-            {
-                "gPOptions"
-            });
-
-        var before =
-            ReadBlockInheritance(
-                entry);
+        entry.RefreshCache(new[] { "gPOptions", "gPLink" });
+        var priorOptions = entry.Properties["gPOptions"].Value is null
+            ? 0 : Convert.ToInt32(entry.Properties["gPOptions"].Value);
+        var priorLinks = Convert.ToString(entry.Properties["gPLink"].Value) ?? "";
+        var before = ReadBlockInheritance(entry);
 
         ChangePreviewGuard.Confirm(
             new ChangePreviewRequest(
@@ -257,9 +263,16 @@ public sealed class GpoLinkService
                 string.Empty,
                 "Apply"));
 
-        entry.Properties["gPOptions"].Value =
-            block ? 1 : 0;
+        entry.RefreshCache(new[] { "gPOptions", "gPLink" });
+        var latestOptions = entry.Properties["gPOptions"].Value is null
+            ? 0 : Convert.ToInt32(entry.Properties["gPOptions"].Value);
+        var latestLinks = Convert.ToString(entry.Properties["gPLink"].Value) ?? "";
+        if (latestOptions != priorOptions ||
+            !latestLinks.Equals(priorLinks, StringComparison.Ordinal))
+            throw new IOException("GPO link/inheritance attributes changed during preview; refresh before retrying.");
 
+        GpoLinkSnapshotService.Save(targetDn, priorLinks, priorOptions);
+        entry.Properties["gPOptions"].Value = block ? 1 : 0;
         entry.CommitChanges();
     }
 
