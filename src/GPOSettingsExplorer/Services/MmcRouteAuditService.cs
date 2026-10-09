@@ -47,7 +47,6 @@ public static class MmcRouteAuditService
                 Extensions = string.Join(", ", g.Select(x => x.Extension)
                     .Distinct(StringComparer.OrdinalIgnoreCase)) })
             .OrderBy(g => g.Path, StringComparer.OrdinalIgnoreCase)
-            .Take(175)
             .ToArray();
 
         var deadline = DateTime.UtcNow.AddMinutes(3);
@@ -121,7 +120,9 @@ public static class MmcRouteAuditService
                 {
                     // The root of the MMC policy tree has computer/user branches;
                     // every deeper level must be an immediate child.
-                    var child = FindImmediateChild(node, segments[i]);
+                    var child = i == 0
+                        ? FindFirstBranch(node, segments[i])
+                        : FindImmediateChild(node, segments[i]);
                     if (child is null)
                     {
                         // MMC can populate children asynchronously after Expand().
@@ -129,7 +130,9 @@ public static class MmcRouteAuditService
                         for (var retry = 0; retry < 8 && child is null; retry++)
                         {
                             Thread.Sleep(140);
-                            child = FindImmediateChild(node, segments[i]);
+                            child = i == 0
+                                ? FindFirstBranch(node, segments[i])
+                                : FindImmediateChild(node, segments[i]);
                         }
                     }
 
@@ -176,6 +179,17 @@ public static class MmcRouteAuditService
         File.WriteAllText(file, report.ToString(), new UTF8Encoding(false));
         progress?.Report($"Saved MMC route audit: {file}");
         return file;
+    }
+
+    private static AutomationElement? FindFirstBranch(AutomationElement tree, string segment)
+    {
+        // MMC tree can start with an additional "GPO editor" root node.
+        // Only the first requested policy segment may use descendants.
+        var matches = tree.FindAll(TreeScope.Descendants,
+            new AndCondition(
+                new PropertyCondition(AutomationElement.ControlTypeProperty, ControlType.TreeItem),
+                new PropertyCondition(AutomationElement.NameProperty, segment)));
+        return matches.Count == 1 ? matches[0] : null;
     }
 
     private static AutomationElement? FindImmediateChild(AutomationElement parent, string segment)
