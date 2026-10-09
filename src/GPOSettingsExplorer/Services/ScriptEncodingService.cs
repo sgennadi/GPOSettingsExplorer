@@ -199,6 +199,14 @@ public static class ScriptEncodingService
             unix.Replace("\n", lineEnding, StringComparison.Ordinal);
     }
 
+    public static string DisplayLineEnding(string value) => value switch
+    {
+        "\r\n" => "DOS/Windows CRLF",
+        "\n" => "Unix LF",
+        "\r" => "Classic Mac CR",
+        _ => "Unknown"
+    };
+
     public static bool SourceMatches(byte[] bytes, string originalSha256) =>
         Convert.ToHexString(SHA256.HashData(bytes)).Equals(
             originalSha256, StringComparison.OrdinalIgnoreCase);
