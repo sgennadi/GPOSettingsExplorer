@@ -27,8 +27,22 @@ function Get-Issues {
     $all = [System.Collections.Generic.List[object]]::new()
     for ($page = 1; $page -le 15; $page++) {
         $uri = "https://api.github.com/repos/$Repository/issues?state=all&per_page=100&page=$page"
-        $pageIssues = @(Invoke-RestMethod -Uri $uri -Headers $headers -Method Get -TimeoutSec 40)
-        foreach ($item in $pageIssues) { $all.Add($item) }
+        $response = Invoke-RestMethod -Uri $uri -Headers $headers -Method Get -TimeoutSec 40
+        # Invoke-RestMethod can surface a JSON list wrapped in an outer array.
+        # Flatten it before grouping; otherwise the wrapper has no .title.
+        $pageIssues = [System.Collections.Generic.List[object]]::new()
+        foreach ($item in @($response)) {
+            if ($item -is [array]) {
+                foreach ($nested in $item) { $pageIssues.Add($nested) }
+            }
+            else { $pageIssues.Add($item) }
+        }
+        foreach ($item in $pageIssues) {
+            if ($null -ne $item -and
+                $item.PSObject.Properties.Name -contains 'title') {
+                $all.Add($item)
+            }
+        }
         if ($pageIssues.Count -lt 100) { return $all.ToArray() }
     }
     Write-Warning "Issue scan limited to 1,500 most recent issues; inspect earlier pages if needed."
@@ -36,6 +50,10 @@ function Get-Issues {
 }
 
 function Is-DiagnosticIssue($issue) {
+    if ($null -eq $issue -or
+        $issue.PSObject.Properties.Name -notcontains 'title') {
+        return $false
+    }
     if ($issue.PSObject.Properties.Name -contains "pull_request" -and $null -ne $issue.pull_request) {
         return $false
     }
