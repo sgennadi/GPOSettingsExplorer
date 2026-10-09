@@ -58,23 +58,24 @@ public partial class MainWindow
         {
             await EnsureAdmxCatalogAsync();
 
-            // Do not route a configured setting to a different policy merely
-            // because the ADMX display label happens to be identical.
-            var definition =
-                UnifiedSettingsCatalogService.ResolveDefinition(
-                    setting,
-                    _admxPolicies!);
+            // XML leaf elements such as Member and Registry ACL are report
+            // descriptions, not independent ADMX policies. Fail closed.
+            var technical = SecurityXmlEntryClassifier.IsTechnicalDetail(setting);
+            var definition = technical
+                ? null
+                : UnifiedSettingsCatalogService.ResolveDefinition(
+                    setting, _admxPolicies!);
 
             if (definition is null)
             {
                 SetBusy(false);
 
                 var canEditBoolean =
-                    _securityTemplateService.CanEditBoolean(
+                    !technical && _securityTemplateService.CanEditBoolean(
                         setting);
 
                 var exactNavigationAvailable =
-                    _gpoEditorNavigatorService.CanNavigateExactly(
+                    !technical && _gpoEditorNavigatorService.CanNavigateExactly(
                         setting);
 
                 var valueWindow =

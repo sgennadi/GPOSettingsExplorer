@@ -14,7 +14,7 @@ Download the latest portable build from:
 
 **[GitHub Releases](https://github.com/sgennadi/GPOSettingsExplorer/releases/latest)**
 
-Current release: **v0.7.1**
+Current release: **v0.7.2**
 
 Available packages:
 
@@ -28,6 +28,12 @@ The builds are self-contained. A separate .NET runtime installation is not requi
 **All Settings** is now the primary search, inspection and edit workspace. It merges configured GPMC XML index entries, available ADMX templates, and optional rows observed in the read-only MMC inventory. Search by setting, category, GPO, registry target, source or value, or filter by source/state/GPO. Each row distinguishes its evidence and safest supported editing route. Configure an ADMX template by explicitly choosing a GPO; configured security or ADMX settings continue through the existing backup/preview/write-guarded editors. Unsupported/custom MMC entries are read-only, not silently edited.
 
 The old raw data grids were **not removed**: expand **Advanced sources and diagnostics** under All Settings for original GPMC, MMC and ADMX views. Previously separate GPP editors are now in **Preferences (GPP)** to keep the main tab bar compact. Existing user workspaces are migrated from their old tab positions. Settings absent from GPMC XML are never assumed Not Configured; ADMX template rows explicitly show **Template - state unknown**.
+
+### GPMC Security Settings XML clarity (0.7.2)
+
+In **All Settings**, verbose GPMC XML leaf descriptions (such as `Member: DOMAIN\\Group...` and `Registry` security ACLs) are hidden by default to keep the configurable policy list clear. Enable **Show XML details** to see them, or use **Advanced sources and diagnostics** for the complete unfiltered GPMC index. A technical row offers **View XML details...**, not an unsupported direct policy editor; the original text stays available and is never changed by viewing it.
+
+GPMC SecuritySettings membership descriptions can navigate to **Restricted Groups** and registry ACL entries to **Security Settings > Registry** as **manual section-only MMC navigation** when the category can be confidently inferred. These are not independently verified exact setting dialogs, and no automatic ADMX/security-template write is performed for them.
 
 ### MMC route-audit accuracy (0.7.1)
 

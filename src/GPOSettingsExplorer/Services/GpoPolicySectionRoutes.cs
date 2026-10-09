@@ -29,6 +29,26 @@ public static class GpoPolicySectionRoutes
             return new[] { scope, "Policies", "Software Settings", "Software installation" };
         }
 
+        if (setting.Extension.Equals("SecuritySettings", StringComparison.OrdinalIgnoreCase) &&
+            scope == "Computer Configuration")
+        {
+            // These GPMC report rows describe security template sections,
+            // not individual settings with a verified native MMC edit dialog.
+            var category = SecurityXmlEntryClassifier.InferLegacyCategory(setting);
+            var section = category switch
+            {
+                SecurityXmlEntryClassifier.RegistrySection => "Registry",
+                SecurityXmlEntryClassifier.RestrictedGroupsSection => "Restricted Groups",
+                _ => null
+            };
+
+            if (section is not null)
+                return new[]
+                {
+                    scope, "Policies", "Windows Settings", "Security Settings", section
+                };
+        }
+
         if (!setting.Extension.Equals("PublicKeySettings", StringComparison.OrdinalIgnoreCase))
             return Array.Empty<string>();
 

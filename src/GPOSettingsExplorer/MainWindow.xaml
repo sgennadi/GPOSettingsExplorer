@@ -180,10 +180,18 @@
                                           ItemsSource="{Binding ElementName=GpoGrid, Path=ItemsSource}"
                                           SelectionChanged="UnifiedFilterChanged"
                                           ToolTip="Select one GPO to compare its configured settings with ADMX templates."/>
+                                <CheckBox x:Name="UnifiedShowTechnicalCheckBox"
+                                          Content="Show XML details" IsChecked="False"
+                                          VerticalAlignment="Center" Margin="6,0,6,0"
+                                          Checked="UnifiedFilterChanged"
+                                          Unchecked="UnifiedFilterChanged"
+                                          ToolTip="Show low-level GPMC XML descriptors such as security group Member and Registry ACL. These are read-only descriptions, not independently editable policies."/>
                                 <Button Content="Refresh catalog" Click="RefreshUnifiedSettings_Click"/>
-                                <Button Content="Edit / Configure..."
+                                <Button x:Name="UnifiedActionButton"
+                                        Content="View / Edit..."
                                         Style="{StaticResource UiPrimaryButton}"
-                                        Click="EditUnifiedSetting_Click"/>
+                                        Click="EditUnifiedSetting_Click"
+                                        ToolTip="The selected row determines whether this opens an editor, a read-only value, or a verified MMC row."/>
                                 <Button Content="Open GPO" Click="OpenUnifiedSettingGpo_Click"/>
                                 <Button Content="Export CSV" Click="ExportUnifiedSettings_Click"/>
                             </WrapPanel>
@@ -207,7 +215,7 @@
                                 <DataGridTextColumn Header="GPO / Target" Binding="{Binding GpoName}" Width="1.5*"/>
                                 <DataGridTextColumn Header="Scope" Binding="{Binding Scope}" Width="95"/>
                                 <DataGridTextColumn Header="State" Binding="{Binding State}" Width="150"/>
-                                <DataGridTextColumn Header="Value" Binding="{Binding Value}" Width="1.4*"/>
+                                <DataGridTextColumn Header="Value / summary" Binding="{Binding Value}" Width="1.4*"/>
                                 <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="1.6*"/>
                                 <DataGridTextColumn Header="Source evidence" Binding="{Binding Sources}" Width="170"/>
                                 <DataGridTextColumn Header="Edit capability" Binding="{Binding Capability}" Width="185"/>

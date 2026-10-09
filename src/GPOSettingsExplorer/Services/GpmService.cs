@@ -1501,9 +1501,11 @@ public sealed class GpmService
 
             var category = isAdvancedAudit
                 ? "Security Settings > Advanced Audit Policy Configuration > Audit Policies"
-                : string.IsNullOrWhiteSpace(extensionType)
-                    ? GetNamespaceTail(element.Name.NamespaceName)
-                    : extensionType;
+                : extensionType.Equals("SecuritySettings", StringComparison.OrdinalIgnoreCase)
+                    ? SecurityXmlEntryClassifier.InferCategory(element) ?? extensionType
+                    : string.IsNullOrWhiteSpace(extensionType)
+                        ? GetNamespaceTail(element.Name.NamespaceName)
+                        : extensionType;
 
             var state = GetDirectOrAttributeValue(element, "State");
             if (string.IsNullOrWhiteSpace(state))
