@@ -24,13 +24,13 @@ public sealed class SettingValueWindow : Window
         Title =
             $"Setting Value - {setting.SettingName}";
 
-        Width = 660;
+        Width = 760;
         Height =
             canEditBoolean
                 ? 360
                 : 430;
 
-        MinWidth = 520;
+        MinWidth = 540;
         MinHeight =
             canEditBoolean
                 ? 310
@@ -73,8 +73,7 @@ public sealed class SettingValueWindow : Window
                             : "The standard GPO editor will be opened.",
                 TextWrapping =
                     TextWrapping.Wrap,
-                Foreground =
-                    System.Windows.Media.Brushes.DimGray,
+                Foreground = UiStyle.MutedBrush,
                 Margin =
                     new Thickness(
                         4,
@@ -89,13 +88,14 @@ public sealed class SettingValueWindow : Window
                 Content =
                     exactNavigationAvailable
                         ? "Open exact setting in GPO editor..."
-                        : "Open GPO editor..."
+                        : setting.Extension.Equals("RegistrySettings", StringComparison.OrdinalIgnoreCase)
+                            ? "Open Administrative Templates (manual)..."
+                            : "Open related GPO editor section..."
             };
 
         open.Click += async (_, _) =>
         {
-            var originalContent =
-                open.Content;
+            var originalContent = open.Content;
 
             open.IsEnabled =
                 false;
@@ -118,10 +118,24 @@ public sealed class SettingValueWindow : Window
                     await openExactGpoEditor(
                         progress);
 
-                if (exact ||
-                    !exactNavigationAvailable)
+                // A detached MMC window is not a successful edit/save.
+                // Keep the value and registry details available until the
+                // operator explicitly clicks Close, regardless of result.
+                if (exact)
                 {
-                    Close();
+                    navigationStatus.Foreground = UiStyle.SuccessBrush;
+                    navigationStatus.Text =
+                        "Verified exact policy opened in MMC. This value window remains available.";
+                    return;
+                }
+
+                if (!exactNavigationAvailable)
+                {
+                    navigationStatus.Foreground = UiStyle.WarningBrush;
+                    navigationStatus.Text =
+                        setting.Extension.Equals("RegistrySettings", StringComparison.OrdinalIgnoreCase)
+                            ? "Opened the related Administrative Templates section. This raw registry.pol entry does not have a known matching ADMX policy editor; its value remains visible below."
+                            : "Opened the related MMC section. The exact row is not supported for this setting type; the value remains visible below.";
                     return;
                 }
 
@@ -132,7 +146,7 @@ public sealed class SettingValueWindow : Window
                     setting.Extension.Equals(
                         "RegistrySettings",
                         StringComparison.OrdinalIgnoreCase)
-                        ? "The selected GPO was opened. MMC did not expose the exact Group Policy Preferences Registry item reliably, so the Registry node remains open for manual selection."
+                        ? "A raw registry.pol entry cannot be opened as a Group Policy Preferences item. The corresponding ADMX definition may be missing. The value remains visible in this window."
                         : "The GPO editor opened the correct Security Options category, but the requested policy name could not be verified in MMC. No unrelated policy was opened. If the list cannot be inspected, try launching this program and MMC at the same elevation. The diagnostic log is stored in %LOCALAPPDATA%\\GPOSettingsExplorer\\Logs.",
                     "GPO Editor Navigation",
                     MessageBoxButton.OK,
@@ -162,8 +176,27 @@ public sealed class SettingValueWindow : Window
             }
         };
 
-        footer.Children.Add(
-            open);
+        footer.Children.Add(open);
+
+        // A raw registry.pol entry has no guaranteed MMC row. Make its real
+        // key/value easy to inspect without opening the live local registry.
+        if (!string.IsNullOrWhiteSpace(setting.RegistryKey))
+        {
+            var copyKey = new Button
+            {
+                Content = "Copy registry key",
+                ToolTip = "Copy the registry.pol key path; this does not alter the GPO."
+            };
+            copyKey.Click += (_, _) => Clipboard.SetText(setting.RegistryKey);
+            footer.Children.Add(copyKey);
+        }
+
+        if (!string.IsNullOrWhiteSpace(setting.RegistryValue))
+        {
+            var copyValueName = new Button { Content = "Copy value name" };
+            copyValueName.Click += (_, _) => Clipboard.SetText(setting.RegistryValue);
+            footer.Children.Add(copyValueName);
+        }
 
         if (canEditBoolean &&
             bool.TryParse(
@@ -204,7 +237,8 @@ public sealed class SettingValueWindow : Window
             new Button
             {
                 Content = "Close",
-                IsCancel = true
+                IsCancel = true,
+                ToolTip = "Only this button (or Escape) closes the value window."
             });
 
         var panel =
@@ -243,6 +277,18 @@ public sealed class SettingValueWindow : Window
                 "Registry",
                 BuildRegistrySummary(
                     setting)));
+
+        if (setting.Extension.Equals("RegistrySettings", StringComparison.OrdinalIgnoreCase) &&
+            setting.Value.Contains("AdmSetting=false", StringComparison.OrdinalIgnoreCase))
+        {
+            panel.Children.Add(new TextBlock
+            {
+                Text = "Raw registry.pol setting (AdmSetting=false): MMC cannot navigate to an exact ADMX editor when the policy definition is absent. This is not a GPP Registry item. Use the values below or install the matching ADMX files to enable policy-level editing.",
+                Foreground = UiStyle.WarningBrush,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(4, 8, 4, 4)
+            });
+        }
 
         if (_booleanCombo is not null)
         {
