@@ -171,7 +171,13 @@ public partial class MainWindow
             return false;
 
         var source = UnifiedSourceCombo?.SelectedItem as string;
-        if (source == "Configured (GPMC)" && row.Kind != "Configured" ||
+        // Hide noisy security descriptor and member XML leaves from the
+        // primary policy list, while retaining them in Advanced GPMC source.
+        if (row.IsTechnicalDetail && UnifiedShowTechnicalCheckBox?.IsChecked != true)
+            return false;
+
+        if (source == "Configured (GPMC)" &&
+                row.Kind is not ("Configured" or "GPMC detail") ||
             source == "ADMX templates" && row.Kind != "ADMX template" ||
             source == "MMC observed" && row.Mmc is null)
             return false;
@@ -193,9 +199,14 @@ public partial class MainWindow
         if (UnifiedSettingsCountText is null)
             return;
         var count = _unifiedView?.Cast<object>().Count() ?? 0;
+        var technicalCount = _unifiedRows.Count(row => row.IsTechnicalDetail);
+        var hiddenSuffix = technicalCount > 0 &&
+                           UnifiedShowTechnicalCheckBox?.IsChecked != true
+            ? $" | {technicalCount:N0} technical XML details hidden (toggle Show XML details)"
+            : "";
         UnifiedSettingsCountText.Text = _unifiedCatalog is null
             ? "Unified catalog not loaded. Open this tab or click Refresh catalog."
-            : $"{count:N0} shown | {_unifiedCatalog.Summary}";
+            : $"{count:N0} shown | {_unifiedCatalog.Summary}{hiddenSuffix}";
     }
 
     private async void AllSettingsSubTabs_SelectionChanged(
@@ -238,11 +249,19 @@ public partial class MainWindow
 
         if (UnifiedSettingsGrid.SelectedItem is not UnifiedSettingInfo row)
         {
+            UnifiedActionButton.Content = "View / Edit...";
             UnifiedSelectedDetailsText.Text =
                 "Select a setting to see evidence, state and the supported editing route.";
             return;
         }
 
+        UnifiedActionButton.Content = row.IsTechnicalDetail
+            ? "View XML details..."
+            : row.Kind == "ADMX template" ? "Configure in GPO..."
+            : row.Admx is not null ? "Edit policy..."
+            : row.Mmc is { Navigation: "Exact MMC row candidate" }
+                ? "Open exact MMC row..."
+                : "View / open section...";
         UnifiedSelectedDetailsText.Text =
             $"{row.Sources} | {row.Capability} | {row.Explanation}";
     }
