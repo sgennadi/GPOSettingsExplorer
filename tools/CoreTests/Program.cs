@@ -20,6 +20,10 @@ var tests = new (string Name, Action Body)[]
     ("Diagnostic queue never removes unsent logs, archives only after confirmation", TestDiagnosticQueue),
     ("Public diagnostic reports redact identifiers and omit raw logs by default", TestGitHubDiagnosticsPrivacy),
     ("Blocked GitHub socket is treated as expected connectivity failure", TestBlockedUpdateConnectivity),
+    ("Script encodings preserve Cyrillic and Hebrew and reject loss", TestScriptEncodingRoundTrips),
+    ("Unicode script safety warns on bidi and invisible special characters", TestScriptUnicodeSafety),
+    ("GPMC Link Order reverses gPLink storage order", TestGpoLinkOrderPrecedence),
+    ("GPO conflicts distinguish duplicate values and linked mismatches", TestGpoConflictAnalysis),
     ("Semantic XML diff ignores report timestamps and finds setting changes", TestSemanticXmlDiff)
 };
 
@@ -160,6 +164,126 @@ static void TestGitHubDiagnosticsPrivacy()
         catch (IOException) { }
         catch (UnauthorizedAccessException) { }
     }
+}
+
+static void TestScriptEncodingRoundTrips()
+{
+    var russian = "@echo off\r\nrem Привет, мир\r\n";
+    var hebrew = "@echo off\r\nrem שלום עולם\r\n";
+    foreach (var (codePage, text) in new[] { (1251, russian), (866, russian),
+                                             (1255, hebrew), (862, hebrew),
+                                             (65001, russian + hebrew) })
+    {
+        Assert(ScriptEncodingService.CanRoundTrip(text, codePage, out _),
+            $"Code page {codePage} cannot preserve native text.");
+        var encoded = ScriptEncodingService.Encode(text, codePage, false);
+        Assert(ScriptEncodingService.Decode(encoded, codePage) == text,
+            $"Code page {codePage} failed exact round-trip.");
+    }
+
+    Assert(!ScriptEncodingService.CanRoundTrip(hebrew, 1251, out _),
+        "Windows-1251 must reject lossy Hebrew conversion.");
+    Assert(!ScriptEncodingService.CanRoundTrip(russian, 1255, out _),
+        "Windows-1255 must reject lossy Cyrillic conversion.");
+
+    foreach (var cp in new[] { 65001, 1200, 1201, 12000, 12001 })
+    {
+        var bytes = ScriptEncodingService.Encode(hebrew + russian, cp, true);
+        var bom = ScriptEncodingService.DetectBom(bytes);
+        Assert(bom.CodePage == cp && bom.BomLength == ScriptEncodingService.BomFor(cp).Length,
+            $"Unicode code page {cp} BOM detection failed.");
+        Assert(ScriptEncodingService.Decode(bytes, cp) == hebrew + russian,
+            $"Unicode code page {cp} with BOM did not round-trip.");
+    }
+
+    Assert(ScriptEncodingService.HasMixedNewlines("a\r\nb\nc\r"),
+        "Mixed line endings must be reported.");
+    Assert(ScriptEncodingService.NormalizeNewlines("a\r\nb\nc\r", "\n") == "a\nb\nc\n",
+        "DOS / Unix / Mac conversion unexpectedly changed characters.");
+    Assert(ScriptEncodingService.DetectNewline("a\r\nb\r\n") == "\r\n",
+        "DOS line ending detection failed.");
+    Assert(ScriptEncodingService.DetectNewline("a\nb\n") == "\n",
+        "Unix line ending detection failed.");
+}
+
+static void TestScriptUnicodeSafety()
+{
+    var script = "Write-Output 'שלום'\r\n$var = \"Привет\"";
+    var safe = ScriptTextSafetyService.Analyze(script, "setup.ps1", 65001, true, "\r\n");
+    Assert(safe.All(x => x.Severity != ScriptDiagnosticSeverity.Error),
+        "Ordinary Hebrew/Cyrillic text must never be flagged as an error.");
+
+    var suspect = "@echo\u00A0off\r\nset\u200B NAME=VALUE\r\n" +
+                  "echo\u202E danger\r\nexit\uFEFF /b\r\n";
+    var findings = ScriptTextSafetyService.Analyze(suspect, "install.bat",
+        65001, false, "\r\n");
+    Assert(findings.Any(x => x.Message.Contains("Nonstandard Unicode whitespace",
+        StringComparison.Ordinal)), "Non-breaking space must be diagnosed.");
+    Assert(findings.Any(x => x.Message.Contains("zero-width", StringComparison.OrdinalIgnoreCase)),
+        "Zero-width chars must be diagnosed.");
+    Assert(findings.Any(x => x.Message.Contains("bidirectional", StringComparison.OrdinalIgnoreCase)),
+        "Bidi overrides must be diagnosed.");
+    Assert(findings.Any(x => x.Severity == ScriptDiagnosticSeverity.Error),
+        "Hidden BOM/bidi controls must warn strongly.");
+    Assert(findings.Any(x => x.Line == 3),
+        "Diagnostics must retain source line positions.");
+}
+
+static void TestGpoLinkOrderPrecedence()
+{
+    Assert(GpoLinkOrder.FromStorageIndex(3, 0) == 3,
+        "Leftmost AD gPLink entry must be lowest precedence.");
+    Assert(GpoLinkOrder.FromStorageIndex(3, 2) == 1,
+        "Rightmost AD gPLink entry must be Link Order 1.");
+    Assert(GpoLinkOrder.InsertionIndex(2, 1) == 2,
+        "Link Order 1 must insert as rightmost gPLink entry.");
+    Assert(GpoLinkOrder.InsertionIndex(2, 3) == 0,
+        "Lowest priority GPO should insert at leftmost index.");
+}
+
+static void TestGpoConflictAnalysis()
+{
+    var a = Guid.NewGuid();
+    var b = Guid.NewGuid();
+    var common = @"OU=Desktop,DC=example,DC=local";
+    var policies = new[]
+    {
+        new GpoInfo { Id = a, DisplayName = "GPO-A", ComputerEnabled = true },
+        new GpoInfo { Id = b, DisplayName = "GPO-B", ComputerEnabled = true }
+    };
+    var links = new[]
+    {
+        new GpoLinkInfo { GpoId = a, GpoName = "GPO-A", TargetDn = common,
+            TargetName = "Desktop", TargetType = "OU", Enabled = true, Order = 1 },
+        new GpoLinkInfo { GpoId = b, GpoName = "GPO-B", TargetDn = common,
+            TargetName = "Desktop", TargetType = "OU", Enabled = true, Order = 2 }
+    };
+    var settings = new[]
+    {
+        new PolicySettingInfo { GpoId = a, GpoName = "GPO-A", Scope = "Computer",
+            RegistryKey = "Software\\Example", RegistryValue = "Setting1",
+            SettingName = "Policy 1", State = "Enabled", Value = "1" },
+        new PolicySettingInfo { GpoId = b, GpoName = "GPO-B", Scope = "Computer",
+            RegistryKey = "Software\\Example", RegistryValue = "Setting1",
+            SettingName = "Policy 1", State = "Enabled", Value = "1" },
+        new PolicySettingInfo { GpoId = a, GpoName = "GPO-A", Scope = "Computer",
+            RegistryKey = "Software\\Example", RegistryValue = "Setting2",
+            SettingName = "Policy 2", State = "Enabled", Value = "1" },
+        new PolicySettingInfo { GpoId = b, GpoName = "GPO-B", Scope = "Computer",
+            RegistryKey = "Software\\Example", RegistryValue = "Setting2",
+            SettingName = "Policy 2", State = "Enabled", Value = "2" }
+    };
+    var findings = GpoConflictAnalysisService.Analyze(settings, links, policies);
+    Assert(findings.Count == 2, "Both matching and differing values must be listed.");
+    Assert(findings.Count(x => x.Kind == "Duplicate") == 1,
+        "Matching configured values should be marked as duplication.");
+    Assert(findings.Count(x => x.Kind == "Different values") == 1,
+        "Different configured values should be marked as a potential conflict.");
+    Assert(findings.All(x => x.IsPotentialOverlap &&
+        x.OverlapStatus.StartsWith("Shared target", StringComparison.Ordinal)),
+        "Both links in the same OU should produce evidence of potential scope overlap.");
+    Assert(findings.Any(x => x.Recommendation.Contains("back up both", StringComparison.OrdinalIgnoreCase)),
+        "The deduplication plan must recommend independent backups.");
 }
 
 static void TestScriptSanitizer()
