@@ -503,6 +503,19 @@ static void TestUnifiedSettingsCatalog()
         } }, null, gpoA);
     Assert(ambiguous.Rows.Single(row => row.Kind == "Configured").Admx is null,
         "An ambiguous same-name/category ADMX reference must not be arbitrarily resolved.");
+    Assert(UnifiedSettingsCatalogService.ResolveDefinition(a, new[]
+        {
+            correct,
+            new AdmxPolicyDefinition
+            {
+                Scope = "Computer", DisplayName = name,
+                Category = correct.Category, AdmxFile = "duplicate.admx"
+            }
+        }) is null,
+        "Legacy GPMC/Global Search editing must also reject ambiguous same-name ADMX records.");
+    Assert(ReferenceEquals(
+        UnifiedSettingsCatalogService.ResolveDefinition(a, new[] { correct, wrongCategory }),
+        correct), "A unique exact category match must remain editable.");
 }
 
 static void TestMmcInventorySnapinSafety()
