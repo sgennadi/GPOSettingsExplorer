@@ -58,10 +58,12 @@ public partial class MainWindow
         {
             await EnsureAdmxCatalogAsync();
 
+            // Do not route a configured setting to a different policy merely
+            // because the ADMX display label happens to be identical.
             var definition =
-                _admxCatalogService.Find(
-                    _admxPolicies!,
-                    setting);
+                UnifiedSettingsCatalogService.ResolveDefinition(
+                    setting,
+                    _admxPolicies!);
 
             if (definition is null)
             {
