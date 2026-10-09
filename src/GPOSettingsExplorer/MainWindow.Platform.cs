@@ -298,9 +298,8 @@ public partial class MainWindow
 
             if (openExact)
             {
-                SettingsGrid.SelectedItem = selected;
                 MarkGpoRecent(setting.GpoId);
-                await EditSelectedSettingAsync();
+                await EditConfiguredSettingAsync(selected);
             }
             return;
         }
