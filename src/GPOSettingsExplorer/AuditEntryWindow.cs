@@ -104,6 +104,26 @@ public sealed class AuditEntryWindow : Window
                 });
         }
 
+        if (entry.Action.Equals("Edit GPO Script", StringComparison.OrdinalIgnoreCase))
+        {
+            var verifiedFingerprints =
+                entry.Before.Contains("SHA-256:", StringComparison.Ordinal) &&
+                entry.After.Contains("SHA-256:", StringComparison.Ordinal);
+
+            header.Children.Add(new TextBlock
+            {
+                Text = verifiedFingerprints
+                    ? "Before/After are verified SHA-256 and format metadata, not script contents. " +
+                      "The GPO backup is the source for full restoration or manual content comparison."
+                    : "Historical script audit: the application did not capture Before/After. " +
+                      "Use the linked GPO backup and current script for a separate manual comparison. " +
+                      "Do not assume the original script contents from this entry.",
+                Foreground = verifiedFingerprints ? UiStyle.MutedBrush : UiStyle.WarningBrush,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 7, 0, 0)
+            });
+        }
+
         var footer =
             new WrapPanel
             {
