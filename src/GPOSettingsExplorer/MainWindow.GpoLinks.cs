@@ -518,7 +518,15 @@ public partial class MainWindow
     private void GpoHierarchyTree_SelectedItemChanged(object sender,
         RoutedPropertyChangedEventArgs<object> e)
     {
-        if ((GpoHierarchyTree.SelectedItem as TreeViewItem)?.Tag is not GpoLinkInfo link)
+        var tag = (GpoHierarchyTree.SelectedItem as TreeViewItem)?.Tag;
+        if (tag is GpoLinkTarget target)
+        {
+            // Selecting a container shows only its direct links, not inherited links.
+            LinkSearchBox.Text = target.DistinguishedName;
+            LinkSelectionHint.Text = $"Direct links on {target.DisplayName}. Select a GPO below this OU to edit its link.";
+            return;
+        }
+        if (tag is not GpoLinkInfo link)
             return;
 
         // Make the target visible even if a previous text filter hid it.
