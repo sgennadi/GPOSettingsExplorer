@@ -1,4 +1,3 @@
-using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Text;
 using System.Windows;
@@ -12,7 +11,8 @@ namespace GPOSettingsExplorer;
 
 public partial class MainWindow
 {
-    private readonly ObservableCollection<MmcInventoryEntry> _mmcInventoryRows = new();
+    private IReadOnlyList<MmcInventoryEntry> _mmcInventoryRows =
+        Array.Empty<MmcInventoryEntry>();
     private ICollectionView? _mmcInventoryView;
     private MmcInventoryScanResult? _mmcInventoryResult;
     private CancellationTokenSource? _mmcInventoryCancellation;
@@ -87,9 +87,13 @@ public partial class MainWindow
                 configured, admx, progress, cancellation.Token);
 
             _mmcInventoryResult = result;
-            ReplaceCollection(_mmcInventoryRows, result.Rows);
+            // Replace the entire immutable scan snapshot rather than raising
+            // tens of thousands of individual ObservableCollection events.
+            _mmcInventoryRows = result.Rows;
+            _mmcInventoryView = CollectionViewSource.GetDefaultView(_mmcInventoryRows);
+            _mmcInventoryView.Filter = IsMmcInventoryMatch;
+            MmcInventoryGrid.ItemsSource = _mmcInventoryView;
             MmcInventorySectionsGrid.ItemsSource = result.Sections;
-            _mmcInventoryView?.Refresh();
             UpdateMmcInventoryCount();
             MmcInventoryCoverageText.Text = result.Coverage +
                 (configured.Length == 0
