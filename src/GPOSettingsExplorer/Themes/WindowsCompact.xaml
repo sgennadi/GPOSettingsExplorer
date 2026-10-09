@@ -223,6 +223,24 @@
         </Style.Triggers>
     </Style>
 
+    <!-- Conflict mismatches vs harmless-looking duplicates use separate semantic colors. -->
+    <Style x:Key="UiConflictRowStyle" TargetType="{x:Type DataGridRow}">
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding Kind}" Value="Different values">
+                <Setter Property="Background" Value="{StaticResource UiMissingRowBrush}"/>
+            </DataTrigger>
+            <DataTrigger Binding="{Binding Kind}" Value="Duplicate">
+                <Setter Property="Background" Value="{StaticResource UiPartialRowBrush}"/>
+            </DataTrigger>
+            <Trigger Property="IsSelected" Value="True">
+                <Setter Property="Background"
+                        Value="{DynamicResource {x:Static SystemColors.HighlightBrushKey}}"/>
+                <Setter Property="Foreground"
+                        Value="{DynamicResource {x:Static SystemColors.HighlightTextBrushKey}}"/>
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
     <Style x:Key="UiPolicyRowStyle" TargetType="{x:Type DataGridRow}">
         <Style.Triggers>
             <DataTrigger Binding="{Binding State}" Value="Disabled">
