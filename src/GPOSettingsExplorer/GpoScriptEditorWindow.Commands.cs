@@ -321,6 +321,7 @@ public sealed partial class GpoScriptEditorWindow
             _originalText = loaded.Text;
             _document.Text = loaded.Text;
             _document.OriginalText = loaded.Text;
+            _document.OriginalSha256 = loaded.OriginalSha256;
             _document.CodePage = choice.CodePage;
             _document.OriginalCodePage = choice.CodePage;
             _document.EmitBom = loaded.EmitBom;
