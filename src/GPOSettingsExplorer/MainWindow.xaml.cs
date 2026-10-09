@@ -49,6 +49,7 @@ public partial class MainWindow : Window
 
         InitializeSecurityUi();
         InitializeMmcInventoryUi();
+        InitializeUnifiedSettingsUi();
         InitializeWorkspaceUi();
     }
 
@@ -169,8 +170,7 @@ public partial class MainWindow : Window
             }
             else if (AllSettingsTab.IsSelected)
             {
-                _ = EnsureSettingsIndexAsync(
-                    forceRebuild: false);
+                _ = EnsureUnifiedCatalogReadyAsync();
             }
         }
         catch (Exception ex)
@@ -200,6 +200,7 @@ public partial class MainWindow : Window
 
         await EnsureSettingsIndexAsync(
             forceRebuild: true);
+        await EnsureUnifiedCatalogReadyAsync(updateIndex: false);
     }
 
     private void OpenGpoEditor_Click(object sender, RoutedEventArgs e)
