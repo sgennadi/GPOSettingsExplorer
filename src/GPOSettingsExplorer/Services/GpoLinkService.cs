@@ -135,7 +135,7 @@ public sealed class GpoLinkService
                     TargetName = target.Name,
                     TargetDn = target.DistinguishedName,
                     TargetType = target.TargetType,
-                    Order = i + 1,
+                    Order = GpoLinkOrder.FromStorageIndex(parsed.Count, i),
                     Enabled = (link.Options & 0x1) == 0,
                     Enforced = (link.Options & 0x2) != 0,
                     BlockInheritance = target.BlockInheritance
@@ -173,7 +173,8 @@ public sealed class GpoLinkService
         var domainDn = ExtractDomainDn(targetDn);
         var path = $"LDAP://CN={{{gpoId:D}}},CN=Policies,CN=System,{domainDn}";
 
-        var targetIndex = Math.Clamp(order <= 0 ? links.Count + 1 : order, 1, links.Count + 1) - 1;
+        var chosenOrder = GpoLinkOrder.ClampOrder(links.Count, order);
+        var targetIndex = GpoLinkOrder.InsertionIndex(links.Count, chosenOrder);
         links.Insert(targetIndex, new LinkRecord(path, options));
 
         var updatedRaw =
@@ -186,8 +187,16 @@ public sealed class GpoLinkService
                 targetDn,
                 string.IsNullOrEmpty(raw) ? "<no links>" : raw,
                 string.IsNullOrEmpty(updatedRaw) ? "<no links>" : updatedRaw,
-                $"GPO: {gpoId:B}; Enabled: {enabled}; Enforced: {enforced}; Order: {targetIndex + 1}",
+                $"GPO: {gpoId:B}; Enabled: {enabled}; Enforced: {enforced}; Link Order: {chosenOrder}",
                 "Apply"));
+
+        // Guard against another GPMC session changing this container
+        // while the confirmation dialog was open.
+        entry.RefreshCache(new[] { "gPLink" });
+        var latestLinks = Convert.ToString(entry.Properties["gPLink"].Value) ?? string.Empty;
+        if (!latestLinks.Equals(raw, StringComparison.Ordinal))
+            throw new IOException(
+                "GPO links changed in Active Directory during preview. Reload before applying.");
 
         WriteLinks(entry, links);
     }
