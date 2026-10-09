@@ -163,13 +163,34 @@ public partial class MainWindow
             }
         }
 
-        if (_workspaceState.SelectedTabIndex >= 0 &&
-            _workspaceState.SelectedTabIndex <
-            MainTabs.Items.Count)
+        if (_workspaceState.NavigationLayoutVersion == 0)
         {
-            MainTabs.SelectedIndex =
-                _workspaceState.SelectedTabIndex;
+            // Pre-0.7.0 top-level ADMX was index 3; sixteen GPP editors
+            // occupied indexes 4-19, and the remaining tabs 20-25.
+            var oldIndex = _workspaceState.SelectedTabIndex;
+            if (oldIndex == 3)
+            {
+                AdvancedSourcesExpander.IsExpanded = true;
+                AllSettingsSubTabs.SelectedItem = AdmxCatalogTab;
+            }
+            else if (oldIndex >= 4 && oldIndex <= 19)
+            {
+                GppPreferencesTabs.SelectedIndex = oldIndex - 4;
+            }
+
+            _workspaceState.SelectedTabIndex = oldIndex switch
+            {
+                3 => 1,
+                >= 4 and <= 19 => 3,
+                >= 20 and <= 25 => oldIndex - 16,
+                _ => oldIndex
+            };
+            _workspaceState.NavigationLayoutVersion = 1;
         }
+
+        if (_workspaceState.SelectedTabIndex >= 0 &&
+            _workspaceState.SelectedTabIndex < MainTabs.Items.Count)
+            MainTabs.SelectedIndex = _workspaceState.SelectedTabIndex;
 
         RestoreGridLayout();
         RestoreNamedControlState(
@@ -237,6 +258,7 @@ public partial class MainWindow
                     WindowState.Maximized,
                 SelectedTabIndex =
                     MainTabs.SelectedIndex,
+                NavigationLayoutVersion = 1,
                 SelectedGpoId =
                     (GpoGrid.SelectedItem as GpoInfo)
                     ?.Id,
