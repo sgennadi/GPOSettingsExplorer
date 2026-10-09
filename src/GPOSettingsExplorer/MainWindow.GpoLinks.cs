@@ -16,6 +16,7 @@ public partial class MainWindow
 
     private IReadOnlyList<GpoLinkTarget> _linkTargets = Array.Empty<GpoLinkTarget>();
     private ICollectionView? _linksView;
+    private string? _selectedHierarchyTargetDn;
 
     private void OpenHierarchyLinksTab_Click(object sender, RoutedEventArgs e)
     {
@@ -47,6 +48,7 @@ public partial class MainWindow
                 _gpoLinkService.LoadLinks(targets, _gpos));
 
             _linkTargets = targets;
+            _selectedHierarchyTargetDn = null;
             ReplaceCollection(_links, links);
             PopulateGpoHierarchyTree();
 
@@ -339,7 +341,17 @@ public partial class MainWindow
 
     private void LinkSearchBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
     {
+        if (!string.IsNullOrWhiteSpace(LinkSearchBox.Text))
+            _selectedHierarchyTargetDn = null; // An explicit global search overrides the container filter.
         _linksView?.Refresh();
+    }
+
+    private void ShowAllGpoLinks_Click(object sender, RoutedEventArgs e)
+    {
+        _selectedHierarchyTargetDn = null;
+        LinkSearchBox.Text = "";
+        _linksView?.Refresh();
+        LinkSelectionHint.Text = "All direct GPO links shown. Select a container or GPO in the hierarchy.";
     }
 
     private bool FilterLink(object item)
@@ -348,6 +360,10 @@ public partial class MainWindow
         {
             return false;
         }
+
+        if (_selectedHierarchyTargetDn is not null &&
+            !link.TargetDn.Equals(_selectedHierarchyTargetDn, StringComparison.OrdinalIgnoreCase))
+            return false;
 
         var search = LinkSearchBox?.Text?.Trim();
         if (string.IsNullOrWhiteSpace(search))
@@ -527,15 +543,19 @@ public partial class MainWindow
         if (tag is GpoLinkTarget target)
         {
             // Selecting a container shows only its direct links, not inherited links.
-            LinkSearchBox.Text = target.DistinguishedName;
+            _selectedHierarchyTargetDn = target.DistinguishedName;
+            LinkSearchBox.Text = string.Empty;
+            _linksView?.Refresh();
             LinkSelectionHint.Text = $"Direct links on {target.DisplayName}. Select a GPO below this OU to edit its link.";
             return;
         }
         if (tag is not GpoLinkInfo link)
             return;
 
-        // Make the target visible even if a previous text filter hid it.
+        // Make the exact link visible even if a previous search or container filter hid it.
+        _selectedHierarchyTargetDn = null;
         LinkSearchBox.Text = string.Empty;
+        _linksView?.Refresh();
         var selected = _links.FirstOrDefault(item =>
             item.GpoId == link.GpoId &&
             item.TargetDn.Equals(link.TargetDn, StringComparison.OrdinalIgnoreCase));
