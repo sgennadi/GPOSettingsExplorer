@@ -17,6 +17,11 @@ public partial class MainWindow
     private IReadOnlyList<GpoLinkTarget> _linkTargets = Array.Empty<GpoLinkTarget>();
     private ICollectionView? _linksView;
 
+    private void OpenHierarchyLinksTab_Click(object sender, RoutedEventArgs e)
+    {
+        MainTabs.SelectedItem = GpoLinksTab;
+    }
+
     private async void LoadLinks_Click(object sender, RoutedEventArgs e)
     {
         await LoadLinksAsync();
