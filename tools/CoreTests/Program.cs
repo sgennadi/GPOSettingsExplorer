@@ -303,7 +303,7 @@ static void TestRsopVerificationEvidence()
     var b = Guid.NewGuid();
 
     static string Gpo(Guid id, bool allowed = true) =>
-        $"<GPO><ID>{{{id:D}}}</ID><Enabled>true</Enabled>" +
+        $"<GPO><ID>{{{id:D}}}</ID><Enabled>true</Enabled><IsValid>true</IsValid>" +
         $"<FilterAllowed>{allowed.ToString().ToLowerInvariant()}</FilterAllowed>" +
         "<AccessDenied>false</AccessDenied></GPO>";
 
@@ -335,6 +335,12 @@ static void TestRsopVerificationEvidence()
         "Computer", new[] { a, b });
     Assert(!nested.AllApplied && !nested.AnyExcluded,
         "Nested extension references must not masquerade as applied GPOs.");
+
+    var repeated = GpoApplicabilityVerificationService.AssessRsopXml(
+        "<Rsop><ComputerResults>" + Gpo(a) + Gpo(a) + Gpo(b) +
+        "</ComputerResults></Rsop>", "Computer", new[] { a, b });
+    Assert(!repeated.AllApplied && !repeated.AnyExcluded,
+        "Duplicate GPO records must not silently select one as effective.");
 
     var noFlags = GpoApplicabilityVerificationService.AssessRsopXml(
         "<Rsop><ComputerResults>" +
