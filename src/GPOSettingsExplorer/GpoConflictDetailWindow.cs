@@ -13,7 +13,15 @@ public sealed class GpoConflictDetailWindow : Window
 {
     public bool ReviewLinks { get; private set; }
 
-    public GpoConflictDetailWindow(GpoConflictInfo finding)
+    private readonly TextBlock _verificationStatus = new();
+    private readonly TextBlock _rsopEvidence = new();
+    private readonly TextBlock _wmiEvidence = new();
+    private readonly TextBlock _securityEvidence = new();
+    private readonly TextBlock _recommendation = new();
+
+    public GpoConflictDetailWindow(
+        GpoConflictInfo finding,
+        Func<string, string, Task<GpoApplicabilityVerification>>? verifyOnComputer = null)
     {
         Title = $"GPO Conflict Analysis - {finding.Kind}";
         Width = 1080;
@@ -63,6 +71,63 @@ public sealed class GpoConflictDetailWindow : Window
             Clipboard.SetText(BuildPlan(finding));
         };
         footer.Children.Add(copy);
+        var verify = new Button
+        {
+            Content = "Verify RSoP / WMI / Security...",
+            IsEnabled = verifyOnComputer is not null,
+            Style = (Style)FindResource("UiPrimaryButton"),
+            ToolTip = "Read-only checks on one specified computer. A passing sample does NOT prove domain-wide applicability."
+        };
+        verify.Click += async (_, _) =>
+        {
+            if (verifyOnComputer is null)
+                return;
+
+            var computer = new InputDialog(
+                "RSoP verification target", "Computer name (RSoP and WMI):",
+                Environment.MachineName) { Owner = this };
+            if (computer.ShowDialog() != true || string.IsNullOrWhiteSpace(computer.Value))
+                return;
+
+            var targetUser = "";
+            if (finding.Scope.Equals("User", StringComparison.OrdinalIgnoreCase))
+            {
+                var user = new InputDialog("User RSoP", "DOMAIN\\user (must have RSoP data):")
+                {
+                    Owner = this
+                };
+                if (user.ShowDialog() != true || string.IsNullOrWhiteSpace(user.Value))
+                    return;
+                targetUser = user.Value;
+            }
+
+            verify.IsEnabled = false;
+            _verificationStatus.Text = "Verification running (read-only)...";
+            try
+            {
+                var result = await verifyOnComputer(computer.Value, targetUser);
+                finding.VerificationStatus = result.Status;
+                finding.RsopEvidence = result.RsopEvidence;
+                finding.WmiEvidence = result.WmiEvidence;
+                finding.SecurityEvidence = result.SecurityEvidence;
+                finding.Recommendation = result.Recommendation;
+                RefreshEvidence(finding);
+            }
+            catch (Exception ex)
+            {
+                finding.VerificationStatus = "Incomplete - verification failed";
+                finding.RsopEvidence = ex.Message;
+                finding.Recommendation = "NO CONSOLIDATION: verification failed. " +
+                    "Review the error and rerun the read-only checks.";
+                RefreshEvidence(finding);
+                CrashLogService.Write("GPO applicability verification", ex);
+            }
+            finally
+            {
+                verify.IsEnabled = true;
+            }
+        };
+        footer.Children.Add(verify);
         var openSettings = new Button
         {
             Content = "Review settings...",
@@ -132,13 +197,26 @@ public sealed class GpoConflictDetailWindow : Window
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 1, 0, 9)
         });
-        panel.Children.Add(new TextBlock
-        {
-            Text = finding.Recommendation,
-            TextWrapping = TextWrapping.Wrap,
-            FontWeight = FontWeights.SemiBold,
-            Margin = new Thickness(0, 0, 0, 12)
-        });
+        _verificationStatus.TextWrapping = TextWrapping.Wrap;
+        _verificationStatus.Margin = new Thickness(0, 0, 0, 8);
+        panel.Children.Add(_verificationStatus);
+
+        _rsopEvidence.TextWrapping = TextWrapping.Wrap;
+        _rsopEvidence.Margin = new Thickness(0, 0, 0, 6);
+        panel.Children.Add(_rsopEvidence);
+
+        _wmiEvidence.TextWrapping = TextWrapping.Wrap;
+        _wmiEvidence.Margin = new Thickness(0, 0, 0, 6);
+        panel.Children.Add(_wmiEvidence);
+
+        _securityEvidence.TextWrapping = TextWrapping.Wrap;
+        _securityEvidence.Margin = new Thickness(0, 0, 0, 10);
+        panel.Children.Add(_securityEvidence);
+
+        _recommendation.TextWrapping = TextWrapping.Wrap;
+        _recommendation.FontWeight = FontWeights.SemiBold;
+        _recommendation.Margin = new Thickness(0, 0, 0, 12);
+        panel.Children.Add(_recommendation);
         panel.Children.Add(new TextBlock
         {
             Text = "Priority rules: " + finding.PriorityNote,
@@ -162,6 +240,21 @@ public sealed class GpoConflictDetailWindow : Window
         root.Children.Add(heading);
         root.Children.Add(footer);
         root.Children.Add(body);
+        RefreshEvidence(finding);
+    }
+
+    private void RefreshEvidence(GpoConflictInfo finding)
+    {
+        _verificationStatus.Text = "Applicability check: " + finding.VerificationStatus;
+        _verificationStatus.Foreground = finding.VerificationStatus.StartsWith("Sample", StringComparison.OrdinalIgnoreCase)
+            ? UiStyle.SuccessBrush
+            : finding.VerificationStatus.StartsWith("Blocked", StringComparison.OrdinalIgnoreCase)
+                ? UiStyle.ErrorBrush
+                : UiStyle.WarningBrush;
+        _rsopEvidence.Text = "RSoP: " + finding.RsopEvidence;
+        _wmiEvidence.Text = "WMI: " + finding.WmiEvidence;
+        _securityEvidence.Text = "Security Filtering: " + finding.SecurityEvidence;
+        _recommendation.Text = "Recommended action: " + finding.Recommendation;
     }
 
     public static string BuildPlan(GpoConflictInfo finding) =>
@@ -170,6 +263,10 @@ public sealed class GpoConflictDetailWindow : Window
         $"GPOs: {finding.Gpos}\nValues: {finding.Variants}\n" +
         $"Overlap assessment: {finding.OverlapStatus}\n" +
         $"Link evidence: {finding.LinkEvidence}\n" +
+        $"Verification status: {finding.VerificationStatus}\n" +
+        $"RSoP: {finding.RsopEvidence}\n" +
+        $"WMI: {finding.WmiEvidence}\n" +
+        $"Security filtering: {finding.SecurityEvidence}\n" +
         $"Recommendation: {finding.Recommendation}\n" +
         $"Caution: {finding.PriorityNote}\n" +
         "Before modification: inspect gpresult/RSoP and filter/loopback status; back up every target GPO.\n";
