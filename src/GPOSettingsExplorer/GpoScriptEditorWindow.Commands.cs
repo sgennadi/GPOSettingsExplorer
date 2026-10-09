@@ -377,7 +377,7 @@ public sealed partial class GpoScriptEditorWindow
             : $"Syntax check: {errors} error(s), {warnings} warning(s), {infos} note(s)";
         _diagnosticsPanel.Header =
             $"Syntax diagnostics: {errors} error(s) / {warnings} warning(s)";
-        if (showPanel || diagnostics.Count > 0)
+        if (showPanel || diagnostics.Length > 0)
             _diagnosticsPanel.IsExpanded = true;
 
         UpdateStatus();
