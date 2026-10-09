@@ -4,6 +4,15 @@
 
 - No unreleased changes yet.
 
+## 0.7.2 - 2026-10-09
+
+- Fix incorrect section-only MMC navigation for GPMC **SecuritySettings** XML records. Group members and registry security-descriptor entries are classified by actual XML ancestry where available, and carefully inferred from recognizable legacy cached rows otherwise. Sections now resolve to **Restricted Groups** and **Security Settings > Registry**, rather than the generic Security Settings root.
+- Distinguish descriptive GPMC XML leaf entries from independently editable policy settings. **All Settings** hides verbose `Member:` and `Registry` security XML details by default, with an explicit **Show XML details** checkbox to inspect them. Original raw data remains in Advanced Sources and the read-only detail window.
+- Show concise source/value summaries, accurate source and edit capability labels, and context-aware **View XML details...** actions instead of advertising a generic edit button for raw ACLs. Preserve full unmodified GPMC XML value in read-only detail dialogs.
+- Block accidental direct ADMX or Boolean security-template writes for technical XML descriptors, regardless of same-named ADMX definitions. Section-only MMC navigation does not imply a verified editable setting.
+- Keep low-level source records, GPO Scripts, WMI, Security, and GPO Hierarchy & Links unchanged. Full RSoP/WMI/Security Filtering verification remains required before policy consolidation recommendations.
+- Add CoreTests with representative restricted-group members and security Registry XML, legacy cached data, ambiguous members, navigation and edit safety. Runtime smoke-testing on YOSH-DC03 remains necessary.
+
 ## 0.7.1 - 2026-10-09
 
 - Fix an MMC Route Audit false MISSING for Computer Configuration > Policies > Administrative Templates when MMC presents the section as **Administrative Templates: Policy definitions (ADMX files) retrieved from the central store**. Exact and recognized ADMX-store captions are matched conservatively; broad fuzzy prefix matches remain disallowed.
