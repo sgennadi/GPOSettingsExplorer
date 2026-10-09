@@ -26,6 +26,7 @@ var tests = new (string Name, Action Body)[]
     ("GPMC Link Order reverses gPLink storage order", TestGpoLinkOrderPrecedence),
     ("GPO conflicts distinguish duplicate values and linked mismatches", TestGpoConflictAnalysis),
     ("RSoP verification rejects missing, excluded and nested GPOs", TestRsopVerificationEvidence),
+    ("MMC inventory verifies source, path, scope and incomplete coverage", TestMmcFullInventoryReconciliation),
     ("Semantic XML diff ignores report timestamps and finds setting changes", TestSemanticXmlDiff)
 };
 
@@ -407,6 +408,97 @@ static void TestRsopVerificationEvidence()
         "Computer", new[] { a, b });
     Assert(!noFlags.AllApplied && !noFlags.AnyExcluded,
         "Missing security and WMI application flags must never imply applied.");
+}
+
+static void TestMmcFullInventoryReconciliation()
+{
+    var id = Guid.NewGuid();
+    var row = new MmcInventoryEntry
+    {
+        GpoId = id,
+        GpoName = "Reference GPO",
+        Scope = "Computer",
+        SectionPath =
+            "Computer Configuration > Policies > Windows Settings > " +
+            "Security Settings > Local Policies > Security Options",
+        TreeSegments = new[]
+        {
+            "Computer Configuration", "Policies", "Windows Settings",
+            "Security Settings", "Local Policies", "Security Options"
+        },
+        SettingName = "Network security: LAN Manager authentication level",
+        MmcValue = "Send NTLMv2 response only",
+        Source = "MMC native list"
+    };
+    var configured = new[]
+    {
+        new PolicySettingInfo
+        {
+            GpoId = id, Scope = "Computer",
+            SettingName = row.SettingName,
+            Category = "Security Settings > Local Policies > Security Options",
+            State = "Enabled", Value = "NTLMv2"
+        },
+        // A matching label elsewhere must not count as an exact GPO setting.
+        new PolicySettingInfo
+        {
+            GpoId = Guid.NewGuid(), Scope = "Computer",
+            SettingName = row.SettingName,
+            Category = "Security Settings > Local Policies > Security Options",
+            State = "Disabled"
+        }
+    };
+    var admx = new[]
+    {
+        new AdmxPolicyDefinition
+        {
+            Scope = "Computer", DisplayName = row.SettingName,
+            Category = "Windows Components > Unrelated"
+        }
+    };
+    var matched = MmcInventoryReconciliation.Reconcile(row, configured, admx);
+    Assert(matched.GpmcMatch.StartsWith("Indexed: Enabled", StringComparison.Ordinal),
+        "Only same-GPO, same-scope and same-category configured rows may be associated.");
+    Assert(matched.AdmxMatch.StartsWith("No exact ADMX", StringComparison.Ordinal),
+        "An ADMX policy with the same name but unrelated category is not an exact match.");
+    Assert(MmcInventoryReconciliation.SectionMatches(
+        row.SectionPath, "Security Settings > Local Policies > Security Options"),
+        "MMC path suffixes must match genuine GPMC policy category paths.");
+    Assert(!MmcInventoryReconciliation.SectionMatches(
+        row.SectionPath, "Windows Components > Security Options"),
+        "Matching only a leaf name must never join unrelated policy categories.");
+
+    var unknown = MmcInventoryReconciliation.Reconcile(
+        row, Array.Empty<PolicySettingInfo>(), null);
+    Assert(unknown.GpmcMatch.Contains("not proof of Not Configured",
+            StringComparison.OrdinalIgnoreCase),
+        "No GPMC entry is not evidence that MMC says Not Configured.");
+    Assert(unknown.AdmxMatch == "ADMX catalog not loaded",
+        "Missing ADMX catalog must be explicit.");
+
+    var ambiguous = MmcInventoryReconciliation.Reconcile(
+        row, configured.Concat(new[] { configured[0] }).ToArray(), admx);
+    Assert(ambiguous.GpmcMatch.StartsWith("Ambiguous", StringComparison.Ordinal),
+        "Multiple same-scope GPMC entries must never be silently chosen.");
+
+    Assert(MmcFullSettingsInventoryService.ParseState("Not Configured") ==
+           "Not Configured (MMC)", "Only an explicit MMC state may show Not Configured.");
+    Assert(MmcFullSettingsInventoryService.ParseState("Custom registry data")
+           .StartsWith("Not reported", StringComparison.Ordinal),
+        "Unrecognized MMC text must not be inferred to be configured or disabled.");
+
+    var noNative = new MmcInventoryScanResult(
+        Array.Empty<MmcInventoryEntry>(),
+        new[] { new MmcInventorySection(
+            "Computer Configuration > Custom vendor node", "No list", 0) },
+        1, false, "Tree finished.", DateTimeOffset.Now);
+    Assert(!noNative.IsComplete && noNative.Failures == 1 &&
+           noNative.Coverage.Contains("PARTIAL", StringComparison.Ordinal),
+        "A custom non-native MMC view must be counted as incomplete coverage.");
+
+    var interrupted = noNative with { Interrupted = true, CompletionReason = "Canceled" };
+    Assert(!interrupted.IsComplete && interrupted.Coverage.Contains("Canceled",
+            StringComparison.Ordinal), "Cancellation must remain visible in the scan summary.");
 }
 
 static void TestScriptSanitizer()
