@@ -293,24 +293,27 @@ public sealed class GpoScriptService
         return "<matched path>";
     }
 
-    public GpoScriptDocument ReadDocument(string path)
+    public GpoScriptDocument ReadDocument(string path, int? forcedCodePage = null)
     {
         var bytes = File.ReadAllBytes(path);
-        var (encoding, bomLength, emitBom) = DetectEncoding(bytes, path);
-        var text = encoding.GetString(bytes, bomLength, bytes.Length - bomLength);
-        var newLine = text.Contains("\r\n", StringComparison.Ordinal)
-            ? "\r\n"
-            : text.Contains('\n') ? "\n"
-            : text.Contains('\r') ? "\r" : Environment.NewLine;
+        var (detected, bomLength, emitBom) = DetectEncoding(bytes, path);
+        var codePage = forcedCodePage ?? detected.CodePage;
+        // A BOM is file metadata, not a literal zero-width character in source.
+        var text = ScriptEncodingService.Strict(codePage)
+            .GetString(bytes, bomLength, bytes.Length - bomLength);
+        var newLine = ScriptEncodingService.DetectNewline(text);
 
         return new GpoScriptDocument
         {
             Text = text,
-            CodePage = encoding.CodePage,
+            CodePage = codePage,
+            OriginalCodePage = codePage,
             EmitBom = emitBom,
+            OriginalEmitBom = emitBom,
             OriginalSha256 = Convert.ToHexString(SHA256.HashData(bytes)),
             OriginalText = text,
-            NewLine = newLine
+            NewLine = newLine,
+            OriginalNewLine = newLine
         };
     }
 
@@ -341,9 +344,13 @@ public sealed class GpoScriptService
                 "The selected script is outside this GPO's SYSVOL folder and will not be modified.");
         }
 
-        var encoding =
-            Encoding.GetEncoding(
-                document.CodePage);
+        // Strict fallback prevents silent replacement of Cyrillic/Hebrew
+        // characters with '?' when changing Windows/OEM code pages.
+        var encoding = ScriptEncodingService.Strict(document.CodePage);
+        if (!ScriptEncodingService.CanRoundTrip(document.Text,
+                document.CodePage, out var encodingFailure))
+            throw new InvalidOperationException(
+                "Script cannot be encoded without data loss: " + encodingFailure);
 
         var original =
             File.ReadAllBytes(
@@ -363,7 +370,11 @@ public sealed class GpoScriptService
                 ReadText(
                     fullPath),
                 document.Text,
-                $"SYSVOL path: {fullPath}",
+                $"SYSVOL path: {fullPath}; Encoding: {document.OriginalCodePage}" +
+                $" {(document.OriginalEmitBom ? "BOM" : "no BOM")} -> {document.CodePage}" +
+                $" {(document.EmitBom ? "BOM" : "no BOM")};" +
+                $" EOL: {ScriptEncodingService.DisplayLineEnding(document.OriginalNewLine)}" +
+                $" -> {ScriptEncodingService.DisplayLineEnding(document.NewLine)}",
                 "Save"));
 
         var temp =
@@ -378,15 +389,20 @@ public sealed class GpoScriptService
 
         try
         {
+            // Keep mixed original EOL bytes intact unless the user explicitly
+            // converts line endings. For non-mixed files, normalize newly
+            // inserted editor lines to the selected original convention.
             var textToWrite =
-                document.Text.Equals(document.OriginalText, StringComparison.Ordinal)
-                    ? document.Text
-                    : NormalizeLineEndings(document.Text, document.NewLine);
-            WriteText(
-                temp,
-                textToWrite,
-                encoding,
-                document.EmitBom);
+                document.NewLine != document.OriginalNewLine ||
+                (!document.Text.Equals(document.OriginalText, StringComparison.Ordinal) &&
+                 !ScriptEncodingService.HasMixedNewlines(document.OriginalText))
+                    ? ScriptEncodingService.NormalizeNewlines(document.Text, document.NewLine)
+                    : document.Text;
+            var encoded = ScriptEncodingService.Encode(textToWrite,
+                document.CodePage, document.EmitBom);
+            using (var staged = new FileStream(temp, FileMode.CreateNew,
+                       FileAccess.Write, FileShare.None))
+                staged.Write(encoded);
 
             expectedBytes = File.ReadAllBytes(temp);
             if (expectedBytes.AsSpan().SequenceEqual(original))
@@ -690,15 +706,9 @@ public sealed class GpoScriptService
         byte[] bytes,
         string? path = null)
     {
-        if (bytes.Length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE)
-            return (new UnicodeEncoding(false, true), 2, true);
-
-        if (bytes.Length >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF)
-            return (new UnicodeEncoding(true, true), 2, true);
-
-        if (bytes.Length >= 3 &&
-            bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF)
-            return (new UTF8Encoding(true), 3, true);
+        var (bomCodePage, bomLength) = ScriptEncodingService.DetectBom(bytes);
+        if (bomCodePage != 0)
+            return (ScriptEncodingService.Strict(bomCodePage), bomLength, true);
 
         var sample = bytes.Take(Math.Min(bytes.Length, 256)).ToArray();
         var oddZeros = sample.Where((value, index) => index % 2 == 1 && value == 0).Count();
@@ -728,41 +738,6 @@ public sealed class GpoScriptService
         }
 
         return (new UTF8Encoding(false), 0, false);
-    }
-
-    private static string NormalizeLineEndings(string text, string newLine)
-    {
-        var normalized = text.Replace("\r\n", "\n", StringComparison.Ordinal)
-            .Replace("\r", "\n", StringComparison.Ordinal);
-        return newLine == "\n"
-            ? normalized
-            : normalized.Replace("\n", newLine, StringComparison.Ordinal);
-    }
-
-    [DllImport("kernel32.dll")]
-    private static extern uint GetACP();
-
-    private static void WriteText(
-        string path,
-        string text,
-        Encoding encoding,
-        bool emitBom)
-    {
-        using var stream = new FileStream(
-            path,
-            FileMode.CreateNew,
-            FileAccess.Write,
-            FileShare.None);
-
-        if (emitBom)
-        {
-            var preamble = encoding.GetPreamble();
-            if (preamble.Length > 0)
-                stream.Write(preamble);
-        }
-
-        var bytes = encoding.GetBytes(text);
-        stream.Write(bytes);
     }
 
     private sealed class NativeGroupPolicyObject : IDisposable
