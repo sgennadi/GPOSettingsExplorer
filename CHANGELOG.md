@@ -4,6 +4,15 @@
 
 - No unreleased changes yet.
 
+## 0.5.1 - 2026-10-09
+
+- Main window title now displays the running assembly version.
+- Renamed the existing **GPO Links** tab to **GPO Hierarchy & Links** without adding another tab or changing tab index. Two clearly marked, resizable side-by-side panels show the expandable Site/Domain/OU GPO tree on the left and guarded GPO Link management on the right.
+- Selecting an OU filters its direct GPO links; selecting a linked GPO highlights the exact editable link in the right-hand table. Search, expand/collapse, refresh, full hierarchy view, export and a GPOs toolbar shortcut make the hierarchy discoverable. Opening the tab loads links automatically.
+- Added opt-in, read-only **Verify RSoP / WMI / Security** in conflict details for a specified sample computer (and user for user policies). Compares the GPO AD DACL, assigned WMI filters/rules and gpresult XML; explicitly missing/error results block any consolidation recommendation.
+- An apparently matching sample is NOT proof of identical domain-wide application or safe merge. Link location alone is never treated as conclusive; no automatic merge, GPO unlink or delete was added.
+- Core regressions check that RSoP evidence cannot pass on missing/excluded entries, nested policy references or absent result flags.
+
 ## 0.5.0 - 2026-10-09
 
 - Script editor: editable code-page selection for Cyrillic (Windows-1251, DOS-866), Hebrew (Windows-1255, DOS-862), Unicode (UTF-8/16/32; BOM on/off), KOI8 and installed Windows/OEM pages. Safe source-file reload in a selected encoding and explicit DOS/Windows CRLF, Unix LF, classic Mac CR conversion.
