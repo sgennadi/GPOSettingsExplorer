@@ -18,7 +18,6 @@ namespace GPOSettingsExplorer;
 public partial class MainWindow
 {
     private readonly SemaphoreSlim _unifiedCatalogGate = new(1, 1);
-    private readonly UnifiedSettingsCatalogService _unifiedCatalogService = new();
     private IReadOnlyList<UnifiedSettingInfo> _unifiedRows =
         Array.Empty<UnifiedSettingInfo>();
     private ICollectionView? _unifiedView;
