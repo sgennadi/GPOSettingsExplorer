@@ -199,6 +199,26 @@ public partial class MainWindow
             : $"{count:N0} shown | {_unifiedCatalog.Summary}";
     }
 
+    private async void AllSettingsSubTabs_SelectionChanged(
+        object sender, SelectionChangedEventArgs e)
+    {
+        if (!ReferenceEquals(e.OriginalSource, AllSettingsSubTabs) ||
+            _domainContext is null ||
+            !AdmxCatalogTab.IsSelected)
+            return;
+
+        try
+        {
+            await EnsureAdmxCatalogAsync();
+            ApplyAdmxFilter();
+        }
+        catch (Exception ex)
+        {
+            CrashLogService.Write("Advanced ADMX catalog", ex);
+            StatusText.Text = "ADMX source unavailable: " + ex.Message;
+        }
+    }
+
     private async void RefreshUnifiedSettings_Click(object sender, RoutedEventArgs e)
     {
         await EnsureUnifiedCatalogReadyAsync();
