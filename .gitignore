@@ -7,3 +7,11 @@ publish/
 artifacts/
 Backups/
 Data/
+
+# Confidential local GPO exports and signing material
+*.gposesdpapi
+GPO-CONFIDENTIAL-*
+**/Secrets/
+*.pfx
+*.p12
+*.key
