@@ -30,6 +30,12 @@ public static class GpoPolicySectionRoutes
         }
 
         if (setting.Extension.Equals("SecuritySettings", StringComparison.OrdinalIgnoreCase) &&
+            scope == "Computer Configuration" &&
+            (KerberosPolicyMetadataService.IsKnownKerberosSetting(setting) ||
+             setting.Category.Contains("Kerberos Policy", StringComparison.OrdinalIgnoreCase)))
+            return KerberosPolicyMetadataService.EditorSection;
+
+        if (setting.Extension.Equals("SecuritySettings", StringComparison.OrdinalIgnoreCase) &&
             scope == "Computer Configuration")
         {
             // These GPMC report rows describe security template sections,

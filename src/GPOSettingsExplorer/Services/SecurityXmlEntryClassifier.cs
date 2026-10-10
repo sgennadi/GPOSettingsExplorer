@@ -15,6 +15,11 @@ public static class SecurityXmlEntryClassifier
 
     public static string? InferCategory(XElement element)
     {
+        // Known Account security-extension nodes are Kerberos policy settings,
+        // not Registry or an unrelated Security Options category.
+        if (KerberosPolicyMetadataService.TryDescribeGpmcNode(element, out _))
+            return KerberosPolicyMetadataService.Category;
+
         var label = element.Name.LocalName;
         var ancestors = element.Ancestors()
             .Select(node => node.Name.LocalName).ToArray();

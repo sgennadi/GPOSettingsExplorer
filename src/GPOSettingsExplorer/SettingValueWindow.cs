@@ -156,7 +156,7 @@ public sealed class SettingValueWindow : Window
                     navigationStatus.Text =
                         setting.Extension.Equals("RegistrySettings", StringComparison.OrdinalIgnoreCase)
                             ? "MMC opened for Administrative Templates. This raw registry.pol entry may not have a matching ADMX editor. Value retained below."
-                            : $"Section-only MMC navigation attempted: {sectionPath}. Exact row editing is unavailable for this report entry; the value remains visible.";
+                            : $"MMC section navigation requested: {sectionPath}. Verify the correct section is visible; this report entry cannot be focused or edited by an unverified alias. The source value remains visible.";
                     return;
                 }
 
@@ -291,7 +291,9 @@ public sealed class SettingValueWindow : Window
         panel.Children.Add(
             Meta(
                 "Category",
-                manualSecuritySection ?? setting.Category));
+                KerberosPolicyMetadataService.IsKnownKerberosSetting(setting)
+                    ? KerberosPolicyMetadataService.Category
+                    : manualSecuritySection ?? setting.Category));
 
         panel.Children.Add(
             Meta(
@@ -490,7 +492,9 @@ public sealed class SettingValueWindow : Window
         if (string.IsNullOrWhiteSpace(
                 setting.RegistryKey))
         {
-            return "<not reported>";
+            return KerberosPolicyMetadataService.IsKnownKerberosSetting(setting)
+                ? "Not applicable - Kerberos security policy (not Registry.pol)"
+                : "<not reported>";
         }
 
         return string.IsNullOrWhiteSpace(

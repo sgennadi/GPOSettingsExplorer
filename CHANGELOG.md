@@ -4,6 +4,16 @@
 
 - No unreleased changes yet.
 
+## 2.0.1 - 2026-10-11
+
+- Add GPOs context menu / toolbar **Settings (GPMC-style report)**. Open the selected GPO's complete GPMC XML report in a native resizable, scrollable WPF tree: General (details, links, WMI, permissions), Computer/User Configuration and categorized policy/GPP sections. Avoid browser scripting and refuse oversized/DTD XML; read-only, no write mode needed.
+- Select the right-clicked grid row before displaying context actions, avoiding edits or reports for a previously highlighted GPO.
+- Fix misleading GPMC `SecuritySettings` Account settings: map MaxServiceAge, MaxTicketAge, MaxRenewAge, MaxClockSkew and TicketValidateClient to their correct Kerberos Policy display names. The verified MMC route is Computer Configuration > Policies > Windows Settings > Security Settings > Account Policies > Kerberos Policy; no invented Registry.pol path or exact row match.
+- Introduce **Remote AI (opt-in)** for official OpenAI and Azure OpenAI Chat Completions endpoints. Explicit per-window enable and per-request confirmation; only allowlisted integer/boolean Unified overview counters are sent. API key is transient PasswordBox input, never saved or written to logs. No custom redirect hosts, proxies, automatic network requests, policy writes or unredacted policy data.
+- Add bounded renderer, Kerberos navigation and remote endpoint/privacy regression tests; existing local Ollama remains independent and optional.
+- External AI calls require organizational permission and may incur charges. Windows CI is not a substitute for verification on a nonproduction AD domain and 100-200% DPI monitors.
+
+
 ## 2.0.0 - 2026-10-10
 
 - Make the Unified overview the first Advanced Analysis tab, linking manually captured stored settings, read-only security scan, AD/SYSVOL health from one pinned DC, direct links and reviewed Intune CSP mappings.

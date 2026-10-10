@@ -14,7 +14,7 @@ Download the latest portable build from:
 
 **[GitHub Releases](https://github.com/sgennadi/GPOSettingsExplorer/releases/latest)**
 
-Current release: **v2.0.0**
+Current release: **v2.0.1**
 
 Available packages:
 
@@ -22,6 +22,13 @@ Available packages:
 - `GPOSettingsExplorer-win-arm64-portable.zip` — Windows on ARM64.
 
 The builds are self-contained. A separate .NET runtime installation is not required.
+
+### Release 2.0.1 - GPO report context menu, Kerberos navigation and optional cloud AI
+
+- Right-click any GPO in **GPOs** and choose **Settings (GPMC-style report)**, or click **Settings report...**. A native WPF/HiDPI-friendly, read-only tree shows General, links, security filtering/delegation observations, WMI Filtering, Computer and User policy/GPP sections from a bounded GPMC XML report. No HTML browser or scripts.
+- SecuritySettings **Account: MaxTicketAge**, **MaxServiceAge**, **MaxRenewAge**, **MaxClockSkew** and **TicketValidateClient** are mapped to the actual **Account Policies > Kerberos Policy** category and official MMC row labels. No fake Registry key/value is inferred from GPMC XML metadata. MMC selection remains section-only when an exact row cannot be verified.
+- **Advanced Analysis > Remote AI (opt-in)** offers either OpenAI or Azure OpenAI, OFF by default. Only aggregate Unified overview counters may leave the workstation after a separate explicit confirmation; no GPO/domain names, paths, script bodies or credentials are copied to the prompt. Supports a transient per-request API key. Local Ollama remains the privacy-preferred option.
+- Run Windows CI and verify on a nonproduction GPO before deploying to domain controllers. See [GPO report & remote AI guide](docs/gpo-settings-report-and-ai.md).
 
 ### Release 2.0.0 - Unified read-only platform and opt-in localhost AI
 

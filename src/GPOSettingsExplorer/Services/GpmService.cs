@@ -100,7 +100,8 @@ public sealed class GpmService
 
     public string GenerateXmlReport(
         string domainName,
-        Guid gpoId)
+        Guid gpoId,
+        int maxBytes = 0)
     {
         dynamic gpm =
             CreateGpm();
@@ -129,6 +130,17 @@ public sealed class GpmService
             gpo.GenerateReportToFile(
                 constants.ReportXML,
                 temp);
+
+            if (maxBytes > 0)
+            {
+                // The native Settings viewer enforces a bounded read rather
+                // than loading an untrusted, arbitrarily large report first.
+                var bytes = OfflineGpoSourceService.ReadBounded(temp, maxBytes);
+                using var memory = new MemoryStream(bytes);
+                using var reader = new StreamReader(memory, System.Text.Encoding.UTF8,
+                    detectEncodingFromByteOrderMarks: true);
+                return reader.ReadToEnd();
+            }
 
             return File.ReadAllText(
                 temp);
@@ -1491,16 +1503,27 @@ public sealed class GpmService
                     ? FindNamedValue(element, "SubcategoryName")
                     : string.Empty;
 
-            var settingName = !string.IsNullOrWhiteSpace(auditSubcategory)
-                ? auditSubcategory
-                : GetGenericSettingName(element);
+            // Initialize separately: C# definite assignment cannot prove that
+            // a short-circuited out variable is assigned before the conditional.
+            KerberosPolicyDescriptor kerberosDescriptor = null!;
+            var isKerberosPolicy = extensionType.Equals(
+                    "SecuritySettings", StringComparison.OrdinalIgnoreCase) &&
+                KerberosPolicyMetadataService.TryDescribeGpmcNode(
+                    element, out kerberosDescriptor);
+            var settingName = isKerberosPolicy
+                ? kerberosDescriptor!.DisplayName
+                : !string.IsNullOrWhiteSpace(auditSubcategory)
+                    ? auditSubcategory
+                    : GetGenericSettingName(element);
             if (string.IsNullOrWhiteSpace(settingName))
             {
                 continue;
             }
 
-            var category = isAdvancedAudit
-                ? "Security Settings > Advanced Audit Policy Configuration > Audit Policies"
+            var category = isKerberosPolicy
+                ? KerberosPolicyMetadataService.Category
+                : isAdvancedAudit
+                    ? "Security Settings > Advanced Audit Policy Configuration > Audit Policies"
                 : extensionType.Equals("SecuritySettings", StringComparison.OrdinalIgnoreCase)
                     ? SecurityXmlEntryClassifier.InferCategory(element) ?? extensionType
                     : string.IsNullOrWhiteSpace(extensionType)
@@ -1527,11 +1550,16 @@ public sealed class GpmService
                 GetDirectOrAttributeValue(element, "ValueName"),
                 GetDirectOrAttributeValue(element, "valueName"),
                 FindNamedValue(element, "ValueName"),
-                FindNamedValue(element, "Name"),
+                // GPMC SecuritySettings Account.Name is a policy identifier,
+                // never an implicit RegistryValue or registry.pol address.
+                extensionType.Equals("SecuritySettings", StringComparison.OrdinalIgnoreCase)
+                    ? string.Empty : FindNamedValue(element, "Name"),
                 FindNamedAttributeValue(element, "ValueName"),
                 FindNamedAttributeValue(element, "valueName"),
-                FindNamedAttributeValue(element, "Name"),
-                FindNamedAttributeValue(element, "name"));
+                extensionType.Equals("SecuritySettings", StringComparison.OrdinalIgnoreCase)
+                    ? string.Empty : FindNamedAttributeValue(element, "Name"),
+                extensionType.Equals("SecuritySettings", StringComparison.OrdinalIgnoreCase)
+                    ? string.Empty : FindNamedAttributeValue(element, "name"));
 
             var value = BuildGenericValueSummary(element, settingName, state);
 
@@ -1559,8 +1587,8 @@ public sealed class GpmService
                 SettingName = settingName,
                 State = state,
                 Value = value,
-                RegistryKey = key,
-                RegistryValue = valueName
+                RegistryKey = isKerberosPolicy ? string.Empty : key,
+                RegistryValue = isKerberosPolicy ? string.Empty : valueName
             });
         }
 
