@@ -13,7 +13,8 @@ namespace GPOSettingsExplorer.Services;
 /// no agent installation. Stores only event metadata, not sensitive event data.
 /// </summary>
 public sealed record GpoClientEvent(
-    int EventId, int Level, DateTimeOffset? Time, string Provider, string Status);
+    int EventId, int Level, DateTimeOffset? Time, string Provider, string Status,
+    Guid? ActivityId = null, long? EventRecordId = null);
 public sealed record GpoClientEventReport(
     string Computer, DateTimeOffset CollectedUtc,
     IReadOnlyList<GpoClientEvent> Events)
@@ -27,7 +28,10 @@ public sealed record GpoClientEventReport(
         string.Join("\n", Events.Select(e =>
             (e.Time?.ToString("O") ?? "unknown time") +
             " | ID " + e.EventId + " | Level " + e.Level +
-            " | " + e.Status));
+            " | " + e.Status +
+            (e.ActivityId is Guid activity ? " | ActivityID " +
+                activity.ToString("B") : " | ActivityID unknown") +
+            (e.EventRecordId is long record ? " | Record " + record : "")));
 }
 
 public static class GpoClientEventService
@@ -74,6 +78,13 @@ public static class GpoClientEventService
             DateTimeOffset? timestamp =
                 DateTimeOffset.TryParse(at, CultureInfo.InvariantCulture,
                     DateTimeStyles.AssumeUniversal, out var value) ? value : null;
+            var rawActivity = system.Elements().FirstOrDefault(x =>
+                x.Name.LocalName == "Correlation")?.Attributes()
+                .FirstOrDefault(a => a.Name.LocalName == "ActivityID")?.Value;
+            Guid? activity = Guid.TryParse(rawActivity, out var parsedActivity)
+                ? parsedActivity : null;
+            long? recordId = long.TryParse(Value("EventRecordID"), out var number)
+                ? number : null;
             var status = level switch
             {
                 1 or 2 => "Error: inspect local event data",
@@ -82,7 +93,7 @@ public static class GpoClientEventService
                 _ when id == 5016 => "Extension processing finished (check event payload)",
                 _ => "Event observed (no policy success inference)"
             };
-            events.Add(new(id, level, timestamp, provider, status));
+            events.Add(new(id, level, timestamp, provider, status, activity, recordId));
         }
         return new GpoClientEventReport(
             computer, DateTimeOffset.UtcNow, events);
@@ -115,8 +126,10 @@ public static class GpoClientEventService
             throw new InvalidOperationException("Windows event reader could not start.");
         try
         {
-            var stdoutTask = process.StandardOutput.ReadToEndAsync(timeout.Token);
-            var stderrTask = process.StandardError.ReadToEndAsync(timeout.Token);
+            var stdoutTask = ReadBoundedAsync(
+                process.StandardOutput, 8 * 1024 * 1024, timeout.Token);
+            var stderrTask = ReadBoundedAsync(
+                process.StandardError, 16 * 1024, timeout.Token);
             await process.WaitForExitAsync(timeout.Token);
             var stdout = await stdoutTask;
             var stderr = await stderrTask;
@@ -132,4 +145,20 @@ public static class GpoClientEventService
                 process.Kill(entireProcessTree: true);
         }
     }
+    private static async Task<string> ReadBoundedAsync(
+        StreamReader reader, int maxChars, CancellationToken cancellation)
+    {
+        var output = new StringBuilder();
+        var chunk = new char[4096];
+        int count;
+        while ((count = await reader.ReadAsync(chunk.AsMemory(), cancellation)) > 0)
+        {
+            if (output.Length + count > maxChars)
+                throw new InvalidDataException(
+                    "Remote Event Log stream exceeds bounded read limit.");
+            output.Append(chunk, 0, count);
+        }
+        return output.ToString();
+    }
+
 }

@@ -14,7 +14,7 @@ Download the latest portable build from:
 
 **[GitHub Releases](https://github.com/sgennadi/GPOSettingsExplorer/releases/latest)**
 
-Current release: **v1.2.0**
+Current release: **v1.3.0**
 
 Available packages:
 
@@ -22,6 +22,19 @@ Available packages:
 - `GPOSettingsExplorer-win-arm64-portable.zip` — Windows on ARM64.
 
 The builds are self-contained. A separate .NET runtime installation is not required.
+
+### Release 1.3.0 - Explain Why GPO / per-client diagnostics
+
+- **All Settings > Advanced analysis... > Client & DC health > Explain why (full evidence)...** combines independent read-only observations for one named computer and explicit User/Computer scope.
+- Logged gpresult identifies whether a GPO was recorded as applied, excluded or unknown on one client. Historical RSoP is never treated as a future-policy prediction.
+- A pinned-DC LDAP probe loads the computer AD object and walks its domain/OU ancestors, interpreting direct and inherited GPO links, link enablement, order, block inheritance and enforced links.
+- Loaded selected GPO User/Computer section state (refresh GPO inventory to reduce staleness) and bounded recent GroupPolicy Operational event metadata appear alongside historical RSoP; Event Log ActivityID and record number are preserved without event bodies.
+- Every missing RSoP, invalid gPLink, inaccessible client, unknown WMI matching, token/ACL status, site link, loopback setting or CSE result is explicitly marked as unknown. Event IDs are not attributed to this GPO without a matching processing ActivityID.
+- Reports include practical next diagnostic steps without automatically changing any policy, link, ACL, WMI filter or Windows client.
+- Regression tests cover link/path precedence, disabled/enforced behavior, invalid link syntax, missing RSoP, user loopback and misleading event attributions.
+- Live AD/client testing is required on a nonproduction GPO and representative Windows computer.
+
+See [Explain Why operator guide](docs/explain-why.md).
 
 ### Release 1.2.0 - Advanced Analysis workspace (read-only)
 

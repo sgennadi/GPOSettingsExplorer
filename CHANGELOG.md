@@ -4,6 +4,14 @@
 
 - No unreleased changes yet.
 
+## 1.3.0 - 2026-10-10
+
+- Add Explain why (full evidence) in Advanced Analysis: independent logged client RSoP, loaded GPO scope metadata with staleness warning, pinned-DC computer OU path and bounded GroupPolicy event metadata.
+- Add pure AD gPLink evaluator for enabled/disabled, enforced/block inheritance and link order, plus guarded LDAP lookup on the pinned domain controller.
+- Preserve Unknown when RSoP, ACL/group-token, WMI, site-link, loopback, Event Log or CSE evidence is missing; never conclude domain-wide effect or automatic merge safety.
+- Add per-source next-check diagnostic guidance, bounded remote event-output collection and ActivityID/event record metadata (no event bodies), with tests for blocked/enforced/disabled/malformed links, historical applied/excluded RSoP and event attribution limits.
+- Keep all new operations read-only; live nonproduction domain-controller/client validation remains required.
+
 ## 1.2.0 - 2026-10-10
 
 - Add advanced WPF analysis workspace under All Settings with read-only actions and local reports.

@@ -58,6 +58,9 @@ var tests = new (string Name, Action Body)[]
     ("Cross-DC file evidence exposes mismatches and unknown data", TestAdvancedCrossDcFingerprints),
     ("Graph policy reader parses bounded first-page JSON without sign-in", TestAdvancedGraphJson),
     ("Advanced Audit CSV parser validates exact source and escaped fields", TestAdvancedAuditCsv),
+    ("Explain Why OU path handles enforced/blocked/disabled links safely", TestExplainWhyClientScope),
+    ("Explain Why preserves RSoP uncertainty and client event caveats", TestExplainWhyEvidence),
+    ("Client event parser preserves ActivityID and record number without payload", TestExplainWhyActivityId),
     ("Canonical GPC SYSVOL paths reject alternate servers and malformed paths", TestCanonicalSysvolPath),
     ("GPMC restore never disguises a failed or missing status as success", TestGpmRestoreStatus),
     ("Semantic XML diff ignores report timestamps and finds setting changes", TestSemanticXmlDiff)
@@ -2700,4 +2703,170 @@ static void TestRegistrySourceClassification()
         @"Software\Policies\Microsoft\WindowsFirewall\DomainProfile", true) ==
             "Registry policy operations",
         "Prefix collisions and delete instructions must never be classified as configured CSE values.");
+}
+
+
+static void TestExplainWhyClientScope()
+{
+    var id = Guid.NewGuid();
+    const string domain = "test.example";
+    const string domainDn = "DC=test,DC=example";
+    var linkBase = "LDAP://CN=" + id.ToString("B") +
+                   ",CN=Policies,CN=System," + domainDn;
+    GpoClientScopeReport Eval(string options, bool childBlocks = false)
+    {
+        var ancestry = new[]
+        {
+            new GpoClientScopeContainer("OU=Clients," + domainDn, "",
+                childBlocks),
+            new GpoClientScopeContainer(domainDn,
+                "[" + linkBase + ";" + options + "]", false)
+        };
+        return GpoClientScopeProbeService.Evaluate(id, "CLIENT-01", domain,
+            "dc01.test.example", "CN=CLIENT-01,OU=Clients," + domainDn, ancestry);
+    }
+
+    var allowed = Eval("0");
+    Assert(allowed.Complete && allowed.Links.Count == 1 &&
+           allowed.Links[0].Status == "Enabled path candidate",
+        "Valid inherited link should be reported as an unproven path candidate.");
+
+    var blocked = Eval("0", true);
+    Assert(blocked.Complete &&
+           blocked.Links.Single().Status == "Blocked inherited link",
+        "Block inheritance should mask an ordinary ancestor link.");
+
+    var enforced = Eval("2", true);
+    Assert(enforced.Complete &&
+           enforced.Links.Single().Status == "Enabled path candidate" &&
+           enforced.Links.Single().Enforced,
+        "Enforced ancestor links must not be masked by block inheritance.");
+
+    var disabled = Eval("1");
+    Assert(disabled.Complete &&
+           disabled.Links.Single().Status == "Disabled direct link",
+        "gPLink disabled flag must not count as an effective path.");
+
+    var invalid = GpoClientScopeProbeService.Evaluate(id, "CLIENT-01", domain,
+        "dc01.test.example", "CN=CLIENT-01,OU=Clients," + domainDn,
+        new[] { new GpoClientScopeContainer(domainDn,
+            "[" + linkBase + ";4]", false) });
+    Assert(!invalid.Complete && invalid.Summary.Contains("not verified"),
+        "Unknown gPLink flags must make AD path evidence incomplete.");
+
+    var malformed = GpoClientScopeProbeService.Evaluate(id, "CLIENT-01", domain,
+        "dc01.test.example", "CN=CLIENT-01,OU=Clients," + domainDn,
+        new[] { new GpoClientScopeContainer(domainDn,
+            "[" + linkBase + ";0]injected", false) });
+    Assert(!malformed.Complete, "Malformed link data must fail closed.");
+
+    try
+    {
+        GpoClientScopeProbeService.ValidateComputer(
+            "DC01.other-domain.example", domain);
+        throw new InvalidOperationException("Cross-domain host unexpectedly accepted.");
+    }
+    catch (ArgumentException) { }
+
+    Assert(GpoClientScopeProbeService.ValidateComputer(
+            "CLIENT-01.test.example", domain) == "CLIENT-01",
+        "Exact in-domain DNS names should resolve to their AD sAMAccountName.");
+}
+
+static void TestExplainWhyEvidence()
+{
+    var id = Guid.NewGuid();
+    var gpo = new GpoInfo
+    {
+        Id = id, DisplayName = "ExplainTest", DomainName = "test.example",
+        ComputerEnabled = true, UserEnabled = false,
+        WmiFilterPath = "MSFT_SomFilter.Domain=test.example,ID={1234}"
+    };
+    var unknown = new GpoRsopSample("Unknown / incomplete", "CLIENT-01",
+        "Computer", "Missing logged RSoP");
+    var report = GpoExplainWhyService.Build(
+        gpo, "Computer", unknown, null, null,
+        "AD query denied", "Remote Event Log Management denied");
+    Assert(report.Overall.Contains("UNKNOWN") &&
+           report.Checks.Any(x => x.Area.Contains("Security Filtering") &&
+                                  x.Level == "Not evaluated") &&
+           report.Checks.Any(x => x.Area.Contains("WMI") &&
+                                  x.Level == "Unknown") &&
+           report.ToText().Contains("AD query denied"),
+        "Unknown RSoP/WMI/ACL/AD evidence must never produce a positive verdict.");
+
+    var logged = new GpoRsopSample("Applied (logged sample)",
+        "CLIENT-01", "Computer", "One historical applied record");
+    var applied = GpoExplainWhyService.Build(gpo, "Computer", logged, null, null);
+    Assert(applied.Overall.Contains("APPLIED IN LAST LOGGED CLIENT SAMPLE") &&
+           applied.Overall.Contains("not established", StringComparison.OrdinalIgnoreCase),
+        "Applied historical RSoP must not imply every setting was applied.");
+
+    var excluded = new GpoRsopSample("Excluded (logged sample)",
+        "CLIENT-01", "Computer", "Historical filter exclusion");
+    var denied = GpoExplainWhyService.Build(gpo, "Computer", excluded, null, null);
+    Assert(denied.Overall.Contains("EXCLUDED IN LAST LOGGED CLIENT SAMPLE") &&
+           denied.Overall.Contains("exact filter/ACL/WMI cause"),
+        "Historical exclusion must not attribute a cause without direct proof.");
+
+    var withErrors = new GpoClientEventReport("CLIENT-01",
+        DateTimeOffset.UtcNow, new[]
+        {
+            new GpoClientEvent(4016, 4, DateTimeOffset.UtcNow, "GroupPolicy", "start"),
+            new GpoClientEvent(5016, 2, DateTimeOffset.UtcNow, "GroupPolicy", "error")
+        });
+    var annotated = GpoExplainWhyService.Build(
+        gpo, "Computer", unknown, null, withErrors);
+    Assert(annotated.Checks.Any(x =>
+        x.Area.Contains("Operational events") && x.Level == "Client errors observed" &&
+        x.Finding.Contains("NOT tied to the selected GPO")),
+        "Client event errors must be shown as global context, not tied to the GPO.");
+
+    var disabled = GpoExplainWhyService.Build(gpo, "User",
+        new GpoRsopSample("Unknown / incomplete", "CLIENT-01", "User", "no user RSoP"),
+        null, null);
+    Assert(disabled.Overall.Contains("GPO SECTION DISABLED IN LOADED INVENTORY") &&
+           disabled.Checks.Any(x => x.Area.Contains("loopback")),
+        "User scope status must reflect current disabled configuration and unknown loopback.");
+}
+
+
+static void TestExplainWhyActivityId()
+{
+    const string activity = "{8CB311C7-5942-4D73-9B6B-2B146C7845C2}";
+    var xml = "<?xml version=\"1.0\" encoding=\"utf-8\"?>" +
+        "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\">" +
+        "<System><Provider Name=\"Microsoft-Windows-GroupPolicy\"/>" +
+        "<EventID>4016</EventID><Level>4</Level><EventRecordID>32768</EventRecordID>" +
+        "<TimeCreated SystemTime=\"2026-10-10T12:00:00Z\"/>" +
+        "<Correlation ActivityID=\"" + activity + "\"/></System>" +
+        "<EventData><Data>PrivateEventContents</Data></EventData></Event>";
+    var parsed = GpoClientEventService.ParseXml("CLIENT-01", xml);
+    Assert(parsed.Events.Count == 1 &&
+           parsed.Events[0].ActivityId == Guid.Parse(activity) &&
+           parsed.Events[0].EventRecordId == 32768 &&
+           !parsed.ToText().Contains("PrivateEventContents", StringComparison.Ordinal),
+        "Event correlation identifiers must be captured without event payload.");
+    var gpo = new GpoInfo
+    {
+        Id = Guid.NewGuid(), DisplayName = "Activity sample",
+        DomainName = "test.example", ComputerEnabled = true
+    };
+    var report = GpoExplainWhyService.Build(gpo, "Computer",
+        new GpoRsopSample("Unknown / incomplete", "CLIENT-01", "Computer",
+            "Missing gpresult"),
+        null, new GpoClientEventReport("CLIENT-01", DateTimeOffset.UtcNow,
+            new[]
+            {
+                parsed.Events[0],
+                new GpoClientEvent(5016, 4, DateTimeOffset.UtcNow, "GroupPolicy",
+                    "Completed", Guid.Parse(activity), 32769)
+            }));
+    var note = report.Checks.Single(x =>
+        x.Area == "Client GroupPolicy Operational events").Finding;
+    Assert(note.Contains("distinct ActivityIDs 1") &&
+           note.Contains("containing both event types 1") &&
+           note.Contains("NOT tied to the selected GPO") &&
+           report.Overall.Contains("UNKNOWN"),
+        "ActivityID grouping must not falsely establish target GPO success.");
 }

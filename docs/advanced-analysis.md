@@ -1,6 +1,8 @@
 # Advanced GPO Analysis Operator Guide
 
-Version: 1.2.0 (feature foundation; read-only)
+Version: 1.3.0 (feature foundation; read-only)
+
+The Client & DC health tab includes a new **Explain why (full evidence)...** command. It combines pinned-DC domain/OU ancestry and link flags, current GPO scope state, logged single-client gpresult and recent client event metadata. It does not evaluate site links or full Security Filtering target rights. See the [Explain Why guide](explain-why.md).
 
 Open the main application, select the GPO if you want live source evidence, then select **All Settings > Advanced analysis...**. For **offline use on a standalone PC**, click **Offline GPMC backup...** on the startup connection window or launch `GPOSettingsExplorer.exe --offline`. No AD connection, domain join, RSAT or GPMC component is needed for local backup parsing. Offline mode opens Advanced Analysis directly. The workspace never modifies GPOs, restores backups, merges policies, or uploads information without an explicit user-triggered operation.
 
