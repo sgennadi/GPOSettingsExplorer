@@ -65,9 +65,7 @@ public static class RegistryPolReader
                     GpoId = gpoId,
                     GpoName = gpoName,
                     Scope = scope,
-                    Category = special
-                        ? "Registry policy operations"
-                        : "Registry policy (source file)",
+                    Category = RegistryPolicySourceClassifier.Classify(key, special),
                     SettingName = string.IsNullOrWhiteSpace(valueName)
                         ? "(Default)" : valueName,
                     RegistryKey = key,

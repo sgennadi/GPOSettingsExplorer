@@ -31,6 +31,12 @@ public partial class App : Application
             return;
         }
 
+        if (CommandLineOptions.Current.OfflineAnalysis)
+        {
+            ShowOfflineWindow();
+            return;
+        }
+
         if (CommandLineOptions.Current.ConnectedSession)
         {
             DomainConnectionState.SetProfile(
@@ -56,7 +62,19 @@ public partial class App : Application
             return;
         }
 
-        ShowMainWindow();
+        if (connection.OfflineModeSelected)
+            ShowOfflineWindow();
+        else
+            ShowMainWindow();
+    }
+
+    private void ShowOfflineWindow()
+    {
+        EditingGuard.SetEnabled(false);
+        var window = new GpoAdvancedAnalysisWindow(null, null);
+        MainWindow = window;
+        ShutdownMode = ShutdownMode.OnMainWindowClose;
+        window.Show();
     }
 
     private void ShowMainWindow()

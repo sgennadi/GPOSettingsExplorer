@@ -36,6 +36,7 @@ var tests = new (string Name, Action Body)[]
     ("MMC inventory skips fragile Scripts snap-ins before automation", TestMmcInventorySnapinSafety),
     ("Unified catalog joins evidence without cross-GPO or false state inference", TestUnifiedSettingsCatalog),
     ("Registry.pol binary parser preserves exact source values and flags malformed data", TestRealSettingsRegistryPol),
+    ("Registry.pol known security namespaces are labeled without claiming applied CSE", TestRegistrySourceClassification),
     ("Security-template parser reports source values and invalid encodings safely", TestRealSettingsSecurityTemplate),
     ("Unified catalog never interprets source-file values as effective RSoP", TestRealSettingsUnifiedEvidence),
     ("Cross-DC GPO version evidence refuses aliases and incomplete comparisons", TestCrossDcVersionEvidence),
@@ -47,6 +48,16 @@ var tests = new (string Name, Action Body)[]
     ("GPO impact preview does not equate OU link with applied RSoP", TestImpactPreviewEvidence),
     ("Security template editor rejects unknown and duplicate source values", TestSecurityTemplateEditingRules),
     ("GPT.INI parses split AD/SYSVOL version and rejects corruption", TestGptIniVersionParser),
+    ("Offline GPMC backup parser, timeline hash changes and encrypted snapshots", TestAdvancedOfflineTimeline),
+    ("Offline startup works without implicit connected AD profile", TestOfflineStartupSwitch),
+    ("GPP legacy password and scripts scanner redacts sensitive values", TestAdvancedSecurityScanner),
+    ("Exact baseline and Policy CSP mappings distinguish missing evidence", TestAdvancedBaselineAndMapping),
+    ("GitOps manifests omit raw domain and registry values", TestAdvancedGitopsPrivacy),
+    ("Client GroupPolicy XML metadata rejects event body disclosure", TestAdvancedClientEvents),
+    ("Local AI prompt uses only redacted categories/counts", TestAdvancedAiPrivacy),
+    ("Cross-DC file evidence exposes mismatches and unknown data", TestAdvancedCrossDcFingerprints),
+    ("Graph policy reader parses bounded first-page JSON without sign-in", TestAdvancedGraphJson),
+    ("Advanced Audit CSV parser validates exact source and escaped fields", TestAdvancedAuditCsv),
     ("Canonical GPC SYSVOL paths reject alternate servers and malformed paths", TestCanonicalSysvolPath),
     ("GPMC restore never disguises a failed or missing status as success", TestGpmRestoreStatus),
     ("Semantic XML diff ignores report timestamps and finds setting changes", TestSemanticXmlDiff)
@@ -2380,4 +2391,313 @@ static void TestRequiredSecurityPreviewGuard()
         ChangePreviewGuard.IsEnabled = savedOptionalPreviewMode;
         EditingGuard.SetEnabled(savedWriteMode);
     }
+}
+
+
+static void TestAdvancedOfflineTimeline()
+{
+    var root = Path.Combine(Path.GetTempPath(), "GPOSE-advanced-" + Guid.NewGuid().ToString("N"));
+    var gpoId = Guid.NewGuid();
+    var backupId = Guid.NewGuid();
+    var location = Path.Combine(root, backupId.ToString("B"));
+    var gpt = Path.Combine(location, "DomainSysvol", "GPO",
+        "Machine", "Microsoft", "Windows NT", "SecEdit", "GptTmpl.inf");
+    Directory.CreateDirectory(Path.GetDirectoryName(gpt)!);
+    var manifest = Path.Combine(location, "bkupInfo.xml");
+    try
+    {
+        File.WriteAllText(manifest,
+            "<Backup><ID>" + backupId + "</ID><GPOGuid>" + gpoId +
+            "</GPOGuid><GPODomain>test.example</GPODomain>" +
+            "<GPODisplayName>OfflineTest</GPODisplayName></Backup>");
+        File.WriteAllText(gpt,
+            "[Version]\r\nsignature=\"$CHICAGO$\"\r\n" +
+            "[System Access]\r\nPasswordComplexity = 1\r\n",
+            new System.Text.UnicodeEncoding(false, true));
+
+        var read = OfflineGpoSourceService.ReadManifest(manifest);
+        Assert(read.GpoId == gpoId &&
+               read.DomainController == "OFFLINE-GPMC-BACKUP" &&
+               read.Rows.Any(r => r.SettingName == "PasswordComplexity" && r.Value == "1"),
+            "Read-only offline GPMC manifest reader lost source metadata.");
+
+        var snapshot = GpoTimelineService.Capture(read);
+        var path = GpoTimelineService.Save(snapshot);
+        var roundTrip = GpoTimelineService.Load(path);
+        Assert(roundTrip.GpoId == gpoId &&
+               roundTrip.Entries.Count == snapshot.Entries.Count,
+            "Current-user DPAPI snapshot failed round-trip.");
+
+        var altered = read with
+        {
+            Rows = read.Rows.Select(r => r.SettingName == "PasswordComplexity" ?
+                r with { Value = "0" } : r).ToArray()
+        };
+        var diff = GpoTimelineService.Compare(snapshot, GpoTimelineService.Capture(altered));
+        Assert(diff.Any(change => change.Kind.Contains("changed")),
+            "Changed stored source value did not affect timeline fingerprints.");
+        Assert(!System.Text.Json.JsonSerializer.Serialize(roundTrip)
+                .Contains("PasswordComplexity = 1", StringComparison.Ordinal),
+            "Raw complete Security source line unexpectedly stored in timeline.");
+    }
+    finally
+    {
+        try { Directory.Delete(root, recursive: true); }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+    }
+}
+
+static void TestAdvancedSecurityScanner()
+{
+    var root = Path.Combine(Path.GetTempPath(), "GPOSE-secaudit-" + Guid.NewGuid().ToString("N"));
+    var prefs = Path.Combine(root, "Machine", "Preferences", "Groups");
+    var scripts = Path.Combine(root, "Machine", "Scripts", "Startup");
+    Directory.CreateDirectory(prefs);
+    Directory.CreateDirectory(scripts);
+    const string secret = "PRIVATE_EXAMPLE_PASSWORD_DO_NOT_EXPORT";
+    try
+    {
+        File.WriteAllText(Path.Combine(prefs, "Groups.xml"),
+            "<Groups><User name=\"LocalTest\"><Properties cpassword=\"" +
+            secret + "\" /></User></Groups>");
+        File.WriteAllText(Path.Combine(scripts, "startup.ps1"),
+            "powershell.exe -ExecutionPolicy Bypass # " + secret);
+        var scan = GpoSecurityScannerService.Scan(root, Guid.NewGuid());
+        Assert(scan.Findings.Any(x => x.Severity == "Critical" &&
+                                      x.Category == "Legacy GPP cpassword"),
+            "Legacy cpassword attribute must be flagged without decrypting it.");
+        Assert(scan.Findings.Any(x => x.Category == "Script content pattern"),
+            "Stored script review pattern was not detected.");
+        Assert(!scan.ToText().Contains(secret, StringComparison.Ordinal) &&
+               !scan.ToText().Contains("LocalTest", StringComparison.Ordinal),
+            "Scan report exposed legacy credentials or GPP user attributes.");
+    }
+    finally
+    {
+        try { Directory.Delete(root, recursive: true); }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+    }
+}
+
+static void TestAdvancedBaselineAndMapping()
+{
+    var record = new RealSettingRecord
+    {
+        GpoId = Guid.NewGuid(), GpoName = "Test",
+        Scope = "Computer", Category = "Security template > System Access",
+        SettingName = "PasswordComplexity", Value = "1", ValueType = "INF string",
+        RegistryKey = @"Software\Policies\Test", RegistryValue = "Enabled"
+    };
+    var scan = new RealSettingsScanResult(record.GpoId, "Test", "test.example",
+        "OFFLINE", DateTimeOffset.UtcNow, new[] { record },
+        new[] { new RealSettingsFileEvidence("test", "Read", 1, "A", "read") });
+    var baseline = new GpoBaselineDocument("gposes-baseline-v1", "Reviewed sample",
+        "1.0", new[]
+        {
+            new GpoBaselineRule("expected", "Computer",
+                record.Category, record.SettingName, "1"),
+            new GpoBaselineRule("mismatch", "Computer",
+                record.Category, record.SettingName, "0"),
+            new GpoBaselineRule("unknown", "User", "Absent", "Unset", "0")
+        });
+    var findings = GpoBaselineAssessmentService.Assess(scan, baseline).Findings;
+    Assert(findings.Any(f => f.RuleId == "expected" && f.Status == "Observed match") &&
+           findings.Any(f => f.RuleId == "mismatch" && f.Status == "Mismatch") &&
+           findings.Any(f => f.RuleId == "unknown" && f.Status == "Unknown"),
+        "Security baseline evaluation must distinguish observed/mismatch/unknown.");
+
+    var map = new GpoIntuneMappingDocument("gposes-csp-map-v1", "Reviewed",
+        new[] { new GpoIntuneMapping("Computer", record.RegistryKey,
+            record.RegistryValue,
+            "./Device/Vendor/MSFT/Policy/Config/ADMX_Example/Sample") });
+    Assert(GpoIntuneMigrationService.Assess(scan, map).MappingMatches == 1 &&
+           GpoIntuneMigrationService.Assess(scan, null).MappingMatches == 0,
+        "Intune mapping must not be inferred without explicit exact evidence.");
+}
+
+static void TestAdvancedGitopsPrivacy()
+{
+    const string secret = "TOP_SECRET_TEST_CREDENTIAL";
+    var row = new RealSettingRecord
+    {
+        GpoId = Guid.NewGuid(), GpoName = "Private Policy",
+        Scope = "Computer", Category = "Sensitive",
+        SettingName = "Password", Value = secret,
+        RegistryKey = @"SOFTWARE\private\password", RegistryValue = "Value"
+    };
+    var scan = new RealSettingsScanResult(row.GpoId, row.GpoName,
+        "private.example", "dc01.private.example",
+        DateTimeOffset.UtcNow, new[] { row },
+        Array.Empty<RealSettingsFileEvidence>());
+    var json = GpoGitOpsExportService.ToJson(
+        GpoGitOpsExportService.Capture(scan));
+    Assert(json.Contains("gposes-gitops-fingerprint-v2") &&
+           !json.Contains(secret) &&
+           !json.Contains(row.GpoName) &&
+           !json.Contains(scan.Domain) &&
+           !json.Contains("SOFTWARE"),
+        "GitOps review export must omit raw source values and domain names.");
+    var exported = GpoGitOpsExportService.Capture(scan);
+    var exportedAgain = GpoGitOpsExportService.Capture(scan);
+    Assert(exported.KeyId == exportedAgain.KeyId &&
+           exported.KeyId.Length == 16 &&
+           exported.Entries.Count == 1 &&
+           exported.Entries[0].StoredValueHmacSha256 ==
+               exportedAgain.Entries[0].StoredValueHmacSha256,
+        "Current-user HMAC fingerprints should stay stable for local comparisons.");
+    Assert(!GpoGitOpsExportService.ToJson(exported)
+                .Contains("TOP_SECRET_TEST_CREDENTIAL"),
+        "No raw secret may appear in exported HMAC review JSON.");
+}
+
+static void TestAdvancedClientEvents()
+{
+    var xml = @"<Event xmlns='http://schemas.microsoft.com/win/2004/08/events/event'>" +
+        @"<System><Provider Name='Microsoft-Windows-GroupPolicy'/>" +
+        @"<EventID>4016</EventID><Level>4</Level>" +
+        @"<TimeCreated SystemTime='2026-10-10T10:00:00Z'/></System>" +
+        @"<EventData><Data>PrivateEventDetails</Data></EventData></Event>";
+    var report = GpoClientEventService.ParseXml("example-client", xml);
+    Assert(report.Events.Count == 1 &&
+           report.Events[0].EventId == 4016 &&
+           report.Events[0].Status.Contains("started") &&
+           !report.ToText().Contains("PrivateEventDetails"),
+        "Client events must contain metadata, not potentially private event body.");
+}
+
+static void TestAdvancedAiPrivacy()
+{
+    var scan = new GpoSecurityScan(Guid.NewGuid(), DateTimeOffset.UtcNow,
+        @"\\private-dc\SYSVOL\private.example", true,
+        new[] { new GpoSecurityFinding("Critical", "Legacy GPP cpassword",
+            "Private.xml", "TOP-SECRET") });
+    var prompt = GpoLocalAiService.BuildRedactedPrompt(scan);
+    Assert(prompt.Contains("Legacy GPP") &&
+           !prompt.Contains("private.example") &&
+           !prompt.Contains("Private.xml") &&
+           !prompt.Contains("TOP-SECRET"),
+        "Local AI input must include whitelisted aggregate counts only.");
+}
+
+static void TestAdvancedCrossDcFingerprints()
+{
+    var report = new GpoCrossDcSourceReport(Guid.NewGuid(), "test.example",
+        DateTimeOffset.UtcNow, new[]
+        {
+            new GpoDcSourceFingerprint("dc01", "GPT.INI", "Read", "AAAAAAAA", "ok"),
+            new GpoDcSourceFingerprint("dc02", "GPT.INI", "Read", "BBBBBBBB", "ok")
+        });
+    Assert(report.ToText().Contains("MISMATCH"),
+        "Different contents on DCs must report hash mismatch.");
+    var unknown = report with
+    {
+        Files = new[]
+        {
+            new GpoDcSourceFingerprint("dc01", "GPT.INI", "Read", "AAAAAAAA", "ok"),
+            new GpoDcSourceFingerprint("dc02", "GPT.INI", "Unknown", "", "denied")
+        }
+    };
+    Assert(unknown.ToText().Contains("UNKNOWN") &&
+           !unknown.ToText().Contains("SHA-256 MATCH"),
+        "Unknown DC permissions must not count as replication convergence.");
+}
+
+static void TestAdvancedGraphJson()
+{
+    var json = System.Text.Encoding.UTF8.GetBytes(
+        "{\"value\":[{\"name\":\"Example Intune Policy\",\"platforms\":\"windows10\"," +
+        "\"settingCount\":2}],\"@odata.nextLink\":\"next\"}");
+    var parsed = GpoIntuneGraphReadOnlyService.ParsePage(json);
+    Assert(parsed.HasMore && parsed.Policies.Count == 1 &&
+           parsed.Policies[0].SettingCount == 2,
+        "Graph inventory should parse bounded first-page results only.");
+    try
+    {
+        GpoIntuneGraphReadOnlyService.ParsePage(
+            System.Text.Encoding.UTF8.GetBytes("{\"invalid\":[]}"));
+        throw new InvalidOperationException("Malformed Graph response unexpectedly accepted.");
+    }
+    catch (InvalidDataException) { }
+}
+
+
+static void TestAdvancedAuditCsv()
+{
+    var guid = Guid.NewGuid();
+    var content = "Machine Name,Policy Target,Subcategory,Subcategory GUID,Inclusion Setting,Exclusion Setting,Setting Value\r\n" +
+        ",System,\"Logon, Special\",{" + guid + "},Success,,3\r\n";
+    var utf8 = System.Text.Encoding.UTF8.GetBytes(content);
+    var parsed = AdvancedAuditSourceReader.Parse(
+        utf8, Guid.NewGuid(), "Audit Test", "audit.csv", new string('A', 64));
+    Assert(parsed.IsComplete && parsed.Rows.Count == 1 &&
+           parsed.Rows[0].SettingName == "Logon, Special" &&
+           parsed.Rows[0].Value == "3" &&
+           parsed.Rows[0].Category.Contains("Advanced Audit Policy"),
+        "Valid Advanced Audit CSV quoted comma and numeric setting not parsed.");
+
+    var utf16 = System.Text.Encoding.Unicode.GetPreamble()
+        .Concat(System.Text.Encoding.Unicode.GetBytes(content)).ToArray();
+    Assert(AdvancedAuditSourceReader.Parse(
+        utf16, Guid.NewGuid(), "Audit Test", "audit.csv", "B").IsComplete,
+        "UTF-16LE BOM Advanced Audit CSV must decode without guessing codepage.");
+
+    foreach (var malformed in new[]
+    {
+        "Subcategory,Setting Value\r\nTest,1",
+        "Machine Name,Subcategory,Subcategory GUID,Setting Value\r\n" +
+            ",Foo,NotAGuid,2\r\n",
+        "Machine Name,Subcategory,Subcategory GUID,Setting Value\r\n" +
+            ",\"Unterminated,{" + guid + "},3\r\n"
+    })
+    {
+        var invalid = AdvancedAuditSourceReader.Parse(
+            System.Text.Encoding.UTF8.GetBytes(malformed),
+            Guid.NewGuid(), "Audit Test", "audit.csv", "C");
+        Assert(!invalid.IsComplete,
+            "Malformed Advanced Audit source must fail closed: " + malformed);
+    }
+    Assert(!AdvancedAuditSourceReader.Parse(
+        new byte[AdvancedAuditSourceReader.MaxFileBytes + 1],
+        Guid.NewGuid(), "Audit Test", "audit.csv", "D").IsComplete,
+        "Oversized Audit policy CSV must not be parsed.");
+}
+
+
+static void TestOfflineStartupSwitch()
+{
+    CommandLineOptions.Initialize(new[] { "--offline" });
+    Assert(CommandLineOptions.Current.OfflineAnalysis &&
+           !CommandLineOptions.Current.ConnectedSession,
+        "Offline switch should start analysis without a connected AD session.");
+    CommandLineOptions.Initialize(new[] { "--connected-session",
+        "--domain", "test.example", "--dc", "dc01.test.example" });
+    Assert(!CommandLineOptions.Current.OfflineAnalysis &&
+           CommandLineOptions.Current.ConnectedSession &&
+           CommandLineOptions.Current.DomainController == "dc01.test.example",
+        "Connected-session startup must retain existing behavior.");
+    CommandLineOptions.Initialize(Array.Empty<string>());
+}
+
+
+static void TestRegistrySourceClassification()
+{
+    Assert(RegistryPolicySourceClassifier.Classify(
+        @"SOFTWARE\Policies\Microsoft\WindowsFirewall\DomainProfile", false)
+            .StartsWith("Windows Firewall", StringComparison.Ordinal) &&
+        RegistryPolicySourceClassifier.Classify(
+        @"Software\Policies\Microsoft\Windows\SrpV2\Exe", false)
+            .StartsWith("AppLocker", StringComparison.Ordinal) &&
+        RegistryPolicySourceClassifier.Classify(
+        @"MACHINE\Software\Policies\Microsoft\Edge", false)
+            .StartsWith("Microsoft Edge", StringComparison.Ordinal),
+        "Known registry namespaces must identify the correct stored-source family.");
+    Assert(RegistryPolicySourceClassifier.Classify(
+        @"Software\Policies\Microsoft\WindowsFirewallOther", false) ==
+            "Registry policy (source file)" &&
+        RegistryPolicySourceClassifier.Classify(
+        @"Software\Policies\Microsoft\WindowsFirewall\DomainProfile", true) ==
+            "Registry policy operations",
+        "Prefix collisions and delete instructions must never be classified as configured CSE values.");
 }

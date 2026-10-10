@@ -332,8 +332,11 @@ public partial class MainWindow
 
         SecurityEditSourceButton.IsEnabled = row.StoredSource is { } securitySource &&
             SecurityTemplateEditRules.TryDescribe(securitySource, out _);
-        UnifiedActionButton.Content = row.StoredSource is not null
-            ? "View source evidence..."
+        UnifiedActionButton.Content = row.StoredSource is { } editableSource &&
+            EditingGuard.IsEnabled &&
+            SecurityTemplateEditRules.TryDescribe(editableSource, out _)
+            ? "Edit stored security..."
+            : row.StoredSource is not null ? "View source evidence..."
             : row.IsTechnicalDetail
             ? "View XML details..."
             : row.Kind == "ADMX template" ? "Configure in GPO..."
@@ -353,7 +356,11 @@ public partial class MainWindow
 
         if (row.StoredSource is RealSettingRecord sourceEvidence)
         {
-            new RealSettingEvidenceWindow(sourceEvidence) { Owner = this }.ShowDialog();
+            if (EditingGuard.IsEnabled &&
+                SecurityTemplateEditRules.TryDescribe(sourceEvidence, out _))
+                await EditSecuritySourceAsync();
+            else
+                new RealSettingEvidenceWindow(sourceEvidence) { Owner = this }.ShowDialog();
             return;
         }
 

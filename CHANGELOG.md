@@ -4,6 +4,27 @@
 
 - No unreleased changes yet.
 
+## 1.2.0 - 2026-10-10
+
+- Add advanced WPF analysis workspace under All Settings with read-only actions and local reports.
+- Add bounded GPMC backup source parsing independent of AD/GPMC, plus same-GPO backup-to-backup source-hash comparison.
+- Expand direct Real Settings source reading on live DC and offline GPMC to bounded strict-encoding Advanced Audit audit.csv; include its file in cross-DC SHA-256 evidence and regression tests.
+- Add current-user-DPAPI encrypted timeline, 40 snapshots per GPO, SHA-256 fingerprints of values rather than raw policy values.
+- Add heuristic legacy GPP password-presence and script-pattern security scanner with no password/script contents in reports.
+- Compare SHA-256 for curated policy files on explicit DCs; report unknown access rather than falsely assuming replication convergence.
+- Add local/remote GroupPolicy Operational event metadata collection using Windows wevtutil, with current logged gpresult sample.
+- Add operator-supplied JSON baseline checks and manually validated Registry-to-Intune CSP mapping; unobserved/missing values are unknown.
+- Add GitOps HMAC-SHA256 fingerprint review manifest with a local current-user-DPAPI-protected key, reducing low-entropy value guessing; exports from separate users are intentionally noncomparable. No deployment engine or automatic upload.
+- Add optional MSAL device-code Intune Graph /beta read-only policy inventory using delegated Read scope and explicit operator input, no saved token.
+- Add opt-in localhost-only Ollama advisory explanations based on whitelisted scan finding counts, no raw policy details transmitted.
+- Add bounded Registry.pol source family classification for Firewall, AppLocker, Defender, Windows Update and other known policy namespaces, without interpreting target CSE processing.
+- Add GitHub CodeQL C# scanning on pull requests and a weekly schedule.
+- Add truly standalone offline GPMC backup analysis using startup connection-window shortcut and `--offline`, without joining AD or installing RSAT.
+- Add Click-to-Edit routing from All Settings for the existing finite-choice Security Editor when WRITE ENABLED; other raw source settings remain read-only.
+- Add optional Authenticode signing with operator-configured PFX secrets and source/digest provenance attestations for GitHub-built release ZIPs.
+- Extend regression tests for offline/security/baseline/Graph/GitOps/client event parsers.
+- All features are opt-in where applicable and do not change GPOs. Real AD/GPMC/DFSR/client smoke testing remains necessary.
+
 ## 1.0.1 - 2026-10-10
 
 - Stop treating GPMC `RestoreGPO` / `IGPMResult.OverallStatus()` exceptions or missing results as success. Invoke the HRESULT-returning COM method directly and propagate failures; never fall back to status code zero.

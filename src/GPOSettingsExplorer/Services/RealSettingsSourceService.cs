@@ -26,12 +26,14 @@ public sealed class RealSettingsSourceService
         var domain = context.DomainName;
         var root = Path.Combine(DomainConnectionState.BuildSysvolRoot(domain),
             "Policies", gpo.Id.ToString("B"));
-        var sources = new (string RelativePath, string Scope, bool Registry)[]
+        var sources = new (string RelativePath, string Scope, string Kind)[]
         {
-            (Path.Combine("Machine", "Registry.pol"), "Computer", true),
-            (Path.Combine("User", "Registry.pol"), "User", true),
+            (Path.Combine("Machine", "Registry.pol"), "Computer", "Registry"),
+            (Path.Combine("User", "Registry.pol"), "User", "Registry"),
             (Path.Combine("Machine", "Microsoft", "Windows NT",
-                "SecEdit", "GptTmpl.inf"), "Computer", false)
+                "SecEdit", "GptTmpl.inf"), "Computer", "Security"),
+            (Path.Combine("Machine", "Microsoft", "Windows NT",
+                "Audit", "audit.csv"), "Computer", "AdvancedAudit")
         };
 
         var rows = new List<RealSettingRecord>();
@@ -51,9 +53,12 @@ public sealed class RealSettingsSourceService
                 }
 
                 var stat = new FileInfo(path);
-                var limit = source.Registry
-                    ? RegistryPolReader.MaxFileBytes
-                    : SecurityTemplateSourceReader.MaxFileBytes;
+                var limit = source.Kind switch
+                {
+                    "Registry" => RegistryPolReader.MaxFileBytes,
+                    "AdvancedAudit" => AdvancedAuditSourceReader.MaxFileBytes,
+                    _ => SecurityTemplateSourceReader.MaxFileBytes
+                };
                 if (stat.Length > limit)
                 {
                     files.Add(new RealSettingsFileEvidence(path, "Invalid", 0, "",
@@ -99,11 +104,15 @@ public sealed class RealSettingsSourceService
                 }
 
                 var sha = Convert.ToHexString(SHA256.HashData(bytes));
-                var parsed = source.Registry
-                    ? RegistryPolReader.Parse(bytes, gpo.Id, gpo.DisplayName,
-                        source.Scope, path, sha)
-                    : SecurityTemplateSourceReader.Parse(bytes,
-                        gpo.Id, gpo.DisplayName, path, sha);
+                var parsed = source.Kind switch
+                {
+                    "Registry" => RegistryPolReader.Parse(bytes, gpo.Id,
+                        gpo.DisplayName, source.Scope, path, sha),
+                    "AdvancedAudit" => AdvancedAuditSourceReader.Parse(
+                        bytes, gpo.Id, gpo.DisplayName, path, sha),
+                    _ => SecurityTemplateSourceReader.Parse(
+                        bytes, gpo.Id, gpo.DisplayName, path, sha)
+                };
 
                 rows.AddRange(parsed.Rows);
                 var changedDuringRead = File.GetLastWriteTimeUtc(path) != timeBefore;

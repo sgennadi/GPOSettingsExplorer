@@ -3,7 +3,8 @@ namespace GPOSettingsExplorer.Services;
 public sealed record CommandLineOptions(
     bool ConnectedSession,
     string DomainName,
-    string DomainController)
+    string DomainController,
+    bool OfflineAnalysis = false)
 {
     public static CommandLineOptions Current { get; private set; } =
         new(
@@ -24,15 +25,15 @@ public sealed record CommandLineOptions(
                         "--connected-session",
                         StringComparison.OrdinalIgnoreCase));
 
+        var offline = list.Any(value =>
+            value.Equals("--offline", StringComparison.OrdinalIgnoreCase));
+
         Current =
             new CommandLineOptions(
                 connected,
-                ReadValue(
-                    list,
-                    "--domain"),
-                ReadValue(
-                    list,
-                    "--dc"));
+                ReadValue(list, "--domain"),
+                ReadValue(list, "--dc"),
+                offline);
     }
 
     private static string ReadValue(

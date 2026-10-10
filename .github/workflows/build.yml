@@ -12,11 +12,13 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   portable:
     runs-on: windows-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout
@@ -50,6 +52,41 @@ jobs:
       - name: Publish win-arm64
         shell: cmd
         run: dotnet publish src\GPOSettingsExplorer\GPOSettingsExplorer.csproj -c Release -r win-arm64 --self-contained true -p:PublishSingleFile=true -o artifacts\win-arm64
+
+      - name: Optional Authenticode code signing
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          SIGNING_PFX_BASE64: ${{ secrets.AUTHENTICODE_PFX_BASE64 }}
+          SIGNING_PFX_PASSWORD: ${{ secrets.AUTHENTICODE_PFX_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:SIGNING_PFX_BASE64)) {
+            Write-Host 'No signing certificate configured. Files remain unsigned.'
+            exit 0
+          }
+          if ([string]::IsNullOrWhiteSpace($env:SIGNING_PFX_PASSWORD)) {
+            throw 'AUTHENTICODE_PFX_PASSWORD is missing.'
+          }
+          $sdk = Join-Path ([Environment]::GetFolderPath([Environment+SpecialFolder]::ProgramFilesX86)) 'Windows Kits\10\bin'
+          $tool = Get-ChildItem $sdk -Filter signtool.exe -Recurse -ErrorAction Stop |
+            Where-Object { $_.FullName -like '*\x64\signtool.exe' } |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $tool) { throw 'Windows SDK signing tool not found.' }
+          $pfx = Join-Path $env:RUNNER_TEMP 'gposes-signing.pfx'
+          try {
+            [System.IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:SIGNING_PFX_BASE64))
+            foreach ($runtime in @('win-x64', 'win-arm64')) {
+              $exe = Join-Path (Join-Path $env:GITHUB_WORKSPACE "artifacts\$runtime") 'GPOSettingsExplorer.exe'
+              & $tool sign /f $pfx /p $env:SIGNING_PFX_PASSWORD /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com $exe
+              if ($LASTEXITCODE -ne 0) { throw "Signing failed for $runtime." }
+              & $tool verify /pa $exe
+              if ($LASTEXITCODE -ne 0) { throw "Authenticode verification failed for $runtime." }
+            }
+          }
+          finally {
+            Remove-Item -LiteralPath $pfx -Force -ErrorAction SilentlyContinue
+          }
 
       - name: Create portable archives
         shell: cmd
@@ -88,3 +125,24 @@ jobs:
           ) else (
             echo Release %RELEASE_TAG% already exists. Skipping release creation.
           )
+
+  provenance:
+    name: release-provenance
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: portable
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - name: Download release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: GPOSettingsExplorer-portable
+          path: artifacts
+
+      - name: Attest both portable ZIPs
+        uses: actions/attest@v4
+        with:
+          subject-path: artifacts/*.zip
