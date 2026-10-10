@@ -35,6 +35,9 @@ var tests = new (string Name, Action Body)[]
     ("MMC inventory verifies source, path, scope and incomplete coverage", TestMmcFullInventoryReconciliation),
     ("MMC inventory skips fragile Scripts snap-ins before automation", TestMmcInventorySnapinSafety),
     ("Unified catalog joins evidence without cross-GPO or false state inference", TestUnifiedSettingsCatalog),
+    ("Registry.pol binary parser preserves exact source values and flags malformed data", TestRealSettingsRegistryPol),
+    ("Security-template parser reports source values and invalid encodings safely", TestRealSettingsSecurityTemplate),
+    ("Unified catalog never interprets source-file values as effective RSoP", TestRealSettingsUnifiedEvidence),
     ("Semantic XML diff ignores report timestamps and finds setting changes", TestSemanticXmlDiff)
 };
 
@@ -659,6 +662,137 @@ static void TestRsopVerificationEvidence()
         "Computer", new[] { a, b });
     Assert(!noFlags.AllApplied && !noFlags.AnyExcluded,
         "Missing security and WMI application flags must never imply applied.");
+}
+
+static void TestRealSettingsRegistryPol()
+{
+    var gpo = Guid.NewGuid();
+    const string key = @"Software\Policies\Example";
+    const string file = @"\\dc.example.local\SYSVOL\example.local\Policies\{GPO}\Machine\Registry.pol";
+    var data = new List<byte>();
+    void Raw(byte[] bytes) => data.AddRange(bytes);
+    void U16(string value) => Raw(System.Text.Encoding.Unicode.GetBytes(value));
+    void Dword(uint value)
+    {
+        var bytes = new byte[4];
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(bytes, value);
+        Raw(bytes);
+    }
+    void Entry(string valueName, uint type, byte[] payload)
+    {
+        U16("["); U16(key + "\0"); U16(";");
+        U16(valueName + "\0"); U16(";");
+        Dword(type); U16(";"); Dword((uint)payload.Length); U16(";");
+        Raw(payload); U16("]");
+    }
+    Dword(0x67655250); Dword(1);
+    Entry("Flag", 4, new byte[] { 1, 0, 0, 0 });
+    Entry("Greeting", 1, System.Text.Encoding.Unicode.GetBytes("Shalom שלום\0"));
+    Entry("**Del.OldSetting", 4, Array.Empty<byte>());
+    var parsed = RegistryPolReader.Parse(data.ToArray(), gpo, "Example",
+        "Computer", file, new string('A', 64));
+    Assert(parsed.IsComplete && parsed.Rows.Count == 3,
+        "Valid PReg binary stream should yield three source records.");
+    Assert(parsed.Rows[0].Value == "1" && parsed.Rows[0].ValueType == "REG_DWORD" &&
+           parsed.Rows[0].RegistryKey == key,
+        "DWORD must be binary little-endian; registry path must remain unchanged.");
+    Assert(parsed.Rows[1].Value == "Shalom שלום",
+        "UTF-16LE source data must preserve Hebrew and Unicode.");
+    Assert(parsed.Rows[2].State == "Stored operation" &&
+           parsed.Rows[2].Evidence.Contains("Special", StringComparison.Ordinal),
+        "Delete instruction is not evidence of a currently configured value.");
+
+    var truncated = data.Take(data.Count - 2).ToArray();
+    var partial = RegistryPolReader.Parse(truncated, gpo, "Example",
+        "Computer", file, "");
+    Assert(!partial.IsComplete && partial.Rows.Count == 2 &&
+           partial.Issues[0].Contains("Record 3", StringComparison.Ordinal),
+        "Truncated PReg source must be PARTIAL; previously complete entries retained.");
+
+    var badVersion = data.ToArray();
+    badVersion[4] = 2;
+    var unsupported = RegistryPolReader.Parse(badVersion, gpo, "Example",
+        "Computer", file, "");
+    Assert(!unsupported.IsComplete && unsupported.Rows.Count == 0,
+        "Unsupported version must not be interpreted as a valid policy file.");
+
+    var badHeader = RegistryPolReader.Parse(new byte[] { 1, 2, 3, 4 },
+        gpo, "Example", "Computer", file, "");
+    Assert(!badHeader.IsComplete && badHeader.Rows.Count == 0,
+        "Invalid PReg header must fail closed without fabricated entries.");
+}
+
+static void TestRealSettingsSecurityTemplate()
+{
+    const string source = @"\\dc.example.local\SYSVOL\example.local\Policies\{GPO}\Machine\Microsoft\Windows NT\SecEdit\GptTmpl.inf";
+    var inf = "[Unicode]\r\nUnicode=yes\r\n" +
+              "[System Access]\r\nMinimumPasswordLength = 14\r\n" +
+              "[Privilege Rights]\r\nSeRemoteInteractiveLogonRight = *S-1-5-32-544\r\n";
+    var raw = System.Text.Encoding.Unicode.GetPreamble().Concat(
+        System.Text.Encoding.Unicode.GetBytes(inf)).ToArray();
+    var gpo = Guid.NewGuid();
+    var result = SecurityTemplateSourceReader.Parse(raw, gpo,
+        "Example", source, new string('B', 64));
+    Assert(result.IsComplete &&
+           result.Rows.Any(x => x.Category == "Security template > System Access" &&
+                                x.SettingName == "MinimumPasswordLength" &&
+                                x.Value == "14"),
+        "SecEdit system access values must be read directly without MMC.");
+    Assert(result.Rows.Any(x => x.Category == "Security template > Privilege Rights" &&
+                                x.Value.Contains("*S-1-5-32-544", StringComparison.Ordinal)),
+        "Privilege rights SIDs must be preserved as source text, not interpreted as effective access.");
+
+    var unknownEncoding = SecurityTemplateSourceReader.Parse(
+        new byte[] { 0xFF, 0x41, 0x42, 0x43 },
+        gpo, "Example", source, "");
+    Assert(!unknownEncoding.IsComplete && unknownEncoding.Rows.Count == 0,
+        "Unknown non-Unicode encoding must fail closed rather than invent values.");
+
+    var badLine = SecurityTemplateSourceReader.Parse(
+        System.Text.Encoding.UTF8.GetBytes("[System Access]\nCorruptRecord\nMinimumPasswordLength=8"),
+        gpo, "Example", source, "");
+    Assert(!badLine.IsComplete && badLine.Rows.Count == 1,
+        "Broken INF lines must be reported while valid source entries remain available.");
+}
+
+static void TestRealSettingsUnifiedEvidence()
+{
+    var gpo = Guid.NewGuid();
+    var other = Guid.NewGuid();
+    var source = new RealSettingRecord
+    {
+        GpoId = gpo, GpoName = "Example", Scope = "Computer",
+        SettingName = "PolicyValue", Category = "Registry policy (source file)",
+        RegistryKey = @"Software\Policies\Example", RegistryValue = "PolicyValue",
+        Value = "42", ValueType = "REG_DWORD", State = "Stored registry value",
+        SourceFile = @"\\dc\SYSVOL\example.local\Policies\gpo\Machine\Registry.pol",
+        SourceSha256 = new string('C', 64),
+        Evidence = "From PReg v1, not effective RSoP."
+    };
+    var file = new RealSettingsFileEvidence(source.SourceFile, "Read",
+        1, source.SourceSha256, "read-only");
+    var scan = new RealSettingsScanResult(gpo, "Example", "example.local",
+        "dc.example.local", DateTimeOffset.UtcNow, new[] { source }, new[] { file });
+
+    var catalog = UnifiedSettingsCatalogService.Build(
+        Array.Empty<PolicySettingInfo>(), null, null, gpo,
+        "", scan);
+    Assert(catalog.SourceFileEntries == 1 &&
+           catalog.Rows.Single().StoredSource == source &&
+           catalog.Rows.Single().Capability.Contains("read-only", StringComparison.Ordinal) &&
+           !catalog.Rows.Single().State.Contains("Not Configured", StringComparison.OrdinalIgnoreCase),
+        "Real source evidence must be read-only, separate and never imply effective RSoP.");
+
+    var wrongGpo = UnifiedSettingsCatalogService.Build(
+        Array.Empty<PolicySettingInfo>(), null, null, other, "", scan);
+    Assert(wrongGpo.SourceFileEntries == 0,
+        "A source scan from another GPO must never leak into the filtered target.");
+
+    var incomplete = scan with { Files = new[] {
+        new RealSettingsFileEvidence(source.SourceFile, "Partial", 1,
+            source.SourceSha256, "incomplete") } };
+    Assert(incomplete.IsPartial && incomplete.Coverage.Contains("PARTIAL", StringComparison.Ordinal),
+        "Malformed file evidence must never be described as a complete scan.");
 }
 
 static void TestUnifiedSettingsCatalog()
