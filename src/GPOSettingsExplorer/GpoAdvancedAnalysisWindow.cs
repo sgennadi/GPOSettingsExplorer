@@ -221,6 +221,7 @@ public sealed partial class GpoAdvancedAnalysisWindow : Window
             Margin = new Thickness(5, 7, 5, 5)
         });
         _tabs.Items.Add(cloud);
+        _tabs.Items.Add(SetupRemoteAiTab());
         _tabs.SelectedIndex = 0;
     }
 
