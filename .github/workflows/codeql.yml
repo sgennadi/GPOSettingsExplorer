@@ -1,0 +1,48 @@
+name: codeql
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * 1"
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  analyze:
+    name: CodeQL C# security analysis
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: csharp
+          build-mode: manual
+          queries: security-extended
+
+      - name: Restore project dependencies
+        shell: cmd
+        run: dotnet restore GPOSettingsExplorer.sln
+
+      - name: Compile for analysis
+        shell: cmd
+        run: dotnet build GPOSettingsExplorer.sln -c Release --no-restore
+
+      - name: Analyze C# code
+        uses: github/codeql-action/analyze@v4
