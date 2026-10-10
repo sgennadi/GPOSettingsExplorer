@@ -14,7 +14,8 @@ public static class UnifiedSettingsCatalogService
         IReadOnlyList<AdmxPolicyDefinition>? catalog,
         IReadOnlyList<MmcInventoryEntry>? mmc,
         Guid? selectedGpoId,
-        string mmcCoverage = "")
+        string mmcCoverage = "",
+        RealSettingsScanResult? sourceFiles = null)
     {
         var source = selectedGpoId is Guid target
             ? configured.Where(s => s.GpoId == target).ToArray()
@@ -142,6 +143,38 @@ public static class UnifiedSettingsCatalogService
             });
         }
 
+        // Keep source-file records distinct from GPMC XML, MMC and ADMX:
+        // joining only by same registry name could silently confuse
+        // special commands, element values and CSE-specific semantics.
+        // Explicitly show stored *source* state, not live/effective policy.
+        var stored = sourceFiles is null ||
+                     selectedGpoId is Guid selection && sourceFiles.GpoId != selection
+            ? Array.Empty<RealSettingRecord>()
+            : sourceFiles.Rows.ToArray();
+
+        foreach (var record in stored)
+        {
+            rows.Add(new UnifiedSettingInfo
+            {
+                GpoId = record.GpoId,
+                GpoName = record.GpoName,
+                SettingName = record.SettingName,
+                Scope = record.Scope,
+                Category = record.Category,
+                State = record.State,
+                Value = record.Value,
+                Sources = "SYSVOL policy source",
+                Capability = "Inspect source (read-only)",
+                RegistryTarget = string.IsNullOrWhiteSpace(record.RegistryKey)
+                    ? "" : JoinTarget(record.RegistryKey, record.RegistryValue),
+                Explanation = record.Evidence + " | " + record.SourceFile +
+                    " | source SHA-256 " + record.SourceSha256 +
+                    " | No statement about actual RSoP or target applicability.",
+                Kind = "Stored source",
+                StoredSource = record
+            });
+        }
+
         foreach (var admx in definitions)
         {
             foreach (var scope in Scopes(admx.Scope))
@@ -173,9 +206,10 @@ public static class UnifiedSettingsCatalogService
         var ordered = rows.OrderBy(row => row.Kind switch
             {
                 "Configured" => 0,
-                "MMC observed" => 1,
-                "ADMX template" => 2,
-                _ => 3
+                "Stored source" => 1,
+                "MMC observed" => 2,
+                "ADMX template" => 3,
+                _ => 4
             }).ThenBy(row => row.SettingName, StringComparer.CurrentCultureIgnoreCase)
               .ThenBy(row => row.GpoName, StringComparer.CurrentCultureIgnoreCase)
               .ToArray();
@@ -187,6 +221,8 @@ public static class UnifiedSettingsCatalogService
             message += "; MMC " + mmcCoverage;
         else
             message += "; MMC not scanned (optional)";
+        if (sourceFiles is not null)
+            message += "; source files " + sourceFiles.Coverage;
 
         return new UnifiedCatalogResult(
             ordered,
@@ -194,7 +230,10 @@ public static class UnifiedSettingsCatalogService
             rows.Count(row => row.Kind == "ADMX template"),
             rows.Count(row => row.Kind == "MMC observed"),
             catalog is not null,
-            message);
+            message)
+        {
+            SourceFileEntries = stored.Length
+        };
     }
 
     public static AdmxPolicyDefinition? ResolveDefinition(
