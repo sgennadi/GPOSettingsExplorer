@@ -295,6 +295,10 @@ public static class GpoSysvolTreeIntegrityService
             issues.Add("Directory tree inspection failed: " +
                 ex.GetType().Name);
         }
+        if (!files.Any(f =>
+                f.RelativePath.Equals("GPT.INI", StringComparison.OrdinalIgnoreCase) &&
+                f.Status == "Read"))
+            issues.Add("Required root GPT.INI not verified; scan incomplete.");
         return new(dc, root, issues.Count == 0, total,
             files.OrderBy(f => f.RelativePath,
                 StringComparer.OrdinalIgnoreCase).ToArray(), issues);
