@@ -14,7 +14,9 @@ public static class UnifiedSettingsCatalogService
         IReadOnlyList<AdmxPolicyDefinition>? catalog,
         IReadOnlyList<MmcInventoryEntry>? mmc,
         Guid? selectedGpoId,
-        string mmcCoverage = "")
+        string mmcCoverage = "",
+        IReadOnlyList<NativePolicyEvidence>? native = null,
+        string nativeCoverage = "")
     {
         var source = selectedGpoId is Guid target
             ? configured.Where(s => s.GpoId == target).ToArray()
@@ -24,6 +26,32 @@ public static class UnifiedSettingsCatalogService
         var observations = (mmc ?? Array.Empty<MmcInventoryEntry>())
             .Where(m => selectedGpoId is null || m.GpoId == selectedGpoId)
             .ToArray();
+        var nativeRows = (native ?? Array.Empty<NativePolicyEvidence>())
+            .Where(n => selectedGpoId is null || n.GpoId == selectedGpoId)
+            .ToArray();
+
+        // Link raw Registry.pol evidence to GPMC only when BOTH sides are
+        // unique for the same GPO, scope and exact normalized registry target.
+        // No name/category-only association is allowed for source files.
+        var nativeLookup = nativeRows.Where(n =>
+                n.Source == "Registry.pol" &&
+                n.State == "Stored source value" &&
+                !string.IsNullOrWhiteSpace(n.RegistryKey) &&
+                !string.IsNullOrWhiteSpace(n.RegistryValue))
+            .GroupBy(n => NativeIdentity(
+                n.GpoId, n.Scope, n.RegistryKey, n.RegistryValue),
+                StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.ToArray(),
+                StringComparer.OrdinalIgnoreCase);
+        var gpmcNativeCounts = source.Where(p =>
+                !SecurityXmlEntryClassifier.IsTechnicalDetail(p) &&
+                !string.IsNullOrWhiteSpace(p.RegistryKey) &&
+                !string.IsNullOrWhiteSpace(p.RegistryValue))
+            .GroupBy(p => NativeIdentity(
+                p.GpoId, p.Scope, p.RegistryKey, p.RegistryValue),
+                StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(g => g.Key, g => g.Count(),
+                StringComparer.OrdinalIgnoreCase);
 
         var lookup = new Dictionary<string, List<AdmxPolicyDefinition>>(
             StringComparer.OrdinalIgnoreCase);
@@ -46,8 +74,9 @@ public static class UnifiedSettingsCatalogService
 
         var usedDefinitions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var usedMmc = new HashSet<MmcInventoryEntry>();
+        var usedNative = new HashSet<NativePolicyEvidence>();
         var rows = new List<UnifiedSettingInfo>(
-            source.Length + definitions.Count + observations.Length);
+            source.Length + definitions.Count + observations.Length + nativeRows.Length);
 
         foreach (var setting in source)
         {
@@ -61,9 +90,25 @@ public static class UnifiedSettingsCatalogService
             if (observed is not null)
                 usedMmc.Add(observed);
 
+            NativePolicyEvidence? stored = null;
+            if (!technical && !string.IsNullOrWhiteSpace(setting.RegistryKey) &&
+                !string.IsNullOrWhiteSpace(setting.RegistryValue))
+            {
+                var id = NativeIdentity(setting.GpoId, setting.Scope,
+                    setting.RegistryKey, setting.RegistryValue);
+                if (nativeLookup.TryGetValue(id, out var candidates) &&
+                    candidates.Length == 1 &&
+                    gpmcNativeCounts.TryGetValue(id, out var count) && count == 1)
+                {
+                    stored = candidates[0];
+                    usedNative.Add(stored);
+                }
+            }
+
             var sources = technical ? "GPMC XML detail" : "GPMC configured";
             if (admx is not null) sources += " + ADMX";
             if (observed is not null) sources += " + MMC";
+            if (stored is not null) sources += " + Registry.pol";
 
             rows.Add(new UnifiedSettingInfo
             {
@@ -90,12 +135,15 @@ public static class UnifiedSettingsCatalogService
                       "MMC can open only a related section; exact editing is not verified."
                     : "GPMC XML/index reports this configured setting. " +
                       "Its effective application requires independent RSoP/WMI/Security evaluation." +
-                      (observed is null ? "" : " MMC value is a separate observation."),
+                      (observed is null ? "" : " MMC value is a separate observation.") +
+                      (stored is null ? "" : " Registry.pol contains an exact-target source record; " +
+                          "GPMC display values and raw registry data can differ semantically."),
                 Kind = technical ? "GPMC detail" : "Configured",
                 IsTechnicalDetail = technical,
                 Configured = setting,
                 Admx = admx,
-                Mmc = observed
+                Mmc = observed,
+                Native = stored
             });
         }
 
@@ -142,6 +190,34 @@ public static class UnifiedSettingsCatalogService
             });
         }
 
+        // Unjoined native source entries are still valuable evidence and
+        // remain read-only. Security templates do not have reliable ADMX
+        // registry identities, so they never silently inherit GPMC state.
+        foreach (var stored in nativeRows)
+        {
+            if (usedNative.Contains(stored))
+                continue;
+
+            rows.Add(new UnifiedSettingInfo
+            {
+                GpoId = stored.GpoId,
+                GpoName = stored.GpoName,
+                SettingName = stored.SettingName,
+                Scope = stored.Scope,
+                Category = stored.Category,
+                State = stored.State,
+                Value = stored.Value,
+                Sources = "GPT file: " + stored.Source,
+                Capability = "View source (read-only)",
+                RegistryTarget = JoinTarget(stored.RegistryKey, stored.RegistryValue),
+                Explanation = "Observed in " + stored.SourceLocation +
+                    " on the pinned SYSVOL DC. A stored value is not a user/computer RSoP result. " +
+                    "No configuration state is inferred from missing entries.",
+                Kind = "Native source",
+                Native = stored
+            });
+        }
+
         foreach (var admx in definitions)
         {
             foreach (var scope in Scopes(admx.Scope))
@@ -174,8 +250,9 @@ public static class UnifiedSettingsCatalogService
             {
                 "Configured" => 0,
                 "MMC observed" => 1,
-                "ADMX template" => 2,
-                _ => 3
+                "Native source" => 2,
+                "ADMX template" => 3,
+                _ => 4
             }).ThenBy(row => row.SettingName, StringComparer.CurrentCultureIgnoreCase)
               .ThenBy(row => row.GpoName, StringComparer.CurrentCultureIgnoreCase)
               .ToArray();
@@ -188,13 +265,42 @@ public static class UnifiedSettingsCatalogService
         else
             message += "; MMC not scanned (optional)";
 
+        message += nativeCoverage.Length > 0
+            ? "; GPT " + nativeCoverage
+            : "; GPT native source files not scanned (optional)";
+
         return new UnifiedCatalogResult(
             ordered,
             rows.Count(row => row.Kind == "Configured"),
             rows.Count(row => row.Kind == "ADMX template"),
             rows.Count(row => row.Kind == "MMC observed"),
             catalog is not null,
-            message);
+            message)
+        {
+            NativeCount = rows.Count(row => row.Kind == "Native source")
+        };
+    }
+
+    private static string NativeIdentity(
+        Guid gpo, string scope, string key, string value)
+    {
+        // Registry.pol keys are hive-relative; GPMC may return equivalent
+        // HKLM/HKCU prefixes. Only normalize the expected hive for the
+        // matching computer/user scope.
+        var normalized = key.Trim().Replace('/', '\\').Trim('\\');
+        var isUser = scope.Equals("User", StringComparison.OrdinalIgnoreCase);
+        foreach (var prefix in isUser
+            ? new[] { "HKEY_CURRENT_USER\\", "HKCU\\", "USER\\" }
+            : new[] { "HKEY_LOCAL_MACHINE\\", "HKLM\\", "MACHINE\\" })
+        {
+            if (normalized.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                normalized = normalized[prefix.Length..];
+                break;
+            }
+        }
+        return gpo.ToString("B") + "|" + scope.Trim() + "|" +
+            normalized.Trim('\\') + "|" + value.Trim();
     }
 
     public static AdmxPolicyDefinition? ResolveDefinition(
