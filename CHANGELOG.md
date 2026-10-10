@@ -4,6 +4,15 @@
 
 - No unreleased changes yet.
 
+## 0.8.0 - 2026-10-10
+
+- Add phase 1 of **Real Settings Engine**, with **read-only** direct file inspection from pinned-domain-controller SYSVOL. Sources: `Machine/Registry.pol`, `User/Registry.pol`, and `Machine/Microsoft/Windows NT/SecEdit/GptTmpl.inf`. No PowerShell, MMC automation, AD writes or SYSVOL changes.
+- Strict bounds: 32 MB per Registry.pol, 16 MB security INF, 100,000 entries per source, 8,192-character names. Detect malformed PReg headers, truncated binary data, unsupported values, non-UTF encodings and file changes during reads. Preserve UTF-16 Hebrew/Cyrillic and read DWORD/QWORD, strings, MULTI_SZ, binary and security-template sections.
+- New **Read GPO files...** entry from unified All Settings. A single explicitly selected reference GPO is scanned on demand. **Advanced sources > GPT source files** shows raw evidence, full decoded values and per-file coverage/missing/error diagnostics.
+- Correlate raw Registry.pol evidence conservatively to existing configured GPMC rows only for a unique exact GPO/scope/registry key/value name; never infer ADMX Enabled/Disabled or effective policy application from raw bytes. Unmatched source records remain separately searchable, exportable and **read-only**.
+- Add regression tests for binary and security-template parsing, multilingual text, corrupt/unsupported sources, duplicate entries, cross-GPO isolation and ambiguity.
+- Keep all earlier GPO editors and fail-closed v0.7.3 permission/conflict protections. Test source reads on an AD-joined Windows Server with representative GPOs before trusting live results.
+
 ## 0.7.3 - 2026-10-10
 
 - Fix permission-aware controls where a positive SYSVOL GPT.INI writability check was incorrectly treated as evidence of AD GPO edit permission. Separate matching-token AD rights and SYSVOL evidence; normal GPO settings edits require BOTH. Preserve safe mode and authorization at actual write operations.
