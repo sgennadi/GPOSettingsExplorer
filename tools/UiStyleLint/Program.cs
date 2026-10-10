@@ -220,7 +220,7 @@ void CheckMultilineTextBoxHeight(
 
         if (!Regex.IsMatch(
                 body,
-                @"(?<!Min)Height\s*=\s*\d+(?:\.\d+)?",
+                @"(?<!\w)Height\s*=\s*\d+(?:\.\d+)?",
                 RegexOptions.CultureInvariant))
         {
             continue;
@@ -245,7 +245,7 @@ void CheckMultilineTextBoxHeight(
 
         if (!Regex.IsMatch(
                 attrs,
-                @"(?<!Min)Height\s*=\s*""\d+(?:\.\d+)?""",
+                @"(?<!\w)Height\s*=\s*""\d+(?:\.\d+)?""",
                 RegexOptions.CultureInvariant))
         {
             continue;
