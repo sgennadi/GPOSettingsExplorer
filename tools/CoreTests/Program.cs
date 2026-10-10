@@ -27,6 +27,8 @@ var tests = new (string Name, Action Body)[]
     ("Unicode script safety warns on bidi and invisible special characters", TestScriptUnicodeSafety),
     ("GPMC Link Order reverses gPLink storage order", TestGpoLinkOrderPrecedence),
     ("GPO conflicts distinguish duplicate values and linked mismatches", TestGpoConflictAnalysis),
+    ("GPO rights require independent AD and SYSVOL edit evidence", TestGpoCapabilityEvidence),
+    ("Comparison rejects XML details and ambiguous indexed values", TestSafeGpoSettingsComparison),
     ("RSoP verification rejects missing, excluded and nested GPOs", TestRsopVerificationEvidence),
     ("MMC inventory verifies source, path, scope and incomplete coverage", TestMmcFullInventoryReconciliation),
     ("MMC inventory skips fragile Scripts snap-ins before automation", TestMmcInventorySnapinSafety),
@@ -303,6 +305,114 @@ static void TestGpoLinkOrderPrecedence()
         "Link Order 1 must insert as rightmost gPLink entry.");
     Assert(GpoLinkOrder.InsertionIndex(2, 3) == 0,
         "Lowest priority GPO should insert at leftmost index.");
+}
+
+static void TestGpoCapabilityEvidence()
+{
+    const string user = "S-1-5-21-1234";
+    var write = new DiagnosticItem("GPT.INI", "Write access available", true);
+    var deniedWrite = new DiagnosticItem("GPT.INI", "Access denied", false);
+
+    GpoPermissionInfo Rule(GpoPermissionLevel level, bool deny = false) =>
+        new() { TrusteeSid = user, TrusteeName = "Operator", Level = level, Denied = deny };
+
+    var noAd = GpoCapabilityService.EvaluateForToken(
+        Array.Empty<GpoPermissionInfo>(), new[] { user }, write);
+    Assert(!noAd.CanEditSettings && !noAd.CanRead && !noAd.CanEditSecurity,
+        "Opening GPT.INI writable must NEVER grant missing GPO AD permissions.");
+    Assert(noAd.Details.Contains("AD: no matching", StringComparison.OrdinalIgnoreCase),
+        "Incomplete AD evidence must be clear to the operator.");
+
+    var editNoGpt = GpoCapabilityService.EvaluateForToken(
+        new[] { Rule(GpoPermissionLevel.Edit) }, new[] { user }, deniedWrite);
+    Assert(editNoGpt.CanRead && !editNoGpt.CanEditSettings,
+        "AD edit is insufficient for a GPT-writing command when SYSVOL is unverified.");
+
+    var editGranted = GpoCapabilityService.EvaluateForToken(
+        new[] { Rule(GpoPermissionLevel.Edit) }, new[] { user }, write);
+    Assert(editGranted.CanEditSettings && !editGranted.CanEditSecurity,
+        "AD edit plus independently confirmed GPT access can enable guarded settings UI.");
+
+    var editDenied = GpoCapabilityService.EvaluateForToken(
+        new[] { Rule(GpoPermissionLevel.Edit), Rule(GpoPermissionLevel.Edit, true) },
+        new[] { user }, write);
+    Assert(!editDenied.CanEditSettings,
+        "Explicit matching-token AD edit deny must win over positive SYSVOL evidence.");
+
+    var customDenied = GpoCapabilityService.EvaluateForToken(
+        new[] { Rule(GpoPermissionLevel.FullControl), Rule(GpoPermissionLevel.Custom, true) },
+        new[] { user }, write);
+    Assert(!customDenied.CanEditSettings && !customDenied.CanEditSecurity,
+        "Unknown custom AD deny must fail closed, not be disregarded.");
+
+    var onlyApply = GpoCapabilityService.EvaluateForToken(
+        new[] { Rule(GpoPermissionLevel.Apply) }, new[] { user }, write);
+    Assert(onlyApply.CanRead && !onlyApply.CanEditSettings,
+        "Apply/Read permissions do not authorize a policy edit.");
+
+    var wrongPrincipal = GpoCapabilityService.EvaluateForToken(
+        new[] { Rule(GpoPermissionLevel.FullControl) }, new[] { "S-1-5-21-5678" }, write);
+    Assert(!wrongPrincipal.CanEditSettings && !wrongPrincipal.CanEditSecurity,
+        "Permissions belonging to another SID must never authorize current user.");
+
+    var full = GpoCapabilityService.EvaluateForToken(
+        new[] { Rule(GpoPermissionLevel.FullControl) }, new[] { user }, null);
+    Assert(full.CanEditSecurity && !full.CanEditSettings,
+        "AD security editing evidence is distinct from GPT-writing evidence.");
+}
+
+static void TestSafeGpoSettingsComparison()
+{
+    var left = Guid.NewGuid();
+    var right = Guid.NewGuid();
+    PolicySettingInfo Make(Guid id, string name, string value, string ext = "RegistrySettings") =>
+        new() { GpoId = id, GpoName = id == left ? "Left" : "Right",
+            Scope = "Computer", Extension = ext, Category = "Policy",
+            SettingName = name, State = "Enabled", Value = value,
+            RegistryKey = @"Software\\Policies\\Example", RegistryValue = name };
+
+    var a = Make(left, "Setting 1", "1");
+    var b = Make(right, "Setting 1", "1");
+    var leftUnknown = Make(left, "Left only", "2");
+    var technical = new PolicySettingInfo
+    {
+        GpoId = left, GpoName = "Left", Scope = "Computer",
+        Extension = "SecuritySettings", Category = "SecuritySettings",
+        SettingName = "Member: DOMAIN\\Operators", State = "Configured",
+        Value = "SID=S-1-5-21-1; Name=DOMAIN\\Operators"
+    };
+
+    var rows = GpoSettingsComparisonService.Compare(
+        new[] { a, leftUnknown, technical }, new[] { b });
+    Assert(rows.Count == 2 && rows.Any(r => r.Status == "Same"),
+        "Identical configured policies should compare, without GPMC XML leaf noise.");
+    Assert(rows.Any(r => r.Status == "Left only (index)" &&
+            r.RightState == "Not in loaded index"),
+        "Missing index entry must not be mislabeled as Not Configured.");
+
+    var ambiguous = GpoSettingsComparisonService.Compare(
+        new[] { a, Make(left, "Setting 1", "3") }, new[] { b });
+    Assert(ambiguous.Single().Status == "Ambiguous index" &&
+           ambiguous.Single().LeftState == "Ambiguous indexed values",
+        "Conflicting duplicate identity inside a GPO cannot be silently collapsed.");
+
+    var gs = new[] {
+        new GpoInfo { Id = left, DisplayName = "Left", ComputerEnabled = true },
+        new GpoInfo { Id = right, DisplayName = "Right", ComputerEnabled = true }
+    };
+    var links = new[] {
+        new GpoLinkInfo { GpoId = left, Enabled = true,
+            TargetDn = "OU=Workstations,DC=example,DC=com", TargetType = "OU" },
+        new GpoLinkInfo { GpoId = right, Enabled = true,
+            TargetDn = "OU=Workstations,DC=example,DC=com", TargetType = "OU" }
+    };
+    var findings = GpoConflictAnalysisService.Analyze(
+        new[] { a, Make(left, "Setting 1", "3"), b, technical }, links, gs);
+    Assert(findings.Count == 1 && findings[0].Kind == "Ambiguous index",
+        "Conflict finder must not claim a proven Duplicate or Different value from ambiguous same-GPO entries.");
+    Assert(findings[0].Participants.Count == 3 &&
+           findings[0].Recommendation.Contains("Do not merge", StringComparison.OrdinalIgnoreCase),
+        "Ambiguous identity must retain all source evidence and block consolidation recommendations.");
 }
 
 static void TestGpoConflictAnalysis()
