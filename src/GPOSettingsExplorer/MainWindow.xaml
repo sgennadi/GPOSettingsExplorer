@@ -111,6 +111,8 @@
                             <Button Content="Copy GPO..." Click="CopyGpo_Click"/>
                             <Button x:Name="RenameGpoButton" Content="Rename" Click="RenameGpo_Click"/>
                             <Button x:Name="DeleteGpoButton" Content="Delete" Click="DeleteGpo_Click"/>
+                            <Button Content="Settings report..." Click="OpenGpoSettingsReport_Click"
+                                    ToolTip="Read-only GPMC-style report of the selected GPO: General, links, WMI, security, Computer and User settings."/>
                             <Button Content="Open editor" Click="OpenGpoEditor_Click"/>
                             <Button Content="GPO Hierarchy &amp; Links"
                                     Click="OpenHierarchyLinksTab_Click"
@@ -133,7 +135,18 @@
                     <DataGrid x:Name="GpoGrid"
                               RowStyle="{StaticResource UiGpoRowStyle}"
                               MouseDoubleClick="GpoGrid_MouseDoubleClick"
+                              PreviewMouseRightButtonDown="GpoGrid_PreviewMouseRightButtonDown"
                               SelectionChanged="GpoGrid_SelectionChanged">
+                        <DataGrid.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="Settings (GPMC-style report)..." Click="OpenGpoSettingsReport_Click"/>
+                                <Separator/>
+                                <MenuItem Header="Open native GPO editor..." Click="OpenGpoEditor_Click"/>
+                                <MenuItem Header="GPO scripts" Click="GpoContextScripts_Click"/>
+                                <MenuItem Header="GPO Hierarchy &amp; Links" Click="OpenHierarchyLinksTab_Click"/>
+                                <MenuItem Header="Security &amp; Delegation" Click="GpoContextSecurity_Click"/>
+                            </ContextMenu>
+                        </DataGrid.ContextMenu>
                         <DataGrid.Columns>
                             <DataGridTextColumn Header="★" Binding="{Binding FavoriteMark}" Width="42"/>
                             <DataGridTextColumn Header="Recent" Binding="{Binding RecentMark}" Width="62"/>
