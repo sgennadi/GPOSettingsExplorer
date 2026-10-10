@@ -120,7 +120,8 @@ public partial class MainWindow
                             gpo,
                             _domainContext.DomainDistinguishedName,
                             setting,
-                            selectedBoolean));
+                            selectedBoolean,
+                            securityBackupPath));
 
                     _auditService.Write(
                         "Edit Security Setting",

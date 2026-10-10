@@ -35,8 +35,15 @@ public sealed partial class SecurityTemplateService
         GpoInfo gpo,
         string domainDistinguishedName,
         PolicySettingInfo setting,
-        bool value)
+        bool value,
+        string gpmcBackupDirectory)
     {
+        if (string.IsNullOrWhiteSpace(gpmcBackupDirectory) ||
+            !Directory.Exists(gpmcBackupDirectory) ||
+            !Directory.EnumerateFiles(gpmcBackupDirectory, "bkupInfo.xml",
+                SearchOption.AllDirectories).Any())
+            throw new InvalidOperationException(
+                "A completed GPMC safety backup is mandatory before editing Security Settings.");
         EditingGuard.EnsureEnabled("Edit Security Option");
         if (!CanEditBoolean(setting))
             throw new InvalidOperationException(
@@ -85,7 +92,7 @@ public sealed partial class SecurityTemplateService
         if (previousText.Equals(updatedText, StringComparison.Ordinal))
             return;
 
-        ChangePreviewGuard.Confirm(new ChangePreviewRequest(
+        ChangePreviewGuard.ConfirmRequired(new ChangePreviewRequest(
             $"Edit Security Option: {setting.SettingName}",
             gpo.DisplayName,
             $"[{registryTarget}] = {(existingValue ? 1 : 0)}",
@@ -128,7 +135,11 @@ public sealed partial class SecurityTemplateService
                 var toolGuid = SecurityToolGuid;
                 policy.Save(machine: true, add: true, ref extensionGuid, ref toolGuid);
             }
-            File.Delete(rollback);
+            try { File.Delete(rollback); }
+            catch (Exception cleanup) when (cleanup is IOException or UnauthorizedAccessException)
+            {
+                CrashLogService.Write("Cleanup local Security Settings rollback", cleanup);
+            }
         }
         catch (Exception ex) when (replaced)
         {
