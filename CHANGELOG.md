@@ -4,6 +4,16 @@
 
 - No unreleased changes yet.
 
+## 1.5.0 - 2026-10-10
+
+- Add bounded Microsoft Graph /beta Intune configurationPolicies pagination, with up to 10 pages/500 metadata records and visible incomplete inventory.
+- Reject untrusted continuation URLs, redirects, non-HTTPS or off-host addresses, wrong Graph paths and repeated tokens before sending any bearer token.
+- Cap streamed HTTP pages at 2 MiB and include policy platform, technology, assignment flag, setting count and modification time in manual, local reports.
+- Restrict reviewed GPO-to-Intune candidate mapping to exact ordinary Registry.pol data with canonical Device/User Policy CSP scope. Truncated and redacted source values remain Unverifiable.
+- Add regression tests for Graph paging/SSRF and CSP mapping safety. No Intune, AD or GPO policies are modified.
+
+
+
 ## 1.4.0 - 2026-10-10
 
 - Add bounded, read-only full-GPO SYSVOL directory-tree file inventory and SHA-256 comparison on 2–16 explicit DCs, with confirmed vs Unknown path differences.

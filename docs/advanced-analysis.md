@@ -124,3 +124,27 @@ approved for the intended OS and product versions.
 Legacy GPP password and startup-script triage uses bounded enumeration
 that does not descend into reparse points, and marks skipped/inaccessible/
 oversized files as unverified. Unknown coverage does not mean no risk.
+
+
+## Microsoft Graph paginated inventory and CSP mapping (v1.5.0)
+
+The Optional cloud & local AI tab offers Graph Intune inventory (up to 500)....
+It uses explicitly approved MSAL device-code authorization and a delegated
+read-only scope. It then reads at most ten pages / 500 policy metadata
+records from the global Microsoft Graph beta configurationPolicies endpoint,
+with a two MiB cap on every response.
+
+Next-page links MUST remain on HTTPS graph.microsoft.com using the exact
+beta/deviceManagement/configurationPolicies path. Redirects are never
+followed, repeated links fail closed, and off-host destinations are rejected
+before attaching the access token. Incomplete collection is marked visibly.
+This version does not retrieve setting-value payloads or device assignment
+objects, and cannot write Microsoft Graph or Intune configurations.
+
+Reviewed local CSP mapping input requires canonical, scope-matched
+Device/User Policy CSP URIs. Matching requires a complete ordinary
+Registry.pol source value and exact registry key/value identity.
+Truncated binary previews, masked preferences and non-registry CSE records
+cannot be claimed equivalent. A candidate is NOT evidence of an applicable
+Settings Catalog setting, identical datatype, target assignment or
+successful migration.

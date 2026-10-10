@@ -206,7 +206,7 @@ public sealed class GpoAdvancedAnalysisWindow : Window
         cloudPanel.Children.Add(_tenant);
         cloudPanel.Children.Add(Label("App GUID:"));
         cloudPanel.Children.Add(_appId);
-        AddAction(cloudPanel, "Graph Intune (read only)...", GraphIntuneAsync);
+        AddAction(cloudPanel, "Graph Intune inventory (up to 500)...", GraphIntuneAsync);
         cloudPanel.Children.Add(Label("Local model:"));
         cloudPanel.Children.Add(_aiModel);
         AddAction(cloudPanel, "Local AI analysis...", LocalAiAsync);
@@ -584,8 +584,10 @@ public sealed class GpoAdvancedAnalysisWindow : Window
         if (MessageBox.Show(this,
                 "Connect to Microsoft Graph using device-code sign-in and " +
                 "DeviceManagementConfiguration.Read.All (delegated). " +
-                "This manually requested operation reads Intune policy names " +
-                "only. No tokens are saved to disk and no policies are changed.\n\nContinue?",
+                "This manually requested operation reads up to 500 Intune " +
+                "policy metadata records across 10 pages (names, assignment flag, " +
+                "technology, setting count and modification date). No tokens " +
+                "are saved to disk and no policies are changed.\n\nContinue?",
                 "Explicit Microsoft Graph permission", MessageBoxButton.YesNo,
                 MessageBoxImage.Question) != MessageBoxResult.Yes)
             return "Graph request canceled by operator.";
