@@ -2825,7 +2825,7 @@ static void TestExplainWhyEvidence()
     var disabled = GpoExplainWhyService.Build(gpo, "User",
         new GpoRsopSample("Unknown / incomplete", "CLIENT-01", "User", "no user RSoP"),
         null, null);
-    Assert(disabled.Overall.Contains("CURRENT GPO SECTION DISABLED") &&
+    Assert(disabled.Overall.Contains("GPO SECTION DISABLED IN LOADED INVENTORY") &&
            disabled.Checks.Any(x => x.Area.Contains("loopback")),
         "User scope status must reflect current disabled configuration and unknown loopback.");
 }

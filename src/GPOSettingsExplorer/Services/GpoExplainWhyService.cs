@@ -46,12 +46,13 @@ public static class GpoExplainWhyService
 
         var configEnabled = scope == "Computer" ? gpo.ComputerEnabled : gpo.UserEnabled;
         checks.Add(new(
-            "Current GPO configuration section",
+            "Loaded GPO configuration section",
             configEnabled ? "Configured enabled" : "Current blocker",
             configEnabled
-                ? scope + " Configuration is enabled in the current GPO metadata."
-                : scope + " Configuration is disabled in current AD GPO metadata. " +
-                  "Historical RSoP may refer to an earlier state.",
+                ? scope + " Configuration is enabled in the loaded GPO inventory. " +
+                  "The inventory may predate recent edits."
+                : scope + " Configuration was disabled in the loaded GPO inventory. " +
+                  "Refresh the inventory; historical RSoP may refer to an earlier state.",
             configEnabled
                 ? "Validate replication and actual client processing."
                 : "Review GPO Status in GPMC; do not enable it without change approval."));
@@ -158,8 +159,8 @@ public static class GpoExplainWhyService
         }
 
         var overall = !configEnabled
-            ? "CURRENT GPO SECTION DISABLED. The last logged client state " +
-              "may be older; no future-policy conclusion."
+            ? "GPO SECTION DISABLED IN LOADED INVENTORY. Refresh metadata and " +
+              "client RSoP before a future-policy conclusion."
             : excluded
                 ? "GPO EXCLUDED IN LAST LOGGED CLIENT SAMPLE. " +
                   "The exact filter/ACL/WMI cause requires further evidence."

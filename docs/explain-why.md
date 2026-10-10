@@ -6,6 +6,8 @@ Release: v1.3.0, read-only.
 
 In the connected application select a GPO, open All Settings > Advanced analysis... > Client & DC health, enter a computer name from the connected AD domain and select Computer or User scope. For User scope, specify the target DOMAIN\user identity. Choose **Explain why (full evidence)...**. No agent or PowerShell is required.
 
+Refresh the selected GPO list before diagnosis: enabled/disabled section flags come from the last loaded GPO inventory, not an atomic LDAP read synchronized to client RSoP.
+
 The report combines three independently collected evidence streams: a logged gpresult sample for the specific client/scope, the current computer AD location and the GPO links on its OU/domain ancestor path from the session-pinned DC, and recent GroupPolicy/Operational event metadata collected through Windows wevtutil. Failures in any one stream are reported as Unknown; other evidence remains visible.
 
 ## Evidence boundaries
