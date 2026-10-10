@@ -6,7 +6,10 @@ namespace GPOSettingsExplorer;
 
 public partial class MainWindow
 {
-    private async void EditSecuritySource_Click(object sender, RoutedEventArgs e)
+    private async void EditSecuritySource_Click(object sender, RoutedEventArgs e) =>
+        await EditSecuritySourceAsync();
+
+    private async Task EditSecuritySourceAsync()
     {
         if (_domainContext is null ||
             UnifiedSettingsGrid.SelectedItem is not UnifiedSettingInfo row ||
