@@ -101,6 +101,7 @@ public partial class MainWindow
                         out var originalBoolean) &&
                     selectedBoolean != originalBoolean)
                 {
+                    await EnsureSecurityWritePreflightAsync(gpo);
                     SetBusy(
                         true,
                         "Backing up GPO before Security Settings change...");
@@ -120,7 +121,8 @@ public partial class MainWindow
                             gpo,
                             _domainContext.DomainDistinguishedName,
                             setting,
-                            selectedBoolean));
+                            selectedBoolean,
+                            securityBackupPath));
 
                     _auditService.Write(
                         "Edit Security Setting",

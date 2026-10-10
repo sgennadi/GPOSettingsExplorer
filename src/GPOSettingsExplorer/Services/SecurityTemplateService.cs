@@ -5,7 +5,7 @@ using GPOSettingsExplorer.Models;
 
 namespace GPOSettingsExplorer.Services;
 
-public sealed class SecurityTemplateService
+public sealed partial class SecurityTemplateService
 {
     private static readonly Guid SecurityExtensionGuid =
         new("827D319E-6EAC-11D2-A4EA-00C04F79F83A");
@@ -35,143 +35,131 @@ public sealed class SecurityTemplateService
         GpoInfo gpo,
         string domainDistinguishedName,
         PolicySettingInfo setting,
-        bool value)
+        bool value,
+        string gpmcBackupDirectory)
     {
-        EditingGuard.EnsureEnabled(
-            "Edit Security Option");
-        if (!CanEditBoolean(setting))
-        {
+        if (string.IsNullOrWhiteSpace(gpmcBackupDirectory) ||
+            !Directory.Exists(gpmcBackupDirectory) ||
+            !Directory.EnumerateFiles(gpmcBackupDirectory, "bkupInfo.xml",
+                SearchOption.AllDirectories).Any())
             throw new InvalidOperationException(
-                "This Security Settings value is not a supported Boolean registry-backed security option.");
-        }
+                "A completed GPMC safety backup is mandatory before editing Security Settings.");
+        EditingGuard.EnsureEnabled("Edit Security Option");
+        if (!CanEditBoolean(setting))
+            throw new InvalidOperationException(
+                "Only an existing, unambiguous Boolean Security Settings value is supported.");
 
-        var gpoPath =
-            GetGpoFileSystemPath(
-                gpo,
-                domainDistinguishedName);
+        var context = DomainConnectionState.Context;
+        if (context is null ||
+            string.IsNullOrWhiteSpace(context.ConnectedServer) ||
+            !context.DomainName.Equals(gpo.DomainName, StringComparison.OrdinalIgnoreCase) ||
+            !context.DomainDistinguishedName.Equals(
+                domainDistinguishedName, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                "The pinned DC or target domain changed. Reconnect before editing.");
 
-        var templatePath =
-            Path.Combine(
-                gpoPath,
-                "Machine",
-                "Microsoft",
-                "Windows NT",
-                "SecEdit",
-                "GptTmpl.inf");
+        // Do not follow gPCFileSysPath through a domain DFS alias for writes.
+        var templatePath = Path.Combine(
+            DomainConnectionState.BuildSysvolRoot(gpo.DomainName),
+            "Policies", gpo.Id.ToString("B").ToUpperInvariant(),
+            "Machine", "Microsoft", "Windows NT", "SecEdit", "GptTmpl.inf");
 
         if (!File.Exists(templatePath))
-        {
             throw new FileNotFoundException(
-                "The GPO security template file was not found.",
-                templatePath);
-        }
+                "Existing security template is required; refusing to create it.", templatePath);
 
-        var original =
-            File.ReadAllBytes(
-                templatePath);
+        var length = new FileInfo(templatePath).Length;
+        if (length > SecurityTemplateSourceReader.MaxFileBytes)
+            throw new InvalidDataException("Security template exceeds the read safety cap.");
+        var original = File.ReadAllBytes(templatePath);
+        if (original.Length > SecurityTemplateSourceReader.MaxFileBytes)
+            throw new InvalidDataException("Security template grew beyond the read cap.");
 
-        var encoding =
-            DetectEncoding(
-                original);
+        var sha = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(original));
+        var source = SecurityTemplateSourceReader.Parse(original,
+            gpo.Id, gpo.DisplayName, templatePath, sha);
+        if (!source.IsComplete)
+            throw new InvalidDataException(
+                "Source security template has parsing errors. Refusing an unsafe edit: " +
+                string.Join(" | ", source.Issues.Take(5)));
 
-        var text =
-            encoding.GetString(
-                    StripPreamble(
-                        original,
-                        encoding))
-                .Replace(
-                    "\r\n",
-                    "\n",
-                    StringComparison.Ordinal)
-                .Replace(
-                    "\r",
-                    "\n",
-                    StringComparison.Ordinal);
+        var encoding = DetectEncoding(original);
+        var previousText = encoding.GetString(StripPreamble(original, encoding));
+        var registryTarget = BuildRegistryTarget(setting);
+        var existingValue = bool.Parse(setting.Value);
+        var updatedText = SecurityTemplateEditRules.ChangeExistingRegistryBoolean(
+            previousText, registryTarget, existingValue, value);
+        if (previousText.Equals(updatedText, StringComparison.Ordinal))
+            return;
 
-        var target =
-            BuildRegistryTarget(
-                setting);
+        ChangePreviewGuard.ConfirmRequired(new ChangePreviewRequest(
+            $"Edit Security Option: {setting.SettingName}",
+            gpo.DisplayName,
+            $"[{registryTarget}] = {(existingValue ? 1 : 0)}",
+            $"[{registryTarget}] = {(value ? 1 : 0)}",
+            $"Pinned DC: {context.ConnectedServer}\nSource SHA-256: {sha}\n" +
+            "This is a stored GPO value, NOT verified effective RSoP. " +
+            "The caller must create a GPMC backup before editing.",
+            "Apply"));
 
-        var lines =
-            text.Split(
-                    '\n',
-                    StringSplitOptions.None)
-                .ToList();
+        var staging = templatePath + ".gposes-" + Guid.NewGuid().ToString("N") + ".tmp";
+        var rollbackDirectory = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "GPOSettingsExplorer", "SecurityRollback");
+        Directory.CreateDirectory(rollbackDirectory);
+        var rollback = Path.Combine(rollbackDirectory,
+            $"{gpo.Id:N}-{DateTime.UtcNow:yyyyMMdd-HHmmss}-{Guid.NewGuid():N}.inf");
 
-        UpdateRegistryValuesSection(
-            lines,
-            target,
-            value);
-
-        var updated =
-            string.Join(
-                "\r\n",
-                lines);
-
-        ChangePreviewGuard.Confirm(
-            new ChangePreviewRequest(
-                $"Edit Security Option: {setting.SettingName}",
-                gpo.DisplayName,
-                text.Replace(
-                    "\n",
-                    Environment.NewLine,
-                    StringComparison.Ordinal),
-                updated,
-                $"Registry target: {target}\nNew value: {value}",
-                "Apply"));
-
-        var tempPath =
-            templatePath +
-            ".gposes-" +
-            Guid.NewGuid().ToString("N") +
-            ".tmp";
-
-        WriteText(
-            tempPath,
-            updated,
-            encoding);
-
+        var updatedBytes = encoding.GetPreamble()
+            .Concat(encoding.GetBytes(updatedText)).ToArray();
+        var replaced = false;
         try
         {
-            File.Copy(
-                tempPath,
-                templatePath,
-                overwrite: true);
+            File.WriteAllBytes(rollback, original);
+            using (var stream = new FileStream(staging, FileMode.CreateNew,
+                       FileAccess.Write, FileShare.None))
+                stream.Write(updatedBytes);
 
-            using var policy =
-                new NativeGroupPolicyObject(
-                    gpo,
-                    domainDistinguishedName);
+            // Best-effort optimistic concurrency precondition; a concurrent
+            // writer must never be silently overwritten with a guessed value.
+            if (!File.ReadAllBytes(templatePath).AsSpan().SequenceEqual(original))
+                throw new IOException(
+                    "GptTmpl.inf changed after inspection. Reload and review before editing.");
+            EditingGuard.EnsureEnabled("Edit Security Option");
+            File.Replace(staging, templatePath, null);
+            replaced = true;
 
-            var extensionGuid =
-                SecurityExtensionGuid;
-
-            var toolGuid =
-                SecurityToolGuid;
-
-            policy.Save(
-                machine: true,
-                add: true,
-                ref extensionGuid,
-                ref toolGuid);
+            using (var policy = new NativeGroupPolicyObject(gpo, domainDistinguishedName))
+            {
+                var extensionGuid = SecurityExtensionGuid;
+                var toolGuid = SecurityToolGuid;
+                policy.Save(machine: true, add: true, ref extensionGuid, ref toolGuid);
+            }
+            try { File.Delete(rollback); }
+            catch (Exception cleanup) when (cleanup is IOException or UnauthorizedAccessException)
+            {
+                CrashLogService.Write("Cleanup local Security Settings rollback", cleanup);
+            }
         }
-        catch
+        catch (Exception ex) when (replaced)
         {
-            File.WriteAllBytes(
-                templatePath,
-                original);
-
-            throw;
+            // Do NOT overwrite post-save edits from another administrator.
+            // Preserve the exact original locally for controlled recovery.
+            throw new IOException(
+                "Source replacement finished, but GPMC Save did not complete. " +
+                "Run GPO Health Check; do not retry blindly. " +
+                "Original bytes preserved locally at: " + rollback, ex);
         }
         finally
         {
-            try
+            try { if (File.Exists(staging)) File.Delete(staging); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+            if (!replaced)
             {
-                File.Delete(
-                    tempPath);
-            }
-            catch
-            {
+                try { if (File.Exists(rollback)) File.Delete(rollback); }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
             }
         }
     }

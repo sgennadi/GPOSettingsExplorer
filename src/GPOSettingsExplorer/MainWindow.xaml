@@ -187,10 +187,14 @@
                                           Unchecked="UnifiedFilterChanged"
                                           ToolTip="Show low-level GPMC XML descriptors such as security group Member and Registry ACL. These are read-only descriptions, not independently editable policies."/>
                                 <Button Content="Refresh catalog" Click="RefreshUnifiedSettings_Click"/>
+                                <Button x:Name="ImpactPreviewButton" Content="Impact / RSoP preview" Click="GpoImpactPreview_Click" ToolTip="Direct GPO link inventory plus optional logged gpresult verification on one computer. Never estimates domain-wide application."/>
+                                <Button Content="Compare DC versions..." Click="CrossDcVersions_Click" ToolTip="Explicit read-only comparison of AD versionNumber and DC-specific SYSVOL GPT.INI across up to 16 named DCs."/>
+                                <Button x:Name="GpoHealthButton" Content="Health check (AD/SYSVOL)" Click="GpoHealth_Click" ToolTip="Read-only integrity check of AD versionNumber, GPT.INI, source files on selected pinned DC."/>
                                 <Button x:Name="ReadRealSourcesButton"
                                         Content="Read selected GPO files"
                                         Click="ReadRealSources_Click"
-                                        ToolTip="Read-only inspection of Machine/User Registry.pol and Machine SecEdit GptTmpl.inf on the pinned domain controller. Select a GPO first. Never edits or applies policies."/>
+                                        ToolTip="Read-only inspection of Machine/User Registry.pol, Machine SecEdit GptTmpl.inf, and standard GPP XML attributes on the pinned domain controller. Select a GPO first. Never edits or applies policies."/>
+                                <Button x:Name="SecurityEditSourceButton" Content="Edit stored security..." Click="EditSecuritySource_Click" IsEnabled="False" ToolTip="Only selected, recognized existing Event Audit and System Access values. Requires WRITE ENABLED, backup, source SHA-256 match and preview."/>
                                 <Button x:Name="UnifiedActionButton"
                                         Content="View / Edit..."
                                         Style="{StaticResource UiPrimaryButton}"
@@ -198,11 +202,12 @@
                                         ToolTip="The selected row determines whether this opens an editor, a read-only value, or a verified MMC row."/>
                                 <Button Content="Open GPO" Click="OpenUnifiedSettingGpo_Click"/>
                                 <Button Content="Export CSV" Click="ExportUnifiedSettings_Click"/>
+                                <Button Content="Export full evidence ZIP..." Click="ExportFullEvidence_Click" ToolTip="Local-only, explicit read-only evidence archive of source values, health, link impact and GPMC XML. May contain sensitive domain data."/>
                             </WrapPanel>
                             <TextBlock x:Name="UnifiedSettingsCountText"
                                        Margin="4,3,4,5" TextWrapping="Wrap"
                                        Foreground="{DynamicResource UiMutedBrush}"
-                                       Text="Unified catalog: GPMC/ADMX/MMC; optional Read selected GPO files shows actual stored Registry.pol and GptTmpl.inf entries (not effective RSoP)."/>
+                                       Text="Unified catalog: GPMC/ADMX/MMC; optional Read selected GPO files shows actual stored Registry.pol, GptTmpl.inf and GPP XML entries (not effective RSoP)."/>
                             <TextBlock x:Name="UnifiedSelectedDetailsText"
                                        Margin="4,1,4,5" TextWrapping="Wrap"
                                        Foreground="{DynamicResource UiMutedBrush}"
@@ -1761,6 +1766,7 @@
                         </WrapPanel>
                         <WrapPanel>
                             <Button Content="Restore selected" Click="RestoreBackup_Click"/>
+                            <Button Content="Selective restore security..." Click="SelectiveRestoreSetting_Click" ToolTip="Restore ONE existing, reviewed Security Settings numeric value from the same-domain GPMC backup. No ACL/rights or bulk restore."/>
                             <Button Content="Import into GPO..." Click="ImportBackup_Click"/>
                             <Button Content="Generate report" Click="BackupReport_Click"/>
                             <Button Content="Compare with current" Click="CompareBackupWithCurrent_Click"/>

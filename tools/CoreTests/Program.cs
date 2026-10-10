@@ -38,6 +38,15 @@ var tests = new (string Name, Action Body)[]
     ("Registry.pol binary parser preserves exact source values and flags malformed data", TestRealSettingsRegistryPol),
     ("Security-template parser reports source values and invalid encodings safely", TestRealSettingsSecurityTemplate),
     ("Unified catalog never interprets source-file values as effective RSoP", TestRealSettingsUnifiedEvidence),
+    ("Cross-DC GPO version evidence refuses aliases and incomplete comparisons", TestCrossDcVersionEvidence),
+    ("GPP XML evidence is bounded, redacted and never interpreted as effective policy", TestGppXmlEvidence),
+    ("Mandatory Security Settings preview cannot run headlessly or be disabled", TestRequiredSecurityPreviewGuard),
+    ("Legacy security boolean edit rejects absent and ambiguous DWORD values", TestSafeRegistryBooleanSecurityEdit),
+    ("Comprehensive evidence ZIP contains manifests, source hashes and safe CSV", TestGpoEvidenceArchive),
+    ("Selective recovery requires same GPO, intact backup and supported key", TestSelectiveSecurityRecovery),
+    ("GPO impact preview does not equate OU link with applied RSoP", TestImpactPreviewEvidence),
+    ("Security template editor rejects unknown and duplicate source values", TestSecurityTemplateEditingRules),
+    ("GPT.INI parses split AD/SYSVOL version and rejects corruption", TestGptIniVersionParser),
     ("Semantic XML diff ignores report timestamps and finds setting changes", TestSemanticXmlDiff)
 };
 
@@ -1897,5 +1906,402 @@ static void Assert(
     {
         throw new InvalidOperationException(
             message);
+    }
+}
+
+
+static void TestGptIniVersionParser()
+{
+    var input = System.Text.Encoding.UTF8.GetBytes("[General]\r\nVersion=131075\r\n");
+    var parsed = GptIniVersionParser.Parse(input);
+    Assert(parsed.Valid && parsed.Version == 131075 &&
+        parsed.ComputerVersion == 2 && parsed.UserVersion == 3,
+        "GPT.INI must preserve AD computer/user 16-bit version halves.");
+
+    var utf16 = System.Text.Encoding.Unicode.GetPreamble()
+        .Concat(System.Text.Encoding.Unicode.GetBytes("[General]\r\nVersion=4294967295\r\n"))
+        .ToArray();
+    var max = GptIniVersionParser.Parse(utf16);
+    Assert(max.Valid && max.ComputerVersion == 65535 && max.UserVersion == 65535,
+        "Unsigned UInt32 version must not overflow a signed int.");
+
+    foreach (var value in new[]
+    {
+        "[General]\nVersion=-1",
+        "[General]\nVersion=4294967296",
+        "[General]\nVersion=1\nVersion=2",
+        "[Other]\nVersion=1",
+        "[General]\nVersion=garbage"
+    })
+        Assert(!GptIniVersionParser.Parse(System.Text.Encoding.UTF8.GetBytes(value)).Valid,
+            "Ambiguous or corrupt GPT.INI version must fail closed: " + value);
+
+    Assert(!GptIniVersionParser.Parse(new byte[1 + GptIniVersionParser.MaxBytes]).Valid,
+        "Oversized source must not be parsed.");
+}
+
+
+static void TestSecurityTemplateEditingRules()
+{
+    var baseRecord = new RealSettingRecord
+    {
+        GpoId = Guid.NewGuid(), GpoName = "Test", Scope = "Computer",
+        Category = "Security template > Event Audit",
+        SettingName = "AuditLogonEvents", State = "Stored template value",
+        Value = "1", ValueType = "INF string",
+        SourceFile = @"\\test-dc\SYSVOL\test\GptTmpl.inf",
+        SourceSha256 = new string('F', 64)
+    };
+    Assert(SecurityTemplateEditRules.TryDescribe(baseRecord, out var rule) &&
+        rule is not null && rule.Allows(0) && rule.Allows(3) && !rule.Allows(4),
+        "An existing known audit setting must permit values 0..3 only.");
+    var text = "[Version]\r\nsignature=\"$CHICAGO$\"\r\n[Event Audit]\r\n" +
+        "AuditLogonEvents = 1\r\nAuditSystemEvents = 2\r\n[System Access]\r\n" +
+        "PasswordComplexity = 1\r\n";
+    var updated = SecurityTemplateEditRules.ChangeExistingValue(text, rule!, 3);
+    Assert(updated.Contains("AuditLogonEvents =3\r\n") &&
+        updated.Contains("AuditSystemEvents = 2\r\n") &&
+        updated.Contains("PasswordComplexity = 1\r\n"),
+        "Only exact selected security value should change; preserve other fields.");
+    try
+    {
+        SecurityTemplateEditRules.ChangeExistingValue(
+            text.Replace("AuditSystemEvents = 2\r\n",
+                "AuditLogonEvents = 2\r\n"), rule!, 3);
+        throw new InvalidOperationException("Duplicate security setting was edited.");
+    }
+    catch (InvalidDataException) { }
+
+    var rights = baseRecord with
+    {
+        Category = "Security template > Privilege Rights",
+        SettingName = "SeDebugPrivilege",
+        Value = "*S-1-5-32-544"
+    };
+    Assert(!SecurityTemplateEditRules.TryDescribe(rights, out _),
+        "Privilege Rights / SID strings must never become numeric editor inputs.");
+    Assert(!SecurityTemplateEditRules.TryDescribe(
+        baseRecord with { SourceSha256 = "bad" }, out _),
+        "Records without full source SHA-256 evidence must remain read-only.");
+    Assert(!SecurityTemplateEditRules.TryDescribe(
+        baseRecord with { Value = "6" }, out _),
+        "Unsupported current value must be read-only, not normalized.");
+}
+
+
+static void TestImpactPreviewEvidence()
+{
+    var id = Guid.NewGuid();
+    var gpo = new GpoInfo
+    {
+        Id = id, DisplayName = "Example", DomainName = "test.example",
+        ComputerEnabled = true, UserEnabled = false,
+        WmiFilterName = "Laptop filter", WmiFilterPath = "CN=Filter,DC=test"
+    };
+    var links = new[]
+    {
+        new GpoLinkInfo { GpoId = id, GpoName = "Example",
+            TargetName = "Students", TargetDn = "OU=Students,DC=test,DC=example",
+            TargetType = "OU", Order = 1, Enabled = true, Enforced = false,
+            BlockInheritance = true },
+        new GpoLinkInfo { GpoId = id, GpoName = "Example",
+            TargetName = "test.example", TargetDn = "DC=test,DC=example",
+            TargetType = "Domain", Order = 2, Enabled = false, Enforced = false },
+        new GpoLinkInfo { GpoId = Guid.NewGuid(), GpoName = "Different",
+            TargetName = "Unrelated", TargetType = "OU", Enabled = true }
+    };
+    var preview = GpoImpactPreviewService.Build(gpo, links,
+        "test.example", "dc.test.example", inventoryComplete: true);
+    Assert(preview.DirectLinks.Count == 2 &&
+        preview.EnabledLinks == 1 && preview.DisabledLinks == 1,
+        "Only direct links belonging to selected GPO may be counted.");
+    Assert(preview.ToText().Contains("NOT effective application") &&
+        preview.WmiEvidence.Contains("not evaluated", StringComparison.OrdinalIgnoreCase),
+        "Link assignment and unevaluated WMI must not be mistaken for effective RSoP.");
+    Assert(preview.GpoSections.Contains("User disabled", StringComparison.Ordinal),
+        "GPO section enablement must be surfaced.");
+    var incomplete = GpoImpactPreviewService.Build(gpo,
+        Array.Empty<GpoLinkInfo>(), "test.example", "dc.test.example", false);
+    Assert(incomplete.Summary.Contains("INCOMPLETE"),
+        "Failed link inventory must never be reported as zero targets.");
+}
+
+
+static void TestSelectiveSecurityRecovery()
+{
+    var root = Path.Combine(Path.GetTempPath(), "GPOSE-selective-" + Guid.NewGuid().ToString("N"));
+    var id = Guid.NewGuid();
+    var backupId = Guid.NewGuid();
+    var gpo = new GpoInfo { Id = id, DisplayName = "Test Policy",
+        DomainName = "test.example", ComputerEnabled = true, UserEnabled = true };
+    var backup = new GpoBackupInfo { GpoId = id, BackupId = backupId,
+        DomainName = "test.example", DisplayName = "Test Policy",
+        BackupDirectory = root };
+    var path = Path.Combine(root, backupId.ToString("B").ToUpperInvariant(),
+        "DomainSysvol", "GPO", "Machine", "Microsoft", "Windows NT", "SecEdit", "GptTmpl.inf");
+    var originalConnection = DomainConnectionState.Profile;
+    try
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        var backupTemplate = System.Text.Encoding.UTF8.GetBytes(
+            "[Version]\r\nSignature=\"$CHICAGO$\"\r\n[Event Audit]\r\nAuditLogonEvents = 3\r\n");
+        File.WriteAllBytes(path, backupTemplate);
+        DomainConnectionState.SetProfile(
+            DomainConnectionProfile.CurrentSession("test.example", "dc.test.example"));
+        var currentPath = @"\\dc.test.example\SYSVOL\test.example\Policies\" +
+            id.ToString("B") + @"\Machine\Microsoft\Windows NT\SecEdit\GptTmpl.inf";
+        var currentSource = SecurityTemplateSourceReader.Parse(
+            System.Text.Encoding.UTF8.GetBytes(
+                "[Version]\r\nSignature=\"$CHICAGO$\"\r\n[Event Audit]\r\nAuditLogonEvents = 1\r\n"),
+            id, "Test Policy", currentPath, new string('A', 64));
+        Assert(currentSource.IsComplete,
+            "Current test security source should parse cleanly.");
+        var live = new RealSettingsScanResult(id, "Test Policy",
+            "test.example", "dc.test.example", DateTimeOffset.Now,
+            currentSource.Rows, new[]
+            {
+                new RealSettingsFileEvidence(currentPath, "Read",
+                    currentSource.Rows.Count, new string('A', 64), "Synthetic test")
+            });
+        var plan = GpoSelectiveRecoveryService.Inspect(backup, gpo, live);
+        Assert(plan.Candidates.Count == 1 &&
+            plan.Candidates[0].CurrentValue == 1 &&
+            plan.Candidates[0].BackupValue == 3,
+            "Only changed, recognized, existing source key should be recoverable.");
+        GpoSelectiveRecoveryService.EnsureBackupUnchanged(plan);
+        try
+        {
+            GpoSelectiveRecoveryService.Inspect(
+                new GpoBackupInfo { GpoId = Guid.NewGuid(), BackupId = backupId,
+                    DomainName = backup.DomainName, BackupDirectory = root },
+                gpo, live);
+            throw new InvalidOperationException("Different GPO backup was accepted.");
+        }
+        catch (InvalidOperationException) { }
+        File.AppendAllText(path, "\r\n; Concurrent change");
+        try
+        {
+            GpoSelectiveRecoveryService.EnsureBackupUnchanged(plan);
+            throw new InvalidOperationException("Modified backup was accepted.");
+        }
+        catch (IOException) { }
+    }
+    finally
+    {
+        DomainConnectionState.SetProfile(originalConnection);
+        try { Directory.Delete(root, recursive: true); } catch { }
+    }
+}
+
+
+static void TestGpoEvidenceArchive()
+{
+    var folder = Path.Combine(Path.GetTempPath(),
+        "GPOSE-evidence-" + Guid.NewGuid().ToString("N"));
+    var path = Path.Combine(folder, "report.zip");
+    try
+    {
+        var id = Guid.NewGuid();
+        var gpo = new GpoInfo
+        {
+            Id = id, DisplayName = "Test GPO", DomainName = "test.example",
+            ComputerEnabled = true, UserEnabled = true
+        };
+        var record = new RealSettingRecord
+        {
+            GpoId = id, GpoName = gpo.DisplayName, Scope = "Computer",
+            Category = "Registry policy (source file)", SettingName = "FormulaTest",
+            Value = "=2+2", SourceFile = "Registry.pol",
+            SourceSha256 = new string('B', 64)
+        };
+        var sources = new RealSettingsScanResult(id, gpo.DisplayName,
+            "test.example", "dc.test.example", DateTimeOffset.Now,
+            new[] { record }, new[]
+            {
+                new RealSettingsFileEvidence("Registry.pol", "Read", 1,
+                    record.SourceSha256, "synthetic")
+            });
+        var health = new GpoConsistencyReport(gpo.DisplayName, id,
+            "test.example", "dc.test.example", DateTimeOffset.Now,
+            new[] { new GpoConsistencyFinding("GPT.INI", "Pass", "synthetic") });
+        var impact = GpoImpactPreviewService.Build(gpo,
+            Array.Empty<GpoLinkInfo>(), "test.example", "dc.test.example", true);
+
+        GpoEvidenceArchiveService.Export(path, gpo, sources, health, impact,
+            "<GPO>synthetic</GPO>");
+        using var zip = System.IO.Compression.ZipFile.OpenRead(path);
+        var names = zip.Entries.Select(entry => entry.FullName).ToHashSet(
+            StringComparer.Ordinal);
+        foreach (var expected in new[]
+        {
+            "README.txt", "sources.json", "settings.csv", "gpmc-report.xml",
+            "health.txt", "impact.txt", "sha256sums.txt", "manifest.json"
+        })
+            Assert(names.Contains(expected), "Evidence ZIP is missing " + expected);
+
+        string Read(string filename)
+        {
+            using var input = zip.GetEntry(filename)!.Open();
+            using var reader = new StreamReader(input);
+            return reader.ReadToEnd();
+        }
+
+        Assert(Read("settings.csv").Contains("'=2+2"),
+            "CSV exported setting must be neutralized against spreadsheet formulas.");
+        Assert(Read("manifest.json").Contains("\"CompleteDomainEffectiveRsop\": false") &&
+            Read("manifest.json").Contains("ContentSha256"),
+            "Manifest must record non-RSoP scope and SHA-256 evidence.");
+        Assert(Read("sha256sums.txt").Contains("sources.json"),
+            "Evidence source checksums must be included.");
+
+        try
+        {
+            GpoEvidenceArchiveService.Export(Path.Combine(folder, "bad.zip"),
+                new GpoInfo { Id = Guid.NewGuid(), DomainName = "test.example" },
+                sources, health, impact, null);
+            throw new InvalidOperationException("Different GPO evidence was mixed.");
+        }
+        catch (InvalidOperationException) { }
+    }
+    finally
+    {
+        try { Directory.Delete(folder, recursive: true); } catch { }
+    }
+}
+
+
+static void TestGppXmlEvidence()
+{
+    var source = System.Text.Encoding.UTF8.GetBytes(
+        "<Drives><Drive name=\"H:\" uid=\"{A}\" disabled=\"0\">" +
+        "<Properties action=\"U\" path=\"\\\\fileserver\\home\" " +
+        "cpassword=\"DO_NOT_DISCLOSE\" apiToken=\"EXPOSE_TOKEN\" " +
+        "privateKey=\"EXPOSE_KEY\"/>" +
+        "<Filters><FilterGroup name=\"Students\"/></Filters>" +
+        "</Drive></Drives>");
+    var parsed = GppXmlSourceReader.Parse(source, Guid.NewGuid(), "Test",
+        "User", "Drives.xml", new string('A', 64));
+    Assert(parsed.IsComplete && parsed.Rows.Count == 1,
+        "A single GPP Drive item should be projected from stored XML.");
+    Assert(parsed.Rows[0].Value.Contains("fileserver") &&
+        !parsed.Rows[0].Value.Contains("DO_NOT_DISCLOSE") &&
+        !parsed.Rows[0].Value.Contains("EXPOSE_TOKEN") &&
+        !parsed.Rows[0].Value.Contains("EXPOSE_KEY") &&
+        parsed.Rows[0].Value.Contains("[REDACTED IN EVIDENCE]") &&
+        parsed.Rows[0].Evidence.Contains("NOT evaluated"),
+        "Stored properties should be visible, but passwords and ILT must not leak or be inferred.");
+    var malicious = GppXmlSourceReader.Parse(
+        System.Text.Encoding.UTF8.GetBytes(
+            "<!DOCTYPE foo [<!ENTITY x SYSTEM \"file:///C:/secret\">]>" +
+            "<Drives>&x;</Drives>"),
+        Guid.NewGuid(), "Test", "User", "Drives.xml", "00");
+    Assert(!malicious.IsComplete && malicious.Rows.Count == 0,
+        "DTD and external entity references must be rejected.");
+    Assert(!GppXmlSourceReader.Parse(
+        new byte[GppXmlSourceReader.MaxFileBytes + 1],
+        Guid.NewGuid(), "Test", "User", "Drives.xml", "00").IsComplete,
+        "Oversized GPP XML must fail closed.");
+}
+
+
+static void TestCrossDcVersionEvidence()
+{
+    var dcs = GpoCrossDcConsistencyService.ValidateControllers(
+        "dc01.test.example,\ndc02.test.example", "test.example");
+    Assert(dcs.Length == 2 && dcs[0] == "dc01.test.example",
+        "Explicit DC host list must preserve distinct named controllers.");
+    foreach (var bad in new[]
+    {
+        "test.example", @"\\dc01.test.example", "dc01.test.example/../x",
+        "dc01..test.example"
+    })
+    {
+        try
+        {
+            GpoCrossDcConsistencyService.ValidateControllers(bad, "test.example");
+            throw new InvalidOperationException("Invalid DC name was accepted: " + bad);
+        }
+        catch (ArgumentException) { }
+    }
+    var versionOk = new[]
+    {
+        new GpoDcVersionEvidence("dc01.test.example", 65538, 65538,
+            new string('A', 64), "test", "test"),
+        new GpoDcVersionEvidence("dc02.test.example", 65538, 65538,
+            new string('A', 64), "test", "test")
+    };
+    Assert(GpoCrossDcConsistencyService.Assess(versionOk).Contains("VERSION MATCH") &&
+        GpoCrossDcConsistencyService.Assess(versionOk).Contains("NOT a full"),
+        "Matching version numbers on two DCs are evidence, not full replication proof.");
+    Assert(GpoCrossDcConsistencyService.Assess(
+        new[] { versionOk[0], versionOk[1] with { GptVersion = 65537 } })
+        .Contains("MISMATCH"),
+        "A DC-local mismatch must be reported before cross-DC equality.");
+    Assert(GpoCrossDcConsistencyService.Assess(
+        new[] { versionOk[0], versionOk[1] with { GptVersion = null } })
+        .Contains("INCOMPLETE"),
+        "Unavailable DC version must never be treated as consistent.");
+}
+
+
+static void TestSafeRegistryBooleanSecurityEdit()
+{
+    var target = @"MACHINE\Software\Policies\Example\EnableFeature";
+    var original = "[Version]\r\nsignature=\"$CHICAGO$\"\r\n" +
+        "[Registry Values]\r\n" + target + "=4,1\r\n" +
+        @"MACHINE\Software\Policies\Example\Unrelated=4,0" + "\r\n";
+    var changed = SecurityTemplateEditRules.ChangeExistingRegistryBoolean(
+        original, target, expectedOld: true, proposed: false);
+    Assert(changed.Contains(target + "=4,0\r\n") &&
+        changed.Contains("Unrelated=4,0\r\n") &&
+        changed.StartsWith("[Version]\r\n", StringComparison.Ordinal),
+        "Only the exactly matched DWORD entry should be updated.");
+    foreach (var invalid in new[]
+    {
+        original.Replace(target + "=4,1", target + "=3,1"),
+        original.Replace(target + "=4,1", target + "=4,2"),
+        original.Replace(target + "=4,1", target + "=4,0"),
+        original.Replace(target + "=4,1", ""),
+        original + target + "=4,1\r\n"
+    })
+    {
+        try
+        {
+            SecurityTemplateEditRules.ChangeExistingRegistryBoolean(
+                invalid, target, expectedOld: true, proposed: false);
+            throw new InvalidOperationException(
+                "Malformed or ambiguous DWORD was permitted.");
+        }
+        catch (InvalidDataException) { }
+    }
+}
+
+
+static void TestRequiredSecurityPreviewGuard()
+{
+    var savedWriteMode = EditingGuard.IsEnabled;
+    var savedOptionalPreviewMode = ChangePreviewGuard.IsEnabled;
+    try
+    {
+        EditingGuard.SetEnabled(true);
+        ChangePreviewGuard.IsEnabled = false;
+        // The CoreTests console has no WPF Application/visible preview window.
+        // A required preview must fail closed, even if optional previews are off.
+        try
+        {
+            ChangePreviewGuard.ConfirmRequired(new ChangePreviewRequest(
+                "Security setting", "Synthetic GPO", "0", "1"));
+            throw new InvalidOperationException("Required security preview was bypassed.");
+        }
+        catch (InvalidOperationException ex)
+        {
+            Assert(ex.Message.Contains("preview", StringComparison.OrdinalIgnoreCase),
+                "Headless security edit must fail specifically due to missing preview.");
+        }
+    }
+    finally
+    {
+        ChangePreviewGuard.IsEnabled = savedOptionalPreviewMode;
+        EditingGuard.SetEnabled(savedWriteMode);
     }
 }
