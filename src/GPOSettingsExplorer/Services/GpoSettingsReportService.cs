@@ -19,6 +19,12 @@ public sealed record GpoSettingsReport(
 
 public static class GpoSettingsReportService
 {
+    private sealed class RenderBudget
+    {
+        public int Remaining;
+        public bool Limited;
+    }
+
     public const int MaxXmlCharacters = 16 * 1024 * 1024;
     public const int MaxXmlNodes = 30000;
     private const int MaxRenderedNodes = 3200;
@@ -48,18 +54,17 @@ public static class GpoSettingsReportService
             throw new InvalidDataException(
                 "GPMC report exceeds the 30,000-element display cap. Open it in GPMC.");
 
-        var remaining = MaxRenderedNodes;
-        var limited = false;
+        var budget = new RenderBudget { Remaining = MaxRenderedNodes };
         var sections = new List<GpoReportNode>();
-        sections.Add(General(gpo, root, ref remaining, ref limited));
-        sections.Add(Scope(gpo, root, "Computer", ref remaining, ref limited));
-        sections.Add(Scope(gpo, root, "User", ref remaining, ref limited));
+        sections.Add(General(gpo, root, budget));
+        sections.Add(Scope(gpo, root, "Computer", budget));
+        sections.Add(Scope(gpo, root, "User", budget));
         return new GpoSettingsReport(
-            gpo.DisplayName, DateTimeOffset.UtcNow, sections, limited, count);
+            gpo.DisplayName, DateTimeOffset.UtcNow, sections, budget.Limited, count);
     }
 
     private static GpoReportNode General(
-        GpoInfo gpo, XElement root, ref int remaining, ref bool limited)
+        GpoInfo gpo, XElement root, RenderBudget budget)
     {
         var details = "GPO: " + gpo.DisplayName +
             "\nDomain: " + gpo.DomainName +
@@ -79,7 +84,7 @@ public static class GpoSettingsReportService
             links.Length == 0
                 ? "GPMC XML reports no direct LinksTo items. This is not a domain-wide absence check."
                 : "Links observed by the GPMC report at capture time.",
-            links.Select(l => XmlNode(l, ref remaining, ref limited, 0)).ToArray()));
+            links.Select(l => XmlNode(l, budget, 0)).ToArray()));
         children.Add(new("WMI Filtering",
             string.IsNullOrWhiteSpace(gpo.WmiFilterName)
                 ? "No assigned WMI filter reported by current GPO inventory."
@@ -89,7 +94,7 @@ public static class GpoSettingsReportService
         var trustees = descriptor?.Descendants().Where(e => Eq(e, "TrusteePermissions"))
             .Take(200).ToArray() ?? Array.Empty<XElement>();
         var trusteeNodes = trustees.Select(t =>
-            XmlNode(t, ref remaining, ref limited, 0)).ToArray();
+            XmlNode(t, budget, 0)).ToArray();
         children.Add(new("Security Filtering",
             "Potential permission evidence from GPMC XML. Apply Group Policy " +
             "and Read access must be evaluated against actual AD and SYSVOL ACL; " +
@@ -103,7 +108,7 @@ public static class GpoSettingsReportService
     }
 
     private static GpoReportNode Scope(GpoInfo gpo, XElement root, string scopeName,
-        ref int remaining, ref bool limited)
+        RenderBudget budget)
     {
         var enabled = scopeName == "Computer" ? gpo.ComputerEnabled : gpo.UserEnabled;
         var title = scopeName + " Configuration (" + (enabled ? "Enabled" : "Disabled") + ")";
@@ -120,7 +125,7 @@ public static class GpoSettingsReportService
         foreach (var ext in scope.Descendants().Where(e => Eq(e, "Extension") &&
                      e.Parent is not null && Eq(e.Parent, "ExtensionData")))
         {
-            if (remaining <= 0) { limited = true; break; }
+            if (budget.Remaining <= 0) { budget.Limited = true; break; }
             var type = ext.Attributes().FirstOrDefault(a =>
                 a.Name.LocalName.Equals("type", StringComparison.OrdinalIgnoreCase))?.Value ?? "";
             if (type.Contains(':'))
@@ -133,12 +138,12 @@ public static class GpoSettingsReportService
                 bucket[group] = sections = new List<GpoReportNode>();
 
             if (type.Equals("SecuritySettings", StringComparison.OrdinalIgnoreCase))
-                sections.Add(SecurityExtension(ext, ref remaining, ref limited));
+                sections.Add(SecurityExtension(ext, budget));
             else
                 sections.Add(new GpoReportNode(Display(type),
                     "GPMC source extension: " + type + ". Values are stored GPO source, not RSoP.",
                     ext.Elements().Take(200).Select(node =>
-                        XmlNode(node, ref remaining, ref limited, 0)).ToArray()));
+                        XmlNode(node, budget, 0)).ToArray()));
         }
 
         static IReadOnlyList<GpoReportNode> Assemble(
@@ -160,7 +165,7 @@ public static class GpoSettingsReportService
     }
 
     private static GpoReportNode SecurityExtension(
-        XElement ext, ref int remaining, ref bool limited)
+        XElement ext, RenderBudget budget)
     {
         var known = ext.Descendants().Where(e =>
             KerberosPolicyMetadataService.TryDescribeGpmcNode(e, out _)).ToArray();
@@ -189,7 +194,7 @@ public static class GpoSettingsReportService
             items.Add(new GpoReportNode("Other Security Settings",
                 "Other extension values are grouped without inventing their MMC section.",
                 other.Take(200).Select(e =>
-                    XmlNode(e, ref remaining, ref limited, 0)).ToArray()));
+                    XmlNode(e, budget, 0)).ToArray()));
         return new GpoReportNode("Security Settings",
             "Policies > Windows Settings > Security Settings. " +
             "Native GPMC security data is not a Registry source.",
@@ -197,11 +202,11 @@ public static class GpoSettingsReportService
     }
 
     private static GpoReportNode XmlNode(
-        XElement element, ref int remaining, ref bool limited, int depth)
+        XElement element, RenderBudget budget, int depth)
     {
-        if (remaining-- <= 0 || depth >= MaxDepth)
+        if (budget.Remaining-- <= 0 || depth >= MaxDepth)
         {
-            limited = true;
+            budget.Limited = true;
             return new GpoReportNode("[additional nested data omitted]",
                 "Read-only display limit reached; inspect the original GPMC report.",
                 Array.Empty<GpoReportNode>());
@@ -216,9 +221,9 @@ public static class GpoSettingsReportService
         if (nameAttr is not null && !string.IsNullOrWhiteSpace(nameAttr.Value))
             label += ": " + Cut(nameAttr.Value, 130);
         var children = element.Elements().Take(180).Select(e =>
-            XmlNode(e, ref remaining, ref limited, depth + 1)).ToArray();
+            XmlNode(e, budget, depth + 1)).ToArray();
         if (element.Elements().Skip(180).Any())
-            limited = true;
+            budget.Limited = true;
         return new GpoReportNode(label, XmlDetails(element), children);
     }
 
