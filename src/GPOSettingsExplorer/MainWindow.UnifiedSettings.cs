@@ -32,7 +32,8 @@ public partial class MainWindow
             "All sources",
             "Configured (GPMC)",
             "ADMX templates",
-            "MMC observed"
+            "MMC observed",
+            "Native GPT files"
         };
         UnifiedStateCombo.ItemsSource = new[]
         {
@@ -90,11 +91,19 @@ public partial class MainWindow
             var admx = _admxPolicies?.ToArray();
             var mmc = _mmcInventoryResult?.Rows.ToArray();
             var mmcCoverage = _mmcInventoryResult?.Coverage ?? "";
+            var server = DomainConnectionState.GetServerFor(_domainContext?.DomainName ?? "");
+            var native = _nativeSourceResult is not null &&
+                _nativeSourceResult.PinnedServer.Equals(
+                    server, StringComparison.OrdinalIgnoreCase)
+                ? _nativeSourceResult : null;
+            var nativeRows = native?.Rows.ToArray();
+            var nativeCoverage = native?.Coverage ?? "";
             var target = GetSelectedUnifiedGpoFilter();
 
             var result = await Task.Run(() =>
                 UnifiedSettingsCatalogService.Build(
-                    gpmc, admx, mmc, target, mmcCoverage));
+                    gpmc, admx, mmc, target, mmcCoverage,
+                    nativeRows, nativeCoverage));
 
             if (version != Interlocked.Read(ref _unifiedBuildVersion))
                 return;
@@ -179,7 +188,8 @@ public partial class MainWindow
         if (source == "Configured (GPMC)" &&
                 row.Kind is not ("Configured" or "GPMC detail") ||
             source == "ADMX templates" && row.Kind != "ADMX template" ||
-            source == "MMC observed" && row.Mmc is null)
+            source == "MMC observed" && row.Mmc is null ||
+            source == "Native GPT files" && row.Native is null)
             return false;
 
         return (UnifiedStateCombo?.SelectedItem as string) switch
@@ -258,6 +268,7 @@ public partial class MainWindow
         UnifiedActionButton.Content = row.IsTechnicalDetail
             ? "View XML details..."
             : row.Kind == "ADMX template" ? "Configure in GPO..."
+            : row.Kind == "Native source" ? "View GPT source..."
             : row.Admx is not null ? "Edit policy..."
             : row.Mmc is { Navigation: "Exact MMC row candidate" }
                 ? "Open exact MMC row..."
@@ -290,6 +301,12 @@ public partial class MainWindow
         {
             MmcInventoryGrid.SelectedItem = observed;
             await OpenSelectedMmcInventoryRowAsync();
+            return;
+        }
+
+        if (row.Native is not null)
+        {
+            ShowNativeSourceRow(row.Native);
             return;
         }
 
