@@ -28,7 +28,7 @@ The builds are self-contained. A separate .NET runtime installation is not requi
 - **All Settings > Advanced analysis... > Client & DC health > Explain why (full evidence)...** combines independent read-only observations for one named computer and explicit User/Computer scope.
 - Logged gpresult identifies whether a GPO was recorded as applied, excluded or unknown on one client. Historical RSoP is never treated as a future-policy prediction.
 - A pinned-DC LDAP probe loads the computer AD object and walks its domain/OU ancestors, interpreting direct and inherited GPO links, link enablement, order, block inheritance and enforced links.
-- Current selected GPO User/Computer section state and bounded recent GroupPolicy Operational event metadata appear alongside the historical RSoP sample.
+- Current selected GPO User/Computer section state and bounded recent GroupPolicy Operational event metadata appear alongside the historical RSoP sample; Event Log ActivityID and event record number are preserved without disclosing event bodies.
 - Every missing RSoP, invalid gPLink, inaccessible client, unknown WMI matching, token/ACL status, site link, loopback setting or CSE result is explicitly marked as unknown. Event IDs are not attributed to this GPO without a matching processing ActivityID.
 - Reports include practical next diagnostic steps without automatically changing any policy, link, ACL, WMI filter or Windows client.
 - Regression tests cover link/path precedence, disabled/enforced behavior, invalid link syntax, missing RSoP, user loopback and misleading event attributions.

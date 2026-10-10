@@ -14,7 +14,7 @@ A recorded gpresult state is the result of the last observed processing, not a s
 
 The AD path reader does NOT derive the applicable Active Directory site and does not evaluate site-level links. It also does not establish target Read+Apply security filtering, nested security-group membership, explicit deny rights, SYSVOL NTFS access, or client-specific WMI results. For User policy the user's account OU and loopback Merge/Replace remain unknown.
 
-Event IDs 4016 and 5016 describe Client Side Extension processing. The summary reports counts and severity but **does not** attribute these events to the selected GPO or to the same processing ActivityID. View the original event in Event Viewer if that correlation is required.
+Event IDs 4016 and 5016 describe Client Side Extension processing. The collector preserves ActivityID and EventRecordID metadata and counts activity groups containing both event types; it **does not** attribute them to the selected GPO or claim successful extension execution. Confirm correlation in original Event Viewer data. View the original event in Event Viewer if that correlation is required.
 
 ## Permissions and communication
 
