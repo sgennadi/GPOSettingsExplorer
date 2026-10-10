@@ -4,6 +4,17 @@
 
 - No unreleased changes yet.
 
+## 0.8.0 - 2026-10-10
+
+- Introduce **Real Settings Engine (phase 1)** as a read-only direct GPO source inspector in **All Settings**, without adding a main tab.
+- The **Read selected GPO files** action reads one explicitly selected GPO from the session-pinned AD domain controller, never all GPOs by default. Files: `Machine/Registry.pol`, `User/Registry.pol` and `Machine/Microsoft/Windows NT/SecEdit/GptTmpl.inf`. No MMC automation, no PowerShell, no registry writing, no changes to AD/SYSVOL.
+- Parse Registry.pol's actual mixed UTF-16LE and binary PReg format (version 1) with bounds, data-type formatting, deletion/operation markers, Unicode and precise partial errors. Do not interpret special `**Del` instructions as effective values.
+- Parse GptTmpl.inf sections conservatively with encoding checks, section names, raw privilege-right, account-policy and security-value evidence. Do not interpret a listed SID/ACL as effective rights on any target.
+- Record source UNC path, file hash (SHA-256), parse coverage, absent/partial/error files and pinned DC identity. Missing optional file never implies Not Configured. An unreadable or malformed file is PARTIAL with diagnostics.
+- Add source-file entries to Unified All Settings with a dedicated filter, clearly labeled read-only capability, and a resizable source-details viewer. The original GPMC, ADMX and MMC catalog remains available; source rows are not silently equated with ADMX configuration or effective RSoP.
+- Add CoreTests for Registry.pol binary DWORD/Unicode/special instructions, truncated/unsupported files, BOM-driven security-template records, unknown encoding and cross-GPO evidence isolation.
+- This is phase 1: Firewall, AppLocker, Software Installation, GPP targeting and other CSE-specific formats still require separate parser modules. Full Windows AuthZ and RSoP computation are NOT claimed. Live test on a nonproduction GPO at YOSH-DC03 remains necessary.
+
 ## 0.7.3 - 2026-10-10
 
 - Fix permission-aware controls where a positive SYSVOL GPT.INI writability check was incorrectly treated as evidence of AD GPO edit permission. Separate matching-token AD rights and SYSVOL evidence; normal GPO settings edits require BOTH. Preserve safe mode and authorization at actual write operations.
