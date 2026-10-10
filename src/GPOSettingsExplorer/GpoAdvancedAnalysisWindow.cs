@@ -91,6 +91,8 @@ public sealed class GpoAdvancedAnalysisWindow : Window
         _status.Foreground = UiStyle.MutedBrush;
         _scope.ItemsSource = new[] { "Computer", "User" };
         _scope.SelectedIndex = 0;
+        if (target is not null)
+            _controllers.Text = DomainConnectionState.GetServerFor(target.DomainName);
 
         var root = new Grid { Margin = new Thickness(10) };
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -187,6 +189,7 @@ public sealed class GpoAdvancedAnalysisWindow : Window
         healthPanel.Children.Add(Label("User:"));
         healthPanel.Children.Add(_user);
         AddAction(healthPanel, "Explain logged GPO", ExplainRsopAsync);
+        AddAction(healthPanel, "Explain why (full evidence)...", ExplainWhyAsync);
         _tabs.Items.Add(health);
 
         var compliance = Tab("Baseline / Intune / GitOps", out var compliancePanel);
@@ -448,6 +451,48 @@ public sealed class GpoAdvancedAnalysisWindow : Window
                "Scope: " + sample.Scope + "\n" +
                "Status: " + sample.Status + "\n" + sample.Details +
                "\nUnknown evidence is not proof that a GPO is blocked.";
+    }
+
+    private async Task<string> ExplainWhyAsync()
+    {
+        var gpo = Target();
+        var computer = _computer.Text.Trim();
+        var scope = (string?)_scope.SelectedItem ?? "Computer";
+        var user = _user.Text.Trim();
+        var lastLogged = await Task.Run(() =>
+            new GpoRsopSampleService().Verify(gpo, computer, scope, user),
+            _lifetime.Token);
+
+        GpoClientScopeReport? location = null;
+        string locationError = "";
+        try
+        {
+            location = await Task.Run(() =>
+                GpoClientScopeProbeService.Inspect(gpo, computer, _lifetime.Token),
+                _lifetime.Token);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            locationError = ex.GetType().Name + ": " + ex.Message;
+            CrashLogService.Write("Explain Why: client AD path", ex);
+        }
+
+        GpoClientEventReport? events = null;
+        string eventError = "";
+        try
+        {
+            events = await GpoClientEventService.CollectAsync(
+                computer, _lifetime.Token);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            eventError = ex.GetType().Name + ": " + ex.Message;
+            CrashLogService.Write("Explain Why: client events", ex);
+        }
+
+        return GpoExplainWhyService.Build(
+            gpo, scope, lastLogged, location, events,
+            locationError, eventError).ToText();
     }
 
     private async Task<string> CompareBaselineAsync()
