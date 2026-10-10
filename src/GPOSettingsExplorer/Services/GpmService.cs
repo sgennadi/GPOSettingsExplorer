@@ -1503,10 +1503,13 @@ public sealed class GpmService
                     ? FindNamedValue(element, "SubcategoryName")
                     : string.Empty;
 
+            // Initialize separately: C# definite assignment cannot prove that
+            // a short-circuited out variable is assigned before the conditional.
+            KerberosPolicyDescriptor kerberosDescriptor = null!;
             var isKerberosPolicy = extensionType.Equals(
                     "SecuritySettings", StringComparison.OrdinalIgnoreCase) &&
                 KerberosPolicyMetadataService.TryDescribeGpmcNode(
-                    element, out var kerberosDescriptor);
+                    element, out kerberosDescriptor);
             var settingName = isKerberosPolicy
                 ? kerberosDescriptor!.DisplayName
                 : !string.IsNullOrWhiteSpace(auditSubcategory)
