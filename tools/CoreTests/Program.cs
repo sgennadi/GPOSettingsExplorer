@@ -36,6 +36,7 @@ var tests = new (string Name, Action Body)[]
     ("MMC inventory skips fragile Scripts snap-ins before automation", TestMmcInventorySnapinSafety),
     ("Unified catalog joins evidence without cross-GPO or false state inference", TestUnifiedSettingsCatalog),
     ("Registry.pol binary parser preserves exact source values and flags malformed data", TestRealSettingsRegistryPol),
+    ("Registry.pol known security namespaces are labeled without claiming applied CSE", TestRegistrySourceClassification),
     ("Security-template parser reports source values and invalid encodings safely", TestRealSettingsSecurityTemplate),
     ("Unified catalog never interprets source-file values as effective RSoP", TestRealSettingsUnifiedEvidence),
     ("Cross-DC GPO version evidence refuses aliases and incomplete comparisons", TestCrossDcVersionEvidence),
@@ -2677,4 +2678,26 @@ static void TestOfflineStartupSwitch()
            CommandLineOptions.Current.DomainController == "dc01.test.example",
         "Connected-session startup must retain existing behavior.");
     CommandLineOptions.Initialize(Array.Empty<string>());
+}
+
+
+static void TestRegistrySourceClassification()
+{
+    Assert(RegistryPolicySourceClassifier.Classify(
+        @"SOFTWARE\Policies\Microsoft\WindowsFirewall\DomainProfile", false)
+            .StartsWith("Windows Firewall", StringComparison.Ordinal) &&
+        RegistryPolicySourceClassifier.Classify(
+        @"Software\Policies\Microsoft\Windows\SrpV2\Exe", false)
+            .StartsWith("AppLocker", StringComparison.Ordinal) &&
+        RegistryPolicySourceClassifier.Classify(
+        @"MACHINE\Software\Policies\Microsoft\Edge", false)
+            .StartsWith("Microsoft Edge", StringComparison.Ordinal),
+        "Known registry namespaces must identify the correct stored-source family.");
+    Assert(RegistryPolicySourceClassifier.Classify(
+        @"Software\Policies\Microsoft\WindowsFirewallOther", false) ==
+            "Registry policy (source file)" &&
+        RegistryPolicySourceClassifier.Classify(
+        @"Software\Policies\Microsoft\WindowsFirewall\DomainProfile", true) ==
+            "Registry policy operations",
+        "Prefix collisions and delete instructions must never be classified as configured CSE values.");
 }
