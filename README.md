@@ -14,7 +14,7 @@ Download the latest portable build from:
 
 **[GitHub Releases](https://github.com/sgennadi/GPOSettingsExplorer/releases/latest)**
 
-Current release: **v0.7.3**
+Current release: **v0.8.0**
 
 Available packages:
 
@@ -22,6 +22,14 @@ Available packages:
 - `GPOSettingsExplorer-win-arm64-portable.zip` — Windows on ARM64.
 
 The builds are self-contained. A separate .NET runtime installation is not required.
+
+### Real Settings Engine, phase 1 (0.8.0)
+
+In **All Settings**, select a reference GPO and choose **Read GPO files...**. The application reads three supported files directly from **one pinned SYSVOL domain controller** without launching MMC or writing GPOs: `Machine/Registry.pol`, `User/Registry.pol`, and `Machine/Microsoft/Windows NT/SecEdit/GptTmpl.inf`. No PowerShell is used. See **Advanced sources and diagnostics > GPT source files (read-only)** for decoded values and per-file coverage/errors.
+
+A strict bounded binary PReg parser decodes DWORD, QWORD, Unicode string, multi-string, binary and deletion-directive data; a bounded, encoding-aware INF reader retains each security-template record, including duplicate entries and source metadata. Corrupt, changing, oversized, inaccessible and missing files are reported instead of silently interpreted. Reading is on-demand for **one selected GPO**, not an automatic walk of every GPO in the domain.
+
+Parsed records feed **Unified Settings** as explicit **GPT file** evidence. A GPMC configured row is linked to Registry.pol only by an **unambiguous exact GPO ID + Computer/User scope + registry key + value name**. Unmatched source records remain separate **view-only** rows and can be searched/exported. A stored file value is not proof of effective RSoP, and an absent file/entry is never proof of Not Configured. This first stage is **read-only**: the existing guarded editors remain responsible for supported changes.
 
 ### Permission and comparison accuracy (0.7.3)
 
