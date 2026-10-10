@@ -4,6 +4,17 @@
 
 - No unreleased changes yet.
 
+## 1.6.0 - 2026-10-10
+
+- Add dedicated Advanced Analysis GitOps tab with explicit local export, baseline comparison, redacted review files, certificate discovery, signed Approve/Reject, independent signature verification and DPAPI encrypted source inspection.
+- Bind signed X.509 RSA/ECDSA decisions to a canonical SHA-256 digest of the complete review request including both source capture times. Reject mismatched request digests, modified signatures and untrusted certificate SHA-256 pins.
+- Keep all signed decisions non-deploying; do not connect Git automatically or make any GPO/AD/SYSVOL changes. Signed review is not certificate chain/revocation or AD authority verification.
+- Block approvals when either fingerprint snapshot is partial, contains redacted/truncated values, is empty or includes no observed changes.
+- Encrypt optional confidential source JSON using Windows DPAPI CurrentUser with no plaintext staging, bounded input size and schema/content-integrity validation on local inspect. Never upload these files to Git.
+- Add GitOps/data safety ignore patterns, a reviewer guide and regression tests for private fields, DPAPI and certificate signatures.
+- Windows CI build and isolated unit tests cannot verify organizational PKI configuration, AD permissions, SYSVOL client behavior, certificate revocation or effective client RSoP.
+
+
 ## 1.5.0 - 2026-10-10
 
 - Add bounded Microsoft Graph /beta Intune configurationPolicies pagination, with up to 10 pages/500 metadata records and visible incomplete inventory.

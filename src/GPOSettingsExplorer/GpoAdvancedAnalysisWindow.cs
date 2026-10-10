@@ -12,7 +12,7 @@ namespace GPOSettingsExplorer;
 /// analysis. Every live/network operation is operator initiated.
 /// No automatic GPO modifications, Intune writes or public data uploads.
 /// </summary>
-public sealed class GpoAdvancedAnalysisWindow : Window
+public sealed partial class GpoAdvancedAnalysisWindow : Window
 {
     private readonly GpoInfo? _target;
     private RealSettingsScanResult? _active;
@@ -193,13 +193,13 @@ public sealed class GpoAdvancedAnalysisWindow : Window
         AddAction(healthPanel, "Explain why (full evidence)...", ExplainWhyAsync);
         _tabs.Items.Add(health);
 
-        var compliance = Tab("Baseline / Intune / GitOps", out var compliancePanel);
+        var compliance = Tab("Baseline / Intune", out var compliancePanel);
         AddAction(compliancePanel, "Compare baseline JSON...", CompareBaselineAsync);
         AddAction(compliancePanel, "Compare reference GPMC baseline...", ReferenceBaselineAsync);
         AddAction(compliancePanel, "Load reviewed CSP map...", LoadCspMappingAsync);
         AddAction(compliancePanel, "Assess Intune readiness", IntuneReadinessAsync);
-        AddAction(compliancePanel, "Export GitOps fingerprints", GitOpsAsync);
         _tabs.Items.Add(compliance);
+        _tabs.Items.Add(SetupGitOpsTab());
 
         var cloud = Tab("Optional cloud & local AI", out var cloudPanel);
         cloudPanel.Children.Add(Label("Tenant GUID:"));

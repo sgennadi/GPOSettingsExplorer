@@ -53,6 +53,8 @@ var tests = new (string Name, Action Body)[]
     ("GPP legacy password and scripts scanner redacts sensitive values", TestAdvancedSecurityScanner),
     ("Exact baseline and Policy CSP mappings distinguish missing evidence", TestAdvancedBaselineAndMapping),
     ("GitOps manifests omit raw domain and registry values", TestAdvancedGitopsPrivacy),
+    ("GitOps comparisons enforce same HMAC identity and signed approvals", TestGitOpsReviewApproval),
+    ("Protected GPO source DPAPI round trip never stages plaintext", TestProtectedGpoSource),
     ("Client GroupPolicy XML metadata rejects event body disclosure", TestAdvancedClientEvents),
     ("Local AI prompt uses only redacted categories/counts", TestAdvancedAiPrivacy),
     ("Cross-DC file evidence exposes mismatches and unknown data", TestAdvancedCrossDcFingerprints),
@@ -3285,4 +3287,164 @@ static void TestIntuneMappingSafety()
     Assert(ambiguous.MappingMatches == 0 &&
            ambiguous.Candidates.Single().Status == "Ambiguous",
         "Duplicate CSP mappings must be flagged, not selected arbitrarily.");
+}
+
+
+static void TestGitOpsReviewApproval()
+{
+    const string secret = "PrivateSecret_OnlyLocal_DoNotPublish";
+    var id = Guid.NewGuid();
+    var record = new RealSettingRecord
+    {
+        GpoId = id, GpoName = "Private", Scope = "Computer",
+        Category = "Administrative Templates", SettingName = "UpdatePassword",
+        RegistryKey = @"SOFTWARE\private\secret", RegistryValue = "Hidden",
+        Value = "old", ValueType = "REG_SZ", State = "Stored registry value"
+    };
+    RealSettingsScanResult Scan(RealSettingRecord row) =>
+        new(id, "Private", "private.local", "OFFLINE", DateTimeOffset.UtcNow,
+            new[] { row },
+            new[] { new RealSettingsFileEvidence("Registry.pol", "Read", 1,
+                new string('A', 64), "synthetic") });
+
+    var before = GpoGitOpsExportService.Capture(Scan(record));
+    var after = GpoGitOpsExportService.Capture(Scan(record with { Value = secret }));
+    var request = GpoGitOpsReviewService.CreateRequest(before, after);
+    Assert(GpoGitOpsReviewService.CanApprove(request) &&
+           request.Changes.Count == 1 && request.Changes[0].Kind == "Changed",
+        "Complete, same-GPO value changes should make exactly one review candidate.");
+    var json = System.Text.Json.JsonSerializer.Serialize(request);
+    Assert(!json.Contains(secret) &&
+           !json.Contains("private.local") &&
+           !json.Contains("UpdatePassword") &&
+           !json.Contains("SOFTWARE"),
+        "Git-ready approval request must never contain raw identifiers or values.");
+
+    var folder = Path.Combine(Path.GetTempPath(), "gposes-gitops-" +
+        Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(folder);
+    try
+    {
+        var manifestFile = Path.Combine(folder, "manifest.json");
+        var requestFile = Path.Combine(folder, "review.json");
+        GpoGitOpsReviewService.SaveJson(manifestFile, before);
+        GpoGitOpsReviewService.SaveJson(requestFile, request);
+        var loaded = GpoGitOpsReviewService.LoadRequest(requestFile);
+        Assert(GpoGitOpsReviewService.RequestSha256(loaded) ==
+               GpoGitOpsReviewService.RequestSha256(request) &&
+               GpoGitOpsReviewService.LoadManifest(manifestFile).KeyId ==
+                   before.KeyId,
+            "Bounded export/load must retain canonical signature and HMAC identities.");
+
+        Assert(!GpoGitOpsReviewService.CanApprove(request with { CandidatePartial = true }),
+            "Incomplete captured source cannot be approved.");
+
+        ExpectFailure(() => GpoGitOpsReviewService.CreateRequest(before,
+                after with { KeyId = new string('1', 16) }),
+            "Comparing unrelated HMAC key scopes must fail closed.");
+        ExpectFailure(() => GpoGitOpsReviewService.CreateRequest(before,
+                after with { DomainIdentityHmacSha256 = new string('2', 64) }),
+            "Comparing different domain identities must fail closed.");
+        ExpectFailure(() => GpoGitOpsReviewService.ValidateManifest(after with
+            {
+                Entries = new[] { after.Entries[0], after.Entries[0] }
+            }), "Duplicate HMAC identities must be rejected.");
+        var partialReview = GpoGitOpsReviewService.CreateRequest(before,
+            after with { PartialCoverage = true });
+        Assert(!GpoGitOpsReviewService.CanApprove(partialReview),
+            "Partial evidence must block approval rather than pretend completeness.");
+    }
+    finally
+    {
+        try { Directory.Delete(folder, true); } catch { }
+    }
+
+    using var rsa = System.Security.Cryptography.RSA.Create(2048);
+    var req = new System.Security.Cryptography.X509Certificates.CertificateRequest(
+        "CN=GpoGitopsTest", rsa,
+        System.Security.Cryptography.HashAlgorithmName.SHA256,
+        System.Security.Cryptography.RSASignaturePadding.Pkcs1);
+    using var cert = req.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1),
+        DateTimeOffset.UtcNow.AddDays(1));
+    var digest = GpoGitOpsReviewService.RequestSha256(request);
+    var when = DateTimeOffset.UtcNow;
+    var toSign = System.Text.Encoding.UTF8.GetBytes(
+        "gposes-gitops-approval-v1\n" + digest + "\nApprove\n" +
+        when.ToUniversalTime().ToString("O"));
+    var signature = rsa.SignData(toSign,
+        System.Security.Cryptography.HashAlgorithmName.SHA256,
+        System.Security.Cryptography.RSASignaturePadding.Pkcs1);
+    var pin = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(cert.RawData));
+    var receipt = new GpoGitOpsSignedDecision(
+        "gposes-gitops-approval-v1", digest, "Approve", when,
+        pin, Convert.ToBase64String(cert.RawData), Convert.ToBase64String(signature));
+    Assert(GpoGitOpsReviewService.Verify(request, receipt, pin).Contains("VERIFIED"),
+        "An exact RSA signature with a separately pinned certificate must verify.");
+    ExpectFailure(() => GpoGitOpsReviewService.Verify(request,
+            receipt with { SignatureBase64 = Convert.ToBase64String(new byte[signature.Length]) },
+            pin), "Tampered signature must fail.");
+    ExpectFailure(() => GpoGitOpsReviewService.Verify(request, receipt,
+            new string('F', 64)), "Untrusted reviewer certificate must fail.");
+    ExpectFailure(() => GpoGitOpsReviewService.Verify(
+            request with { CandidateRecords = request.CandidateRecords + 1 },
+            receipt, pin), "Signed approvals must be bound to exact request bytes.");
+}
+
+static void TestProtectedGpoSource()
+{
+    var id = Guid.NewGuid();
+    const string secret = "DPAPI_PRIVATE_SECRET_SHOULD_NEVER_BE_PLAINTEXT_ON_DISK";
+    var record = new RealSettingRecord
+    {
+        GpoId = id, GpoName = "Secret policy", Scope = "Computer",
+        Category = "Security", SettingName = "Sensitive record",
+        Value = secret
+    };
+    var source = new RealSettingsScanResult(id, "Secret policy",
+        "confidential.example", "offline", DateTimeOffset.UtcNow,
+        new[] { record },
+        new[] { new RealSettingsFileEvidence("local", "Read", 1,
+            new string('F', 64), "synthetic") });
+    var path = Path.Combine(Path.GetTempPath(),
+        "gposes-confidential-" + Guid.NewGuid().ToString("N") + ".gposesdpapi");
+    try
+    {
+        GpoProtectedExportService.Export(path, source);
+        var ciphertext = File.ReadAllText(path);
+        Assert(!ciphertext.Contains(secret) &&
+               !ciphertext.Contains("confidential.example") &&
+               !ciphertext.Contains("Secret policy") &&
+               ciphertext.Contains("gposes-dpapi-source-v1"),
+            "Envelope on disk must hold only version and DPAPI ciphertext.");
+        var restored = GpoProtectedExportService.Import(path);
+        Assert(restored.GpoId == id && restored.Rows.Count == 1 &&
+               restored.Rows[0].Value == secret,
+            "The original Windows user must be able to decrypt source evidence.");
+        File.WriteAllText(path, ciphertext.Replace(
+            "gposes-dpapi-source-v1", "gposes-dpapi-source-v0",
+            StringComparison.Ordinal));
+        ExpectFailure(() => GpoProtectedExportService.Import(path),
+            "Unknown protected envelope schemas must be denied.");
+    }
+    finally
+    {
+        try { File.Delete(path); } catch { }
+    }
+}
+
+
+static void ExpectFailure(Action action, string message)
+{
+    try
+    {
+        action();
+    }
+    catch (Exception ex) when (
+        ex is InvalidOperationException or InvalidDataException or
+              System.Security.Cryptography.CryptographicException or
+              ArgumentException or FormatException)
+    {
+        return;
+    }
+    throw new InvalidOperationException(message);
 }

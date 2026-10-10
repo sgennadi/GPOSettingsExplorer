@@ -15,7 +15,10 @@ public sealed class InputDialog : Window
     {
         Title = title;
         Width = 520;
-        Height = 175;
+        Height = 215;
+        MinHeight = 190;
+        MinWidth = 370;
+        UiStyle.ApplyWindowDefaults(this);
         ResizeMode = ResizeMode.CanResizeWithGrip;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
 
@@ -35,13 +38,22 @@ public sealed class InputDialog : Window
         buttons.Children.Add(ok);
 
         var panel = new StackPanel();
-        panel.Children.Add(new TextBlock { Text = prompt, Margin = new Thickness(4) });
+        panel.Children.Add(new TextBlock
+        {
+            Text = prompt, Margin = new Thickness(4),
+            TextWrapping = TextWrapping.Wrap
+        });
         _textBox = new TextBox { Text = initialValue };
         _textBox.SelectAll();
         panel.Children.Add(_textBox);
 
         root.Children.Add(buttons);
-        root.Children.Add(panel);
+        root.Children.Add(new ScrollViewer
+        {
+            Content = panel,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto
+        });
         Content = root;
 
         Loaded += (_, _) => _textBox.Focus();
