@@ -16,21 +16,31 @@ public static class GpoConflictAnalysisService
     {
         var names = gpos.ToDictionary(g => g.Id, g => g);
         return settings
+            // GPMC reports complex XML as numerous leaf descriptions. They
+            // are not independent policy assignments or conflict candidates.
+            .Where(s => !SecurityXmlEntryClassifier.IsTechnicalDetail(s))
             .GroupBy(Identity, StringComparer.OrdinalIgnoreCase)
             .Select(group =>
             {
-                var participants = group
+                var byGpo = group
                     .GroupBy(s => s.GpoId)
-                    .Select(g => g.First())
-                    .OrderBy(s => s.GpoName, StringComparer.CurrentCultureIgnoreCase)
+                    .OrderBy(g => g.Key)
                     .ToArray();
-                if (participants.Length < 2)
+                if (byGpo.Length < 2)
                     return null;
 
+                // Different indexed values with the same identity in one
+                // GPO cannot be resolved by taking the first entry.
+                var ambiguous = byGpo.Any(g => g.Select(VariantIdentity)
+                    .Distinct(StringComparer.OrdinalIgnoreCase).Skip(1).Any());
+                var participants = byGpo
+                    .SelectMany(g => ambiguous ? g : g.Take(1))
+                    .OrderBy(s => s.GpoName, StringComparer.CurrentCultureIgnoreCase)
+                    .ToArray();
                 var variants = participants
-                    .Select(s => (s.State.Trim() + "|" + s.Value.Trim()).ToLowerInvariant())
+                    .Select(VariantIdentity)
                     .Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-                var duplicate = variants.Length == 1;
+                var duplicate = !ambiguous && variants.Length == 1;
                 var involved = participants.Select(s => s.GpoId).ToHashSet();
                 var activeLinks = links.Where(l => involved.Contains(l.GpoId) && l.Enabled)
                     .OrderBy(l => l.TargetDn, StringComparer.OrdinalIgnoreCase)
@@ -46,7 +56,11 @@ public static class GpoConflictAnalysisService
                            ": " + s.State +
                            (string.IsNullOrWhiteSpace(s.Value) ? "" : " = " + s.Value);
                 });
-                var plan = duplicate
+                var plan = ambiguous
+                    ? "AMBIGUOUS INDEX: one GPO has more than one distinct value for the same policy identity. " +
+                      "Verify the original GPMC XML, policy scope and CSE before drawing any duplication or effective-conflict conclusion. " +
+                      "Do not merge, unlink or delete based on this result."
+                    : duplicate
                     ? "HOLD - NO MERGE RECOMMENDATION: equal configured values are not proof of equal application. " +
                       "Run 'Verify RSoP / WMI / Security' to check a representative computer, then " +
                       "review inheritance, sites, loopback and all affected OU targets. " +
@@ -68,7 +82,7 @@ public static class GpoConflictAnalysisService
                     Gpos = string.Join(" | ", participants.Select(x => x.GpoName)),
                     Variants = string.Join(" | ", gpoStates),
                     GpoIds = involved.OrderBy(x => x).ToArray(),
-                    Kind = duplicate ? "Duplicate" : "Different values",
+                    Kind = ambiguous ? "Ambiguous index" : duplicate ? "Duplicate" : "Different values",
                     OverlapStatus = overlap.Status,
                     LinkEvidence = overlap.Evidence,
                     Recommendation = plan,
@@ -88,12 +102,19 @@ public static class GpoConflictAnalysisService
 
     public static string Identity(PolicySettingInfo setting)
     {
-        if (!string.IsNullOrWhiteSpace(setting.RegistryKey) ||
+        if (!string.IsNullOrWhiteSpace(setting.RegistryKey) &&
             !string.IsNullOrWhiteSpace(setting.RegistryValue))
-            return $"{setting.Scope}|REG|{setting.RegistryKey}|{setting.RegistryValue}";
+            return $"{setting.Scope.Trim()}|REG|{setting.RegistryKey.Trim()}|{setting.RegistryValue.Trim()}";
 
-        return $"{setting.Scope}|NAME|{setting.Category}|{setting.SettingName}";
+        // An incomplete registry target is not a verified policy identity:
+        // include its CSE and category to avoid unrelated same-label hits.
+        return $"{setting.Scope.Trim()}|NAME|{setting.Extension.Trim()}|" +
+               $"{setting.Category.Trim()}|{setting.SettingName.Trim()}|" +
+               $"{setting.RegistryKey.Trim()}|{setting.RegistryValue.Trim()}";
     }
+
+    private static string VariantIdentity(PolicySettingInfo s) =>
+        s.State.Trim() + "|" + s.Value.Trim();
 
     private static (string Status, string Evidence, bool Potential) AnalyzeOverlap(
         PolicySettingInfo[] participants,
