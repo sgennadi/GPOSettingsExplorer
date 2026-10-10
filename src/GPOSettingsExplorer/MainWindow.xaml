@@ -187,6 +187,7 @@
                                           Unchecked="UnifiedFilterChanged"
                                           ToolTip="Show low-level GPMC XML descriptors such as security group Member and Registry ACL. These are read-only descriptions, not independently editable policies."/>
                                 <Button Content="Refresh catalog" Click="RefreshUnifiedSettings_Click"/>
+                                <Button x:Name="ImpactPreviewButton" Content="Impact / RSoP preview" Click="GpoImpactPreview_Click" ToolTip="Direct GPO link inventory plus optional logged gpresult verification on one computer. Never estimates domain-wide application."/>
                                 <Button x:Name="GpoHealthButton" Content="Health check (AD/SYSVOL)" Click="GpoHealth_Click" ToolTip="Read-only integrity check of AD versionNumber, GPT.INI, source files on selected pinned DC."/>
                                 <Button x:Name="ReadRealSourcesButton"
                                         Content="Read selected GPO files"

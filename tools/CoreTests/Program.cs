@@ -38,6 +38,7 @@ var tests = new (string Name, Action Body)[]
     ("Registry.pol binary parser preserves exact source values and flags malformed data", TestRealSettingsRegistryPol),
     ("Security-template parser reports source values and invalid encodings safely", TestRealSettingsSecurityTemplate),
     ("Unified catalog never interprets source-file values as effective RSoP", TestRealSettingsUnifiedEvidence),
+    ("GPO impact preview does not equate OU link with applied RSoP", TestImpactPreviewEvidence),
     ("Security template editor rejects unknown and duplicate source values", TestSecurityTemplateEditingRules),
     ("GPT.INI parses split AD/SYSVOL version and rejects corruption", TestGptIniVersionParser),
     ("Semantic XML diff ignores report timestamps and finds setting changes", TestSemanticXmlDiff)
@@ -1979,4 +1980,42 @@ static void TestSecurityTemplateEditingRules()
     Assert(!SecurityTemplateEditRules.TryDescribe(
         baseRecord with { Value = "6" }, out _),
         "Unsupported current value must be read-only, not normalized.");
+}
+
+
+static void TestImpactPreviewEvidence()
+{
+    var id = Guid.NewGuid();
+    var gpo = new GpoInfo
+    {
+        Id = id, DisplayName = "Example", DomainName = "test.example",
+        ComputerEnabled = true, UserEnabled = false,
+        WmiFilterName = "Laptop filter", WmiFilterPath = "CN=Filter,DC=test"
+    };
+    var links = new[]
+    {
+        new GpoLinkInfo { GpoId = id, GpoName = "Example",
+            TargetName = "Students", TargetDn = "OU=Students,DC=test,DC=example",
+            TargetType = "OU", Order = 1, Enabled = true, Enforced = false,
+            BlockInheritance = true },
+        new GpoLinkInfo { GpoId = id, GpoName = "Example",
+            TargetName = "test.example", TargetDn = "DC=test,DC=example",
+            TargetType = "Domain", Order = 2, Enabled = false, Enforced = false },
+        new GpoLinkInfo { GpoId = Guid.NewGuid(), GpoName = "Different",
+            TargetName = "Unrelated", TargetType = "OU", Enabled = true }
+    };
+    var preview = GpoImpactPreviewService.Build(gpo, links,
+        "test.example", "dc.test.example", inventoryComplete: true);
+    Assert(preview.DirectLinks.Count == 2 &&
+        preview.EnabledLinks == 1 && preview.DisabledLinks == 1,
+        "Only direct links belonging to selected GPO may be counted.");
+    Assert(preview.ToText().Contains("NOT effective application") &&
+        preview.WmiEvidence.Contains("not evaluated", StringComparison.OrdinalIgnoreCase),
+        "Link assignment and unevaluated WMI must not be mistaken for effective RSoP.");
+    Assert(preview.GpoSections.Contains("User disabled", StringComparison.Ordinal),
+        "GPO section enablement must be surfaced.");
+    var incomplete = GpoImpactPreviewService.Build(gpo,
+        Array.Empty<GpoLinkInfo>(), "test.example", "dc.test.example", false);
+    Assert(incomplete.Summary.Contains("INCOMPLETE"),
+        "Failed link inventory must never be reported as zero targets.");
 }
