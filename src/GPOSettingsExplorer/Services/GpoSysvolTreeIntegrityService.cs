@@ -138,7 +138,10 @@ public static class GpoSysvolTreeIntegrityService
                 .Select(i => (Controller: snapshots[i],
                     File: maps[i].GetValueOrDefault(name))).ToArray();
             var unreadable = present.Any(x =>
-                x.File is { Status: not "Read" });
+                x.File is not null &&
+                (x.File.Status != "Read" ||
+                 x.File.Sha256.Length != 64 ||
+                 !x.File.Sha256.All(Uri.IsHexDigit)));
             var missingOnIncomplete = present.Any(x =>
                 x.File is null && !x.Controller.Complete);
             var hashes = present.Where(x => x.File is { Status: "Read" })
@@ -261,7 +264,7 @@ public static class GpoSysvolTreeIntegrityService
                                 total += read;
                                 files.Add(new(relative, read, hash, "Read"));
                             }
-                            catch (Exception ex) when (ex is IOException or
+                            catch (Exception ex) when (ex is IOException or InvalidDataException or
                                 UnauthorizedAccessException or System.Security.SecurityException)
                             {
                                 issues.Add("File read was incomplete: " + relative +
