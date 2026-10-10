@@ -14,7 +14,7 @@ Download the latest portable build from:
 
 **[GitHub Releases](https://github.com/sgennadi/GPOSettingsExplorer/releases/latest)**
 
-Current release: **v1.0.1**
+Current release: **v1.2.0**
 
 Available packages:
 
@@ -22,6 +22,21 @@ Available packages:
 - `GPOSettingsExplorer-win-arm64-portable.zip` — Windows on ARM64.
 
 The builds are self-contained. A separate .NET runtime installation is not required.
+
+### Release 1.2.0 - Advanced Analysis workspace (read-only)
+
+- New Advanced analysis action in All Settings opens a scrollable, resizable WPF workspace for offline backups, timeline, security triage, DC/client diagnostics, baseline checks, Intune and GitOps.
+- Offline GPMC backup reader with bounded source access to Registry.pol, SecEdit and curated GPP XML, plus same-GPO fingerprint comparisons.
+- Current-user DPAPI encrypted, 40-snapshot-per-GPO local history. Only source-identity metadata and SHA-256 fingerprints are persisted, not raw setting values.
+- Security scanner detects legacy GPP cpassword presence and script review patterns without disclosing secrets or executing commands.
+- Multi-DC SHA-256 fingerprints of a curated policy-file set and client GroupPolicy Operational event metadata through the built-in wevtutil tool.
+- Operator-supplied JSON baseline comparison and exact reviewed registry-to-Policy-CSP mapping. Not a built-in official Microsoft baseline; unknown states remain unknown.
+- Opt-in MSAL device-code read-only Intune configuration policy inventory (requires Entra App Registration and delegated permissions); Microsoft Graph /beta is subject to change.
+- Privacy-safe GitOps review fingerprints, with no automatic publishing and no policy-application engine.
+- Optional locally installed Ollama model at 127.0.0.1 only, with explicit approval and whitelisted finding counts (no raw policy names, paths or values).
+- This is a staged foundation for further CSE/ADMX editors and impact modeling. Read-only output is NOT effective client RSoP, and live DC testing remains required.
+
+See the Advanced Analysis operator guide in docs/advanced-analysis.md.
 
 ### Release 1.0.1 - reliability fixes
 
@@ -343,7 +358,7 @@ GPOSettingsExplorer/
 
 ## Current status
 
-**v0.3.0** adds the administration platform layer: connection/session management, alternate credentials, single-DC routing, Safe mode, change previews, global search, diagnostics/support bundles, visual item-level targeting, structured editing for every known GPP document, audit-linked restore, persistent GPP/script caches, automated regression tests, and architecture-aware self-update.
+**v1.2.0** combines the GPO administration platform with direct pinned-DC source analysis, optional offline GPMC backups, DPAPI snapshots, security triage, Intune readiness and opt-in Graph/local AI. Coverage is explicitly partial for unsupported CSEs; stored source files are not proof of effective client policy.
 
 See [CHANGELOG.md](CHANGELOG.md) for release details.
 

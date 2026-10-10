@@ -4,6 +4,21 @@
 
 - No unreleased changes yet.
 
+## 1.2.0 - 2026-10-10
+
+- Add advanced WPF analysis workspace under All Settings with read-only actions and local reports.
+- Add bounded GPMC backup source parsing independent of AD/GPMC, plus same-GPO backup-to-backup source-hash comparison.
+- Add current-user-DPAPI encrypted timeline, 40 snapshots per GPO, SHA-256 fingerprints of values rather than raw policy values.
+- Add heuristic legacy GPP password-presence and script-pattern security scanner with no password/script contents in reports.
+- Compare SHA-256 for curated policy files on explicit DCs; report unknown access rather than falsely assuming replication convergence.
+- Add local/remote GroupPolicy Operational event metadata collection using Windows wevtutil, with current logged gpresult sample.
+- Add operator-supplied JSON baseline checks and manually validated Registry-to-Intune CSP mapping; unobserved/missing values are unknown.
+- Add privacy-safe GitOps hash manifest (review only; not a policy write/deployment engine).
+- Add optional MSAL device-code Intune Graph /beta read-only policy inventory using delegated Read scope and explicit operator input, no saved token.
+- Add opt-in localhost-only Ollama advisory explanations based on whitelisted scan finding counts, no raw policy details transmitted.
+- Extend regression tests for offline/security/baseline/Graph/GitOps/client event parsers.
+- All features are opt-in where applicable and do not change GPOs. Real AD/GPMC/DFSR/client smoke testing remains necessary.
+
 ## 1.0.1 - 2026-10-10
 
 - Stop treating GPMC `RestoreGPO` / `IGPMResult.OverallStatus()` exceptions or missing results as success. Invoke the HRESULT-returning COM method directly and propagate failures; never fall back to status code zero.

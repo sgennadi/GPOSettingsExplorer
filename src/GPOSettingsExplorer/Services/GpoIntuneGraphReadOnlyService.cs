@@ -1,3 +1,4 @@
+using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using Microsoft.Identity.Client;
@@ -77,7 +78,15 @@ public static class GpoIntuneGraphReadOnlyService
                 throw new InvalidDataException("Graph response grew beyond the read cap.");
             buffer.Write(block, 0, count);
         }
-        using var doc = JsonDocument.Parse(buffer.ToArray());
+        return ParsePage(buffer.ToArray());
+    }
+
+    public static GpoIntuneCloudPreview ParsePage(byte[] raw)
+    {
+        ArgumentNullException.ThrowIfNull(raw);
+        if (raw.Length > 2 * 1024 * 1024)
+            throw new InvalidDataException("Graph policy response exceeds 2 MiB.");
+        using var doc = JsonDocument.Parse(raw);
         var root = doc.RootElement;
         if (!root.TryGetProperty("value", out var values) ||
             values.ValueKind != JsonValueKind.Array)
