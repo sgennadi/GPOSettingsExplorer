@@ -61,6 +61,7 @@ public partial class MainWindow
                     MessageBoxImage.Warning) != MessageBoxResult.Yes)
                 return;
 
+            await EnsureSecurityWritePreflightAsync(gpo);
             SetBusy(true, "Creating safety backup for selective restore...");
             await Task.Run(() => GpoSelectiveRecoveryService.EnsureBackupUnchanged(plan));
             var safetyBackup = await Task.Run(() =>

@@ -37,6 +37,7 @@ public partial class MainWindow
             if (editor.ShowDialog() != true || editor.SelectedValue == spec.CurrentValue)
                 return;
 
+            await EnsureSecurityWritePreflightAsync(gpo);
             SetBusy(true, "Backing up GPO before security policy change...");
             var backup = await Task.Run(() => _gpmService.BackupGpo(
                 _domainContext.DomainName, gpo.Id,

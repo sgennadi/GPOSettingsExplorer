@@ -101,6 +101,7 @@ public partial class MainWindow
                         out var originalBoolean) &&
                     selectedBoolean != originalBoolean)
                 {
+                    await EnsureSecurityWritePreflightAsync(gpo);
                     SetBusy(
                         true,
                         "Backing up GPO before Security Settings change...");
