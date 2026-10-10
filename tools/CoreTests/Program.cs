@@ -55,6 +55,7 @@ var tests = new (string Name, Action Body)[]
     ("Local AI prompt uses only redacted categories/counts", TestAdvancedAiPrivacy),
     ("Cross-DC file evidence exposes mismatches and unknown data", TestAdvancedCrossDcFingerprints),
     ("Graph policy reader parses bounded first-page JSON without sign-in", TestAdvancedGraphJson),
+    ("Advanced Audit CSV parser validates exact source and escaped fields", TestAdvancedAuditCsv),
     ("Canonical GPC SYSVOL paths reject alternate servers and malformed paths", TestCanonicalSysvolPath),
     ("GPMC restore never disguises a failed or missing status as success", TestGpmRestoreStatus),
     ("Semantic XML diff ignores report timestamps and finds setting changes", TestSemanticXmlDiff)
@@ -2606,4 +2607,46 @@ static void TestAdvancedGraphJson()
         throw new InvalidOperationException("Malformed Graph response unexpectedly accepted.");
     }
     catch (InvalidDataException) { }
+}
+
+
+static void TestAdvancedAuditCsv()
+{
+    var guid = Guid.NewGuid();
+    var content = "Machine Name,Policy Target,Subcategory,Subcategory GUID,Inclusion Setting,Exclusion Setting,Setting Value\r\n" +
+        ",System,\"Logon, Special\",{" + guid + "},Success,,3\r\n";
+    var utf8 = System.Text.Encoding.UTF8.GetBytes(content);
+    var parsed = AdvancedAuditSourceReader.Parse(
+        utf8, Guid.NewGuid(), "Audit Test", "audit.csv", new string('A', 64));
+    Assert(parsed.IsComplete && parsed.Rows.Count == 1 &&
+           parsed.Rows[0].SettingName == "Logon, Special" &&
+           parsed.Rows[0].Value == "3" &&
+           parsed.Rows[0].Category.Contains("Advanced Audit Policy"),
+        "Valid Advanced Audit CSV quoted comma and numeric setting not parsed.");
+
+    var utf16 = System.Text.Encoding.Unicode.GetPreamble()
+        .Concat(System.Text.Encoding.Unicode.GetBytes(content)).ToArray();
+    Assert(AdvancedAuditSourceReader.Parse(
+        utf16, Guid.NewGuid(), "Audit Test", "audit.csv", "B").IsComplete,
+        "UTF-16LE BOM Advanced Audit CSV must decode without guessing codepage.");
+
+    foreach (var malformed in new[]
+    {
+        "Subcategory,Setting Value\r\nTest,1",
+        "Machine Name,Subcategory,Subcategory GUID,Setting Value\r\n" +
+            ",Foo,NotAGuid,2\r\n",
+        "Machine Name,Subcategory,Subcategory GUID,Setting Value\r\n" +
+            ",\"Unterminated,{" + guid + "},3\r\n"
+    })
+    {
+        var invalid = AdvancedAuditSourceReader.Parse(
+            System.Text.Encoding.UTF8.GetBytes(malformed),
+            Guid.NewGuid(), "Audit Test", "audit.csv", "C");
+        Assert(!invalid.IsComplete,
+            "Malformed Advanced Audit source must fail closed: " + malformed);
+    }
+    Assert(!AdvancedAuditSourceReader.Parse(
+        new byte[AdvancedAuditSourceReader.MaxFileBytes + 1],
+        Guid.NewGuid(), "Audit Test", "audit.csv", "D").IsComplete,
+        "Oversized Audit policy CSV must not be parsed.");
 }
