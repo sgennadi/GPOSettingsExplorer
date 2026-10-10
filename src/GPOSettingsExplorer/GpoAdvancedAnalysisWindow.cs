@@ -78,7 +78,7 @@ public sealed partial class GpoAdvancedAnalysisWindow : Window
                       StringComparison.OrdinalIgnoreCase)
             ? initialSource : null;
 
-        Title = "GPO Settings Explorer - Advanced Analysis (read only)";
+        Title = "GPO Settings Explorer - Unified Platform (read only)";
         Width = 1120;
         Height = 735;
         MinWidth = 760;
@@ -168,6 +168,8 @@ public sealed partial class GpoAdvancedAnalysisWindow : Window
 
     private void SetupTabs()
     {
+        _tabs.Items.Add(SetupUnifiedTab());
+
         var backups = Tab("Sources & timeline", out var sourcePanel);
         AddAction(sourcePanel, "Capture current GPO", CaptureCurrentAsync);
         AddAction(sourcePanel, "Open GPMC backup...", OpenBackupAsync);
@@ -312,6 +314,7 @@ public sealed partial class GpoAdvancedAnalysisWindow : Window
             _lifetime.Token);
         _active = result;
         _offlineRoot = null;
+        InvalidateUnifiedObservations();
         return "LIVE STORED-SOURCE SNAPSHOT\n" + result.Coverage + "\n" +
                "Records: " + result.Rows.Count + "\n" +
                string.Join("\n", result.Files.Select(file =>
@@ -334,6 +337,7 @@ public sealed partial class GpoAdvancedAnalysisWindow : Window
             OfflineGpoSourceService.ReadManifest(manifest, _lifetime.Token),
             _lifetime.Token);
         _active = result;
+        InvalidateUnifiedObservations();
         _offlineRoot = Path.Combine(Path.GetDirectoryName(manifest)!,
             "DomainSysvol", "GPO");
         return "OFFLINE GPMC BACKUP LOADED\n" + result.Coverage + "\n" +
@@ -415,6 +419,7 @@ public sealed partial class GpoAdvancedAnalysisWindow : Window
         _lastSecurity = await Task.Run(() =>
             GpoSecurityScannerService.Scan(root, current.GpoId, _lifetime.Token),
             _lifetime.Token);
+        _unifiedReport = null;
         return _lastSecurity.ToText();
     }
 
@@ -558,6 +563,7 @@ public sealed partial class GpoAdvancedAnalysisWindow : Window
             return "No new mapping selected.";
         _mapping = await Task.Run(() =>
             GpoIntuneMigrationService.LoadMapping(dialog.FileName), _lifetime.Token);
+        _unifiedReport = null;
         return "Reviewed CSP mapping loaded from local file:\n" +
                _mapping.Source + "\n" +
                _mapping.Mappings.Count + " explicit mapping records.\n" +

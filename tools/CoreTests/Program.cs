@@ -54,6 +54,8 @@ var tests = new (string Name, Action Body)[]
     ("Exact baseline and Policy CSP mappings distinguish missing evidence", TestAdvancedBaselineAndMapping),
     ("GitOps manifests omit raw domain and registry values", TestAdvancedGitopsPrivacy),
     ("GitOps comparisons enforce same HMAC identity and signed approvals", TestGitOpsReviewApproval),
+    ("Unified platform only joins matching source, health and link identities", TestUnifiedPlatformIntegrity),
+    ("Unified platform and local AI contain counts, not confidential identities", TestUnifiedPlatformAiPrivacy),
     ("Protected GPO source DPAPI round trip never stages plaintext", TestProtectedGpoSource),
     ("Client GroupPolicy XML metadata rejects event body disclosure", TestAdvancedClientEvents),
     ("Local AI prompt uses only redacted categories/counts", TestAdvancedAiPrivacy),
@@ -3447,4 +3449,163 @@ static void ExpectFailure(Action action, string message)
         return;
     }
     throw new InvalidOperationException(message);
+}
+
+
+static void TestUnifiedPlatformIntegrity()
+{
+    var id = Guid.NewGuid();
+    var row = new RealSettingRecord
+    {
+        GpoId = id,
+        GpoName = "CONFIDENTIAL-GPO",
+        Scope = "Computer",
+        Category = "Administrative Templates",
+        SettingName = "PRIVATE_SETTING_VALUE",
+        RegistryKey = @"SOFTWARE\Policies\PrivateApp",
+        RegistryValue = "SecretEntry",
+        Value = "1",
+        ValueType = "REG_DWORD",
+        State = "Stored registry value"
+    };
+    var scan = new RealSettingsScanResult(
+        id, "CONFIDENTIAL-GPO", "private.example", "dc01.private.example",
+        DateTimeOffset.UtcNow,
+        new[] { row },
+        new[] { new RealSettingsFileEvidence("Registry.pol", "Read", 1,
+            new string('A', 64), "synthetic") });
+    var health = new GpoConsistencyReport(
+        "CONFIDENTIAL-GPO", id, "private.example", "dc01.private.example",
+        DateTimeOffset.UtcNow,
+        new[]
+        {
+            new GpoConsistencyFinding("GPT.INI", "Pass", "confidential registry path"),
+            new GpoConsistencyFinding("LDAP", "Unknown", "some DC not reachable")
+        });
+    var impact = new GpoImpactPreview(
+        id, "CONFIDENTIAL-GPO", "private.example", "dc01.private.example",
+        DateTimeOffset.UtcNow,
+        new[]
+        {
+            new GpoImpactLink("CONFIDENTIAL-OU", "OU",
+                "OU=CONFIDENTIAL-OU,DC=private,DC=example", 1,
+                "Enabled", "No block", "Any secret source text")
+        },
+        true, "Computer section enabled", "WMI is not evaluated", "unknown");
+    var security = new GpoSecurityScan(id, DateTimeOffset.UtcNow,
+        @"\\dc01.private.example\SYSVOL\private.example", true,
+        new[]
+        {
+            new GpoSecurityFinding("Critical", "Legacy GPP cpassword",
+                "confidential.xml", "TOP_SECRET_PASSWORD"),
+            new GpoSecurityFinding("New/Unknown severity", "Sensitive category",
+                "top-secret.ps1", "TOP_SECRET_PASSWORD")
+        });
+    var map = new GpoIntuneMappingDocument("gposes-csp-map-v1",
+        "Confidential analyst", new[]
+        {
+            new GpoIntuneMapping("Computer", row.RegistryKey,
+                row.RegistryValue,
+                "./Device/Vendor/MSFT/Policy/Config/ADMX_Example/Sample")
+        });
+
+    var report = GpoUnifiedPlatformService.Build(scan, security, health, impact, map);
+    Assert(report.StoredRows == 1 && report.ExactRows == 1 &&
+           report.ComputerRows == 1 && report.UserRows == 0 &&
+           report.CriticalSecurityFindings == 1 && report.UnknownSecurityFindings == 1 &&
+           report.HealthUnknowns == 1 && report.LinksReviewed &&
+           report.DirectLinks == 1 && report.EnabledLinks == 1 &&
+           report.MappedIntuneCandidates == 1 && report.NeedsAttention,
+        "Unified platform must count bounded categories without ignoring uncertainty.");
+
+    ExpectFailure(() => GpoUnifiedPlatformService.Build(scan,
+            security with { GpoId = Guid.NewGuid() }, health, impact, map),
+        "Mixing scanner output from different GPOs must fail.");
+    ExpectFailure(() => GpoUnifiedPlatformService.Build(scan, security,
+            health with { DomainController = "dc02.private.example" }, impact, map),
+        "Mixing health from another DC must fail.");
+    ExpectFailure(() => GpoUnifiedPlatformService.Build(scan, security,
+            health, impact with { Domain = "external.example" }, map),
+        "Mixing OU evidence from another domain must fail.");
+
+    var partial = GpoUnifiedPlatformService.Build(scan with
+    {
+        Files = new[]
+        {
+            new RealSettingsFileEvidence("Registry.pol", "Unreadable", 0, "", "Denied")
+        }
+    });
+    Assert(partial.SourcePartial && partial.NeedsAttention &&
+           !partial.SecurityReviewed && !partial.HealthReviewed &&
+           !partial.LinksReviewed &&
+           partial.ToText().Contains("NOT CHECKED"),
+        "Missing evidence must remain explicitly unknown, never healthy.");
+}
+
+static void TestUnifiedPlatformAiPrivacy()
+{
+    var id = Guid.NewGuid();
+    const string secret = "ULTRASECRET_GPO_VALUE_DO_NOT_TRANSMIT";
+    var scan = new RealSettingsScanResult(id,
+        "ULTRASECRET_GPO_NAME_DO_NOT_TRANSMIT",
+        "confidential.yosh.example",
+        "dc-private.confidential.yosh.example",
+        DateTimeOffset.UtcNow,
+        new[]
+        {
+            new RealSettingRecord
+            {
+                GpoId = id,
+                GpoName = "ULTRASECRET_GPO_NAME_DO_NOT_TRANSMIT",
+                Scope = "User",
+                Category = "Password manager",
+                SettingName = "Password policy name",
+                RegistryKey = @"SOFTWARE\Private\Credentials",
+                RegistryValue = "Password",
+                Value = secret,
+                ValueType = "REG_SZ",
+                State = "Stored registry value"
+            }
+        },
+        new[] { new RealSettingsFileEvidence("Registry.pol", "Read", 1,
+            new string('F', 64), "Secret file name") });
+
+    var report = GpoUnifiedPlatformService.Build(scan);
+    var summary = report.ToText();
+    var prompt = GpoLocalAiService.BuildRedactedUnifiedPrompt(report);
+    var safeJson = GpoUnifiedPlatformService.ToSafeJson(report);
+    Assert(safeJson.Contains("gposes-unified-safe-summary-v1"),
+        "Exported JSON must advertise a fixed aggregate-only schema.");
+    foreach (var text in new[]
+    {
+        secret, "ULTRASECRET_GPO_NAME_DO_NOT_TRANSMIT",
+        "confidential.yosh.example", "dc-private", "SOFTWARE",
+        "Password policy name", "Credentials", "Secret file name"
+    })
+    {
+        Assert(!summary.Contains(text, StringComparison.OrdinalIgnoreCase) &&
+               !prompt.Contains(text, StringComparison.OrdinalIgnoreCase) &&
+               !safeJson.Contains(text, StringComparison.OrdinalIgnoreCase),
+            "No raw GPO identifiers, values, paths or filenames may appear " +
+            "in the unified report or AI prompt: " + text);
+    }
+    var exportPath = Path.Combine(Path.GetTempPath(),
+        "gposes-aggregates-" + Guid.NewGuid().ToString("N") + ".json");
+    try
+    {
+        GpoUnifiedPlatformService.ExportSafeJson(exportPath, report);
+        Assert(File.ReadAllText(exportPath) == safeJson,
+            "Anonymized on-disk report must be exactly the safe fixed-schema JSON.");
+    }
+    finally
+    {
+        try { File.Delete(exportPath); } catch { }
+    }
+
+    Assert(!report.SecurityReviewed && !report.HealthReviewed &&
+           !report.LinksReviewed && report.NeedsAttention &&
+           prompt.Contains("Security checked: False") &&
+           prompt.Contains("Unknown") &&
+           summary.Contains("NOT CHECKED"),
+        "An advisory local AI prompt must preserve all unknown scan states.");
 }

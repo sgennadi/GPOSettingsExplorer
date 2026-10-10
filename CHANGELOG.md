@@ -4,6 +4,15 @@
 
 - No unreleased changes yet.
 
+## 2.0.0 - 2026-10-10
+
+- Make the Unified overview the first Advanced Analysis tab, linking manually captured stored settings, read-only security scan, AD/SYSVOL health from one pinned DC, direct links and reviewed Intune CSP mappings.
+- Reject contradictory GPO/domain/DC evidence, and invalidate cached analyses, signed review state and local AI summary when source captures change.
+- Render only conservative aggregate evidence, explicit NOT CHECKED, partial-source/unknown states and effective-client RSoP caveats; do not calculate an invalid compliance score.
+- Add optional localhost-only Ollama advisory over strictly allowlisted counters with new, affirmative operator consent, no proxies/redirects, bounded response streaming and cancellation; no model downloads or executable AI actions.
+- Test cross-source identity failures, missing checks and raw policy/secret exclusion from the exported platform summary and local AI prompt.
+- Maintain portable WPF/UiStyle/HiDPI and x64/ARM64 builds. All changes are non-deploying and require live nonproduction verification of AD/SYSVOL and local model behavior.
+
 ## 1.6.0 - 2026-10-10
 
 - Add dedicated Advanced Analysis GitOps tab with explicit local export, baseline comparison, redacted review files, certificate discovery, signed Approve/Reject, independent signature verification and DPAPI encrypted source inspection.

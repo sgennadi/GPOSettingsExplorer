@@ -14,7 +14,7 @@ Download the latest portable build from:
 
 **[GitHub Releases](https://github.com/sgennadi/GPOSettingsExplorer/releases/latest)**
 
-Current release: **v1.6.0**
+Current release: **v2.0.0**
 
 Available packages:
 
@@ -22,6 +22,18 @@ Available packages:
 - `GPOSettingsExplorer-win-arm64-portable.zip` — Windows on ARM64.
 
 The builds are self-contained. A separate .NET runtime installation is not required.
+
+### Release 2.0.0 - Unified read-only platform and opt-in localhost AI
+
+- The **Unified overview** is the entry tab in Advanced Analysis for live GPO or offline GPMC backup. It combines exact stored-source coverage, security scan severity, single-pinned-DC AD/SYSVOL health, direct links and manually reviewed Registry.pol-to-Intune candidates into one bounded, identifier-free dashboard.
+- Health and direct-link scans are **manual**, read-only and limited to the selected live GPO/pinned DC. The unified engine rejects contradictory GPO/domain/DC evidence rather than silently mixing data from a different source.
+- Missing/partial source files, redacted or truncated values, unknown severity, absent security scans and unknown client RSoP are presented as **NOT CHECKED / INCOMPLETE**, never a fabricated compliance percentage.
+- New **Optional local AI triage...** explicitly asks permission before sending the dashboard's **numeric/boolean aggregate counters only** to an already installed local Ollama model at `127.0.0.1:11434`. No names, paths, SIDs, policy values, script contents or credentials are sent.
+- Ollama access blocks HTTP redirects, system proxy routing, cookies and excessive outputs. No external AI, model downloads or automatic policy writes are used.
+- Existing v1.6 GitOps, encrypted source, human approval and original Advanced Analysis tools remain available without Ollama.
+- New tests reject mixed evidence and check that local AI prompts/reports omit confidential source data.
+
+See [Unified Platform 2.0 operator guide](docs/unified-platform.md).
 
 ### Release 1.6.0 - protected GitOps reviews and signed human decisions
 
