@@ -24,6 +24,8 @@ public partial class MainWindow
     private UnifiedCatalogResult? _unifiedCatalog;
     private long _unifiedBuildVersion;
     private bool _unifiedInitialized;
+    private RealSettingsScanResult? _realSourceSnapshot;
+    private CancellationTokenSource? _realSourceCancellation;
 
     private void InitializeUnifiedSettingsUi()
     {
@@ -32,14 +34,16 @@ public partial class MainWindow
             "All sources",
             "Configured (GPMC)",
             "ADMX templates",
-            "MMC observed"
+            "MMC observed",
+            "Stored GPO files (read only)"
         };
         UnifiedStateCombo.ItemsSource = new[]
         {
             "All states",
             "Configured only",
             "MMC Not Configured",
-            "Unknown / templates"
+            "Unknown / templates",
+            "Stored source values"
         };
         UnifiedSourceCombo.SelectedIndex = 0;
         UnifiedStateCombo.SelectedIndex = 0;
@@ -91,10 +95,16 @@ public partial class MainWindow
             var mmc = _mmcInventoryResult?.Rows.ToArray();
             var mmcCoverage = _mmcInventoryResult?.Coverage ?? "";
             var target = GetSelectedUnifiedGpoFilter();
+            var currentDc = DomainConnectionState.GetServerFor(
+                _domainContext?.DomainName ?? "");
+            var sources = _realSourceSnapshot is not null &&
+                _realSourceSnapshot.Matches(
+                    _domainContext?.DomainName ?? "", currentDc)
+                ? _realSourceSnapshot : null;
 
             var result = await Task.Run(() =>
                 UnifiedSettingsCatalogService.Build(
-                    gpmc, admx, mmc, target, mmcCoverage));
+                    gpmc, admx, mmc, target, mmcCoverage, sources));
 
             if (version != Interlocked.Read(ref _unifiedBuildVersion))
                 return;
@@ -179,7 +189,8 @@ public partial class MainWindow
         if (source == "Configured (GPMC)" &&
                 row.Kind is not ("Configured" or "GPMC detail") ||
             source == "ADMX templates" && row.Kind != "ADMX template" ||
-            source == "MMC observed" && row.Mmc is null)
+            source == "MMC observed" && row.Mmc is null ||
+            source == "Stored GPO files (read only)" && row.StoredSource is null)
             return false;
 
         return (UnifiedStateCombo?.SelectedItem as string) switch
@@ -190,6 +201,7 @@ public partial class MainWindow
                     StringComparison.OrdinalIgnoreCase),
             "Unknown / templates" => row.Kind == "ADMX template" ||
                 row.State.StartsWith("Not reported", StringComparison.OrdinalIgnoreCase),
+            "Stored source values" => row.StoredSource is not null,
             _ => true
         };
     }
@@ -229,6 +241,68 @@ public partial class MainWindow
         }
     }
 
+    private async void ReadRealSources_Click(object sender, RoutedEventArgs e)
+    {
+        if (_domainContext is null || _realSourceCancellation is not null)
+            return;
+
+        var gpo = UnifiedGpoFilterCombo.SelectedItem as GpoInfo ??
+                  GpoGrid.SelectedItem as GpoInfo;
+        if (gpo is null)
+        {
+            MessageBox.Show(this,
+                "Select a GPO in the GPOs list or in the All Settings GPO selector first. " +
+                "Reading every GPO in the domain is not automatic.",
+                "Read GPO source files", MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            return;
+        }
+
+        var cancellation = new CancellationTokenSource();
+        _realSourceCancellation = cancellation;
+        ReadRealSourcesButton.IsEnabled = false;
+        SetBusy(true, "Reading selected GPO source files (read-only)...");
+        try
+        {
+            // This does not call MMC. No policy registry hive is mounted.
+            var result = await Task.Run(() =>
+                new RealSettingsSourceService().Scan(gpo, cancellation.Token),
+                cancellation.Token);
+            _realSourceSnapshot = result;
+            await RefreshUnifiedCatalogAsync();
+            // Show the records that were just scanned rather than leaving
+            // thousands of unrelated ADMX templates in the foreground.
+            UnifiedSearchBox.Text = string.Empty;
+            UnifiedSourceCombo.SelectedItem = "Stored GPO files (read only)";
+            StatusText.Text = "Real Settings read-only source scan: " + result.Coverage;
+            if (result.IsPartial)
+                MessageBox.Show(this,
+                    "The source-file scan is incomplete. No values were inferred.\n\n" +
+                    string.Join("\n", result.Files
+                        .Where(f => f.HasError)
+                        .Select(f => f.Status + ": " + f.SourceFile + " - " + f.Details)),
+                    "Source scan partial",
+                    MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        catch (OperationCanceledException)
+        {
+            StatusText.Text = "Real Settings source scan canceled; prior snapshot preserved.";
+        }
+        catch (Exception ex)
+        {
+            CrashLogService.Write("Real Settings source scan", ex);
+            ErrorDialog.Show(this, "Real Settings",
+                "Could not read the selected GPO source files.", ex);
+        }
+        finally
+        {
+            _realSourceCancellation = null;
+            cancellation.Dispose();
+            ReadRealSourcesButton.IsEnabled = true;
+            SetBusy(false);
+        }
+    }
+
     private async void RefreshUnifiedSettings_Click(object sender, RoutedEventArgs e)
     {
         await EnsureUnifiedCatalogReadyAsync();
@@ -255,7 +329,9 @@ public partial class MainWindow
             return;
         }
 
-        UnifiedActionButton.Content = row.IsTechnicalDetail
+        UnifiedActionButton.Content = row.StoredSource is not null
+            ? "View source evidence..."
+            : row.IsTechnicalDetail
             ? "View XML details..."
             : row.Kind == "ADMX template" ? "Configure in GPO..."
             : row.Admx is not null ? "Edit policy..."
@@ -271,6 +347,12 @@ public partial class MainWindow
         if (_domainContext is null ||
             UnifiedSettingsGrid.SelectedItem is not UnifiedSettingInfo row)
             return;
+
+        if (row.StoredSource is RealSettingRecord sourceEvidence)
+        {
+            new RealSettingEvidenceWindow(sourceEvidence) { Owner = this }.ShowDialog();
+            return;
+        }
 
         if (row.Configured is not null)
         {

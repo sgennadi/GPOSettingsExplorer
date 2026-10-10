@@ -24,6 +24,7 @@ public sealed record UnifiedSettingInfo
     public PolicySettingInfo? Configured { get; init; }
     public AdmxPolicyDefinition? Admx { get; init; }
     public MmcInventoryEntry? Mmc { get; init; }
+    public RealSettingRecord? StoredSource { get; init; }
 
     public string SearchText =>
         string.Join(" ", new[] {
@@ -40,8 +41,10 @@ public sealed record UnifiedCatalogResult(
     bool AdmxLoaded,
     string Coverage)
 {
+    public int SourceFileEntries { get; init; }
+
     public string Summary =>
         $"{Rows.Count:N0} total | {ConfiguredCount:N0} configured GPMC | " +
         $"{TemplateCount:N0} ADMX templates | {MmcOnlyCount:N0} MMC-only | " +
-        Coverage;
+        $"{SourceFileEntries:N0} source-file records | " + Coverage;
 }

@@ -14,7 +14,7 @@ Download the latest portable build from:
 
 **[GitHub Releases](https://github.com/sgennadi/GPOSettingsExplorer/releases/latest)**
 
-Current release: **v0.7.3**
+Current release: **v0.8.0**
 
 Available packages:
 
@@ -22,6 +22,12 @@ Available packages:
 - `GPOSettingsExplorer-win-arm64-portable.zip` — Windows on ARM64.
 
 The builds are self-contained. A separate .NET runtime installation is not required.
+
+### Real Settings Engine: source-file evidence (0.8.0)
+
+In **All Settings**, select a specific GPO and click **Read selected GPO files**. This is a read-only source snapshot on the session-pinned domain controller, requiring no MMC navigation. It parses Machine/User `Registry.pol` as binary PReg v1 and Machine's `Microsoft/Windows NT/SecEdit/GptTmpl.inf` as an encoding-aware security template. The file scan produces source rows with actual stored values, type, category, source path, SHA-256 and clear evidence/coverage. Set the Source filter to **Stored GPO files (read only)** and open a record's **View source evidence...** dialog. No editing is offered for a raw source-file row.
+
+A file absent from SYSVOL is marked **Absent**, NOT an inferred Not Configured policy. Corrupt, unsupported-version or truncated files are marked **PARTIAL** with diagnostics, preserving any verified prior rows. Raw source values do not establish winning settings, RSoP, WMI applicability or security-filter permissions. Registry.pol special deletion operations remain labeled as instructions, not current values. This is a first-stage source engine; additional CSE formats need separate modules and independent regression tests before treating them as supported.
 
 ### Permission and comparison accuracy (0.7.3)
 
