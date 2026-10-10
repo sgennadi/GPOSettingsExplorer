@@ -86,3 +86,41 @@ A locally installed Ollama-compatible service must be listening on 127.0.0.1:114
 ## Security and testing boundary
 
 The normal GPO editing UI still starts in Safe Mode. These new Advanced Analysis actions are read-only even if the user enables writes elsewhere. CI tests pure parsing and builds WPF for x64/ARM64, but does not validate GPMC COM operations, live Active Directory, remote client event access or DFSR behavior in a real production domain. Perform controlled nonproduction DC tests before trusting new features for sensitive operational decisions.
+
+
+## Full SYSVOL tree verification (v1.4.0)
+
+In Client & DC health, supply 2-16 explicitly named domain controllers
+and choose Full SYSVOL tree SHA-256.... A bounded read-only scanner
+inventories every accessible file within the selected GPO root on each
+controller, compares relative paths, presence and streamed SHA-256 digests.
+
+The scanner limits each DC to 4,000 directory entries, 30 directory
+levels, 32 MiB per file and 256 MiB aggregate data. Reparse-point
+directories and files are not traversed. Missing GPT.INI, unstable files,
+permissions, unscanned directories and oversized files are
+Unknown / Incomplete.
+
+Only SMB file reads are requested. Identical snapshots are not proof
+that DFSR or AD replication is fully healthy. If different hashes
+are found, inspect replication and determine whether administrators
+changed the policy during the scan.
+
+## Compare against a reviewed GPMC reference baseline (v1.4.0)
+
+Under Baseline / Intune / GitOps, capture the current GPO or open an
+offline GPMC backup, then choose Compare reference GPMC baseline....
+Select the bkupInfo.xml from a separately reviewed GPO baseline export.
+The tool compares exactly supported stored source identities, values,
+types and states. The baseline GPO GUID need not match the target GUID.
+
+Matched/different/unknown/ambiguous are separate statuses.
+This is not a Microsoft Security Compliance Toolkit importer or a
+certified compliance score. Baseline files must be independently
+approved for the intended OS and product versions.
+
+## No-follow security scan safety
+
+Legacy GPP password and startup-script triage uses bounded enumeration
+that does not descend into reparse points, and marks skipped/inaccessible/
+oversized files as unverified. Unknown coverage does not mean no risk.
