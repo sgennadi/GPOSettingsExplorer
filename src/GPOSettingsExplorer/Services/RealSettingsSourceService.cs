@@ -63,12 +63,30 @@ public sealed class RealSettingsSourceService
 
                 var timeBefore = stat.LastWriteTimeUtc;
                 byte[] bytes;
-                // FileShare avoids blocking GPMC and does not request writes.
+                // FileShare avoids blocking GPMC and never requests writes.
+                // The read remains bounded even if another admin appends
+                // data after the initial FileInfo size check.
                 using (var stream = new FileStream(path, FileMode.Open,
                            FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
                 {
-                    using var memory = new MemoryStream();
-                    stream.CopyTo(memory);
+                    var sizeAtOpen = stream.Length;
+                    if (sizeAtOpen > limit)
+                        throw new InvalidDataException(
+                            "Source grew beyond maximum read size before opening.");
+                    using var memory = new MemoryStream((int)sizeAtOpen);
+                    var buffer = new byte[65536];
+                    int count;
+                    while ((count = stream.Read(buffer)) > 0)
+                    {
+                        cancellation.ThrowIfCancellationRequested();
+                        if (memory.Length + count > limit)
+                            throw new InvalidDataException(
+                                "Source grew beyond maximum read size while reading.");
+                        memory.Write(buffer, 0, count);
+                    }
+                    if (stream.Length != sizeAtOpen || memory.Length != sizeAtOpen)
+                        throw new IOException(
+                            "Source length changed during inspection; retry the scan.");
                     bytes = memory.ToArray();
                 }
 
