@@ -100,7 +100,8 @@ public sealed class GpmService
 
     public string GenerateXmlReport(
         string domainName,
-        Guid gpoId)
+        Guid gpoId,
+        int maxBytes = 0)
     {
         dynamic gpm =
             CreateGpm();
@@ -129,6 +130,17 @@ public sealed class GpmService
             gpo.GenerateReportToFile(
                 constants.ReportXML,
                 temp);
+
+            if (maxBytes > 0)
+            {
+                // The native Settings viewer enforces a bounded read rather
+                // than loading an untrusted, arbitrarily large report first.
+                var bytes = OfflineGpoSourceService.ReadBounded(temp, maxBytes);
+                using var memory = new MemoryStream(bytes);
+                using var reader = new StreamReader(memory, System.Text.Encoding.UTF8,
+                    detectEncodingFromByteOrderMarks: true);
+                return reader.ReadToEnd();
+            }
 
             return File.ReadAllText(
                 temp);
@@ -1541,8 +1553,10 @@ public sealed class GpmService
                     ? string.Empty : FindNamedValue(element, "Name"),
                 FindNamedAttributeValue(element, "ValueName"),
                 FindNamedAttributeValue(element, "valueName"),
-                FindNamedAttributeValue(element, "Name"),
-                FindNamedAttributeValue(element, "name"));
+                extensionType.Equals("SecuritySettings", StringComparison.OrdinalIgnoreCase)
+                    ? string.Empty : FindNamedAttributeValue(element, "Name"),
+                extensionType.Equals("SecuritySettings", StringComparison.OrdinalIgnoreCase)
+                    ? string.Empty : FindNamedAttributeValue(element, "name"));
 
             var value = BuildGenericValueSummary(element, settingName, state);
 
