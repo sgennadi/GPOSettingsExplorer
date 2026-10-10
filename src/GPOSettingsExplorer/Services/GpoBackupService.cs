@@ -94,13 +94,10 @@ public sealed class GpoBackupService
 
         dynamic result = domain.RestoreGPO(backupObject, null, null);
 
-        var status = ReadOverallStatus(result);
-        if (status < 0)
-            System.Runtime.InteropServices.Marshal.ThrowExceptionForHR(status);
-
-        if (status != 0)
-            throw new InvalidOperationException(
-                $"GPMC RestoreGPO returned status 0x{status:X8}.");
+        // IGPMResult::OverallStatus is an HRESULT-returning COM method,
+        // not a nullable integer status property. The COM interop layer
+        // throws for failure HRESULTs; never convert null to success.
+        EnsureOverallStatus(result);
     }
 
     public void DeleteBackup(GpoBackupInfo backup)
@@ -276,22 +273,25 @@ public sealed class GpoBackupService
             : null;
     }
 
-    private static int ReadOverallStatus(dynamic result)
+    public static void EnsureOverallStatus(object? result)
     {
+        if (result is null)
+            throw new InvalidOperationException(
+                "GPMC did not return a result object. Restore status is unknown.");
+
+        // Calling this method as a statement is important: its HRESULT
+        // may be surfaced as a void COM call. A failure HRESULT raises a
+        // COMException. Do not treat an unavailable status as success.
         try
         {
-            return Convert.ToInt32((object?)result.OverallStatus());
+            dynamic comResult = result;
+            comResult.OverallStatus();
         }
-        catch
+        catch (Microsoft.CSharp.RuntimeBinder.RuntimeBinderException ex)
         {
-            try
-            {
-                return Convert.ToInt32((object?)result.OverallStatus);
-            }
-            catch
-            {
-                return 0;
-            }
+            throw new InvalidOperationException(
+                "Cannot invoke GPMC OverallStatus. Restore outcome is unknown; " +
+                "inspect the target GPO before retrying.", ex);
         }
     }
 

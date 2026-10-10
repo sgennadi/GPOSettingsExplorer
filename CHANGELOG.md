@@ -4,6 +4,14 @@
 
 - No unreleased changes yet.
 
+## 1.0.1 - 2026-10-10
+
+- Stop treating GPMC `RestoreGPO` / `IGPMResult.OverallStatus()` exceptions or missing results as success. Invoke the HRESULT-returning COM method directly and propagate failures; never fall back to status code zero.
+- Require a canonical domain-scoped `gPCFileSysPath` structure and matching GPO GUID in both pinned-DC and multi-DC health reports. Never read the advertised UNC path.
+- Enforce the 64 KiB GPT.INI limit during multi-DC file reads, not only with a pre-read length snapshot.
+- Add regression coverage for GPMC status failures, corrupted/mismatched SYSVOL paths and bounded GPT.INI file reads.
+- Windows CI remains a code/build check; live AD/GPMC restore and network SYSVOL behavior still require controlled nonproduction DC validation.
+
 ## 1.0.0 - 2026-10-10
 
 - Build on v0.8.0 with bounded, read-only curated GPP XML attribute evidence from stored Machine/User Preferences paths. Sensitive password-like attributes are redacted; no GPP/ILT execution inference.

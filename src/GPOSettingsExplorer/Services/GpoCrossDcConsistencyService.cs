@@ -121,8 +121,8 @@ public static class GpoCrossDcConsistencyService
                     adDetails = "Missing GPC versionNumber.";
 
                 var path = Convert.ToString(entry.Properties["gPCFileSysPath"].Value) ?? "";
-                if (!path.Replace('/', '\\').TrimEnd('\\')
-                    .EndsWith(@"\Policies\" + id, StringComparison.OrdinalIgnoreCase))
+                if (!GpoSysvolPathValidator.MatchesGpo(
+                    path, gpo.DomainName, gpo.Id, dc))
                 {
                     ad = null;
                     adDetails = "GPC path missing or wrong GPO GUID; comparison blocked.";
@@ -147,7 +147,9 @@ public static class GpoCrossDcConsistencyService
                     else
                     {
                         var before = info.LastWriteTimeUtc;
-                        var bytes = File.ReadAllBytes(ini);
+                        // The earlier FileInfo length is only advisory.
+                        // ReadBounded also protects against growth during the read.
+                        var bytes = GptIniVersionParser.ReadBounded(ini, cancellation);
                         var parsed = GptIniVersionParser.Parse(bytes);
                         if (!parsed.Valid || File.GetLastWriteTimeUtc(ini) != before)
                             fileDetails = parsed.Valid
