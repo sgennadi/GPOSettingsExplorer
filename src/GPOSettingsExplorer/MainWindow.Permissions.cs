@@ -70,7 +70,7 @@ public partial class MainWindow
             previous?.Cancel();
 
             SelectedGpoAccessText.Text =
-                "Checking effective access...";
+                "Checking AD and SYSVOL evidence...";
 
             var capability =
                 await EvaluateGpoCapabilityAsync(
@@ -222,7 +222,7 @@ public partial class MainWindow
         SelectedGpoAccessText.Text =
             capability is null
                 ? GpoGrid.SelectedItem is null
-                    ? "Select a GPO to evaluate effective access."
+                    ? "Select a GPO to review AD and SYSVOL access evidence."
                     : "Access: unable to evaluate"
                 : capability.Summary +
                   (string.IsNullOrWhiteSpace(
@@ -319,19 +319,19 @@ public partial class MainWindow
 
         if (capability is null)
         {
-            return "Effective access could not be confirmed.";
+            return "AD/SYSVOL access evidence is incomplete; use native Windows ACL tools to verify.";
         }
 
         if (requireFullControl &&
             !capability.CanEditSecurity)
         {
-            return "The current token does not have confirmed full-control/security rights on this GPO.";
+            return "GPMC permission evidence does not establish AD full-control/security access for this GPO.";
         }
 
         if (!requireFullControl &&
             !capability.CanEditSettings)
         {
-            return "The current token does not have confirmed edit-settings rights on this GPO.";
+            return "Both AD edit permission evidence and writable GPT.INI are required by this guarded UI.";
         }
 
         return capability.Details;
