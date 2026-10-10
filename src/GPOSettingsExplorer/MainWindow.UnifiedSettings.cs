@@ -270,6 +270,10 @@ public partial class MainWindow
                 cancellation.Token);
             _realSourceSnapshot = result;
             await RefreshUnifiedCatalogAsync();
+            // Show the records that were just scanned rather than leaving
+            // thousands of unrelated ADMX templates in the foreground.
+            UnifiedSearchBox.Text = string.Empty;
+            UnifiedSourceCombo.SelectedItem = "Stored GPO files (read only)";
             StatusText.Text = "Real Settings read-only source scan: " + result.Coverage;
             if (result.IsPartial)
                 MessageBox.Show(this,
