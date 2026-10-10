@@ -24,6 +24,7 @@ public sealed record UnifiedSettingInfo
     public PolicySettingInfo? Configured { get; init; }
     public AdmxPolicyDefinition? Admx { get; init; }
     public MmcInventoryEntry? Mmc { get; init; }
+    public StoredGpoSetting? Stored { get; init; }
     public RealSettingRecord? StoredSource { get; init; }
 
     public string SearchText =>
