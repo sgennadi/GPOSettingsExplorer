@@ -4,6 +4,15 @@
 
 - No unreleased changes yet.
 
+## 0.7.3 - 2026-10-10
+
+- Fix permission-aware controls where a positive SYSVOL GPT.INI writability check was incorrectly treated as evidence of AD GPO edit permission. Separate matching-token AD rights and SYSVOL evidence; normal GPO settings edits require BOTH. Preserve safe mode and authorization at actual write operations.
+- Explicit AD deny and ambiguous Custom ACE entries fail closed. Show truthful UI labels: these are simplified GPMC permission indications, not exhaustive Windows AuthZ effective access results. Missing or failed evidence never grants access.
+- Exclude technical GPMC SecuritySettings XML Member/Registry ACL records from duplicate/conflict findings and ordinary two-GPO comparison. Do not infer a policy is Not Configured simply because the loaded index lacks it.
+- Reject silent selection of the first indexed setting when one GPO contains conflicting values for the same setting identity. Mark these cases **Ambiguous index**, retain source evidence and prohibit merge recommendations.
+- Include CSE identity in fallback policy-name matching when a complete registry key/value target is absent. Global conflict drill-down now opens Unified All Settings.
+- Add repeatable CoreTests covering AD/SYSVOL separation, explicit denies, missing index entries, nested XML exclusion and ambiguous policy identities. Live GPO permissions and MMC testing remain necessary.
+
 ## 0.7.2 - 2026-10-09
 
 - Fix incorrect section-only MMC navigation for GPMC **SecuritySettings** XML records. Group members and registry security-descriptor entries are classified by actual XML ancestry where available, and carefully inferred from recognizable legacy cached rows otherwise. Sections now resolve to **Restricted Groups** and **Security Settings > Registry**, rather than the generic Security Settings root.

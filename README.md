@@ -14,7 +14,7 @@ Download the latest portable build from:
 
 **[GitHub Releases](https://github.com/sgennadi/GPOSettingsExplorer/releases/latest)**
 
-Current release: **v0.7.2**
+Current release: **v0.7.3**
 
 Available packages:
 
@@ -22,6 +22,12 @@ Available packages:
 - `GPOSettingsExplorer-win-arm64-portable.zip` — Windows on ARM64.
 
 The builds are self-contained. A separate .NET runtime installation is not required.
+
+### Permission and comparison accuracy (0.7.3)
+
+Permission-aware buttons now require **two independent pieces of evidence** before enabling normal policy setting edits: matching-token AD GPO edit permission from the GPMC permission view, and a successful read/write GPT.INI handle check on the pinned SYSVOL. A positive SYSVOL check no longer grants missing AD edit permission, and explicit matching denies fail closed. The UI labels these as **simplified evidence, not a complete Windows AuthZ evaluation**. Safe mode and server-side authorization remain mandatory.
+
+Compare & Conflicts excludes descriptive GPMC SecuritySettings XML leaves such as Member/Registry ACL. Multiple differing values for one policy identity in a single GPO are marked **Ambiguous index**, never silently reduced to the first row. Missing settings in the loaded index are shown as **Not in loaded index**, not assumed Not Configured. Conflict drill-down opens the unified All Settings workspace rather than the collapsed legacy grid.
 
 ### Unified Settings workspace (0.7.0)
 

@@ -30,49 +30,9 @@ public partial class MainWindow
             return;
         }
 
-        var leftMap = BuildPolicyMap(_settings.Where(s => s.GpoId == left.Id));
-        var rightMap = BuildPolicyMap(_settings.Where(s => s.GpoId == right.Id));
-
-        var identities = leftMap.Keys
-            .Union(rightMap.Keys, StringComparer.OrdinalIgnoreCase)
-            .OrderBy(key => key, StringComparer.CurrentCultureIgnoreCase);
-
-        var rows = new List<GpoComparisonRow>();
-
-        foreach (var identity in identities)
-        {
-            leftMap.TryGetValue(identity, out var leftSetting);
-            rightMap.TryGetValue(identity, out var rightSetting);
-
-            var sample = leftSetting ?? rightSetting;
-            if (sample is null)
-                continue;
-
-            var status = leftSetting is null
-                ? "Right only"
-                : rightSetting is null
-                    ? "Left only"
-                    : Equivalent(leftSetting, rightSetting)
-                        ? "Same"
-                        : "Different";
-
-            rows.Add(new GpoComparisonRow
-            {
-                Identity = identity,
-                Scope = sample.Scope,
-                SettingName = sample.SettingName,
-                Category = sample.Category,
-                RegistryKey = sample.RegistryKey,
-                RegistryValue = sample.RegistryValue,
-                LeftState = leftSetting?.State ?? "<Not configured>",
-                LeftValue = leftSetting?.Value ?? string.Empty,
-                RightState = rightSetting?.State ?? "<Not configured>",
-                RightValue = rightSetting?.Value ?? string.Empty,
-                Status = status
-            });
-        }
-
-        _comparisonRows = rows;
+        _comparisonRows = GpoSettingsComparisonService.Compare(
+            _settings.Where(s => s.GpoId == left.Id),
+            _settings.Where(s => s.GpoId == right.Id));
         ApplyCompareFilter();
         CompareResultTabs.SelectedIndex = 0;
         StatusText.Text = $"Compared '{left.DisplayName}' with '{right.DisplayName}'";
@@ -93,10 +53,12 @@ public partial class MainWindow
         ApplyConflictFilter();
         CompareResultTabs.SelectedIndex = 1;
         var duplicates = _conflictRows.Count(r => r.Kind == "Duplicate");
-        var differences = _conflictRows.Count - duplicates;
+        var ambiguous = _conflictRows.Count(r => r.Kind == "Ambiguous index");
+        var differences = _conflictRows.Count(r => r.Kind == "Different values");
         StatusText.Text =
-            $"{differences:N0} differing-value candidates; {duplicates:N0} identical-value duplicates. " +
-            "Scope overlap is indicative, not effective RSoP. Open a finding to verify RSoP/WMI/security on a computer.";
+            $"{differences:N0} differing-value candidates; {duplicates:N0} identical-value candidates; " +
+            $"{ambiguous:N0} ambiguous index identities. " +
+            "Technical GPMC XML details are excluded. Scope overlap is indicative, not effective RSoP.";
     }
 
     private void CompareSearchBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
@@ -185,10 +147,13 @@ public partial class MainWindow
         }
         else
         {
-            SettingsSearchBox.Text = conflict.SettingName;
-            MainTabs.SelectedIndex = 1;
-            _settingsView.Refresh();
-            StatusText.Text = $"Showing all occurrences of: {conflict.SettingName}";
+            MainTabs.SelectedItem = AllSettingsTab;
+            UnifiedAllGposCheckBox.IsChecked = true;
+            UnifiedSourceCombo.SelectedIndex = 0;
+            UnifiedStateCombo.SelectedIndex = 0;
+            UnifiedSearchBox.Text = conflict.SettingName;
+            _ = EnsureUnifiedCatalogReadyAsync();
+            StatusText.Text = $"Unified Settings: searching for {conflict.SettingName}";
         }
     }
 
@@ -205,23 +170,4 @@ public partial class MainWindow
         return false;
     }
 
-    private static Dictionary<string, PolicySettingInfo> BuildPolicyMap(IEnumerable<PolicySettingInfo> settings) =>
-        settings.GroupBy(PolicyIdentity, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
-
-    private static string PolicyIdentity(PolicySettingInfo setting)
-    {
-        if (!string.IsNullOrWhiteSpace(setting.RegistryKey) ||
-            !string.IsNullOrWhiteSpace(setting.RegistryValue))
-            return $"{setting.Scope}|REG|{setting.RegistryKey}|{setting.RegistryValue}";
-
-        return $"{setting.Scope}|NAME|{setting.Category}|{setting.SettingName}";
-    }
-
-    private static string NormalizeVariant(PolicySettingInfo setting) =>
-        $"{setting.State.Trim()}|{setting.Value.Trim()}";
-
-    private static bool Equivalent(PolicySettingInfo left, PolicySettingInfo right) =>
-        left.State.Equals(right.State, StringComparison.OrdinalIgnoreCase) &&
-        left.Value.Equals(right.Value, StringComparison.OrdinalIgnoreCase);
 }
