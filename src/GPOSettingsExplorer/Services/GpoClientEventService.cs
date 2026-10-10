@@ -91,7 +91,8 @@ public static class GpoClientEventService
     public static async Task<GpoClientEventReport> CollectAsync(
         string computer, CancellationToken cancellation = default)
     {
-        if (!Host.IsMatch(computer) || computer.Contains("..", StringComparison.Ordinal))
+        if (computer != "." &&
+            (!Host.IsMatch(computer) || computer.Contains("..", StringComparison.Ordinal)))
             throw new ArgumentException("Specify a hostname, FQDN or '.' for local events.");
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
         timeout.CancelAfter(TimeSpan.FromSeconds(40));
@@ -106,8 +107,9 @@ public static class GpoClientEventService
         foreach (var arg in new[]
         {
             "qe", "Microsoft-Windows-GroupPolicy/Operational",
-            "/r:" + computer, "/f:xml", "/c:120", "/rd:true"
+            "/f:xml", "/c:120", "/rd:true"
         }) start.ArgumentList.Add(arg);
+        if (computer != ".") start.ArgumentList.Add("/r:" + computer);
 
         using var process = Process.Start(start) ??
             throw new InvalidOperationException("Windows event reader could not start.");
