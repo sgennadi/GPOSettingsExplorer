@@ -203,7 +203,7 @@
                                 <Button Content="Open GPO" Click="OpenUnifiedSettingGpo_Click"/>
                                 <Button Content="Export CSV" Click="ExportUnifiedSettings_Click"/>
                                 <Button Content="Export full evidence ZIP..." Click="ExportFullEvidence_Click" ToolTip="Local-only, explicit read-only evidence archive of source values, health, link impact and GPMC XML. May contain sensitive domain data."/>
-                                <Button Content="Advanced analysis..." Click="AdvancedAnalysis_Click" ToolTip="Offline GPMC backups, DPAPI timeline, security scan, client/DC diagnostics, baselines, GitOps and optional Intune/local AI. Read-only."/>
+                                <Button Content="Unified platform (AI optional)..." Click="AdvancedAnalysis_Click" ToolTip="Offline GPMC backups, DPAPI timeline, security scan, client/DC diagnostics, baselines, GitOps and optional Intune/local AI. Read-only."/>
                             </WrapPanel>
                             <TextBlock x:Name="UnifiedSettingsCountText"
                                        Margin="4,3,4,5" TextWrapping="Wrap"
