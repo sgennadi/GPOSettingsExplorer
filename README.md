@@ -26,6 +26,7 @@ The builds are self-contained. A separate .NET runtime installation is not requi
 ### Release 1.2.0 - Advanced Analysis workspace (read-only)
 
 - New Advanced analysis action in All Settings opens a scrollable, resizable WPF workspace for offline backups, timeline, security triage, DC/client diagnostics, baseline checks, Intune and GitOps.
+- Dedicated **Offline GPMC backup...** button on the initial connection screen and `--offline` startup switch launch Advanced Analysis without a domain, GPMC/RSAT or main GPO grid.
 - Offline GPMC backup reader with bounded source access to Registry.pol, SecEdit, Advanced Audit audit.csv and curated GPP XML, plus same-GPO fingerprint comparisons.
 - Current-user DPAPI encrypted, 40-snapshot-per-GPO local history. Only source-identity metadata and SHA-256 fingerprints are persisted, not raw setting values.
 - Security scanner detects legacy GPP cpassword presence and script review patterns without disclosing secrets or executing commands.

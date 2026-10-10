@@ -2,7 +2,7 @@
 
 Version: 1.2.0 (feature foundation; read-only)
 
-Open the main application, select the GPO if you want live source evidence, then select **All Settings > Advanced analysis...**. For offline GPMC backups you can open this workspace without a current AD connection. The workspace never modifies GPOs, restores backups, merges policies, or uploads information without an explicit user-triggered operation.
+Open the main application, select the GPO if you want live source evidence, then select **All Settings > Advanced analysis...**. For **offline use on a standalone PC**, click **Offline GPMC backup...** on the startup connection window or launch `GPOSettingsExplorer.exe --offline`. No AD connection, domain join, RSAT or GPMC component is needed for local backup parsing. Offline mode opens Advanced Analysis directly. The workspace never modifies GPOs, restores backups, merges policies, or uploads information without an explicit user-triggered operation.
 
 ## Offline GPMC backup
 

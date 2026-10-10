@@ -26,6 +26,8 @@ public sealed class ConnectionWindow : Window
 
     public bool RelaunchStarted { get; private set; }
 
+    public bool OfflineModeSelected { get; private set; }
+
     public ConnectionWindow()
     {
         Title =
@@ -104,6 +106,19 @@ public sealed class ConnectionWindow : Window
 
         footer.Children.Add(
             test);
+
+        var offline = new Button
+        {
+            Content = "Offline GPMC backup...",
+            MinWidth = 155,
+            ToolTip = "Open local backups without connecting to AD or installing RSAT/GPMC."
+        };
+        offline.Click += (_, _) =>
+        {
+            OfflineModeSelected = true;
+            DialogResult = true;
+        };
+        footer.Children.Add(offline);
 
         footer.Children.Add(
             _connectButton);

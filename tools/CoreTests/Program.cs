@@ -48,6 +48,7 @@ var tests = new (string Name, Action Body)[]
     ("Security template editor rejects unknown and duplicate source values", TestSecurityTemplateEditingRules),
     ("GPT.INI parses split AD/SYSVOL version and rejects corruption", TestGptIniVersionParser),
     ("Offline GPMC backup parser, timeline hash changes and encrypted snapshots", TestAdvancedOfflineTimeline),
+    ("Offline startup works without implicit connected AD profile", TestOfflineStartupSwitch),
     ("GPP legacy password and scripts scanner redacts sensitive values", TestAdvancedSecurityScanner),
     ("Exact baseline and Policy CSP mappings distinguish missing evidence", TestAdvancedBaselineAndMapping),
     ("GitOps manifests omit raw domain and registry values", TestAdvancedGitopsPrivacy),
@@ -2660,4 +2661,20 @@ static void TestAdvancedAuditCsv()
         new byte[AdvancedAuditSourceReader.MaxFileBytes + 1],
         Guid.NewGuid(), "Audit Test", "audit.csv", "D").IsComplete,
         "Oversized Audit policy CSV must not be parsed.");
+}
+
+
+static void TestOfflineStartupSwitch()
+{
+    CommandLineOptions.Initialize(new[] { "--offline" });
+    Assert(CommandLineOptions.Current.OfflineAnalysis &&
+           !CommandLineOptions.Current.ConnectedSession,
+        "Offline switch should start analysis without a connected AD session.");
+    CommandLineOptions.Initialize(new[] { "--connected-session",
+        "--domain", "test.example", "--dc", "dc01.test.example" });
+    Assert(!CommandLineOptions.Current.OfflineAnalysis &&
+           CommandLineOptions.Current.ConnectedSession &&
+           CommandLineOptions.Current.DomainController == "dc01.test.example",
+        "Connected-session startup must retain existing behavior.");
+    CommandLineOptions.Initialize(Array.Empty<string>());
 }
