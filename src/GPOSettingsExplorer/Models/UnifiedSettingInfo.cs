@@ -24,11 +24,13 @@ public sealed record UnifiedSettingInfo
     public PolicySettingInfo? Configured { get; init; }
     public AdmxPolicyDefinition? Admx { get; init; }
     public MmcInventoryEntry? Mmc { get; init; }
+    public NativePolicyEvidence? Native { get; init; }
 
     public string SearchText =>
         string.Join(" ", new[] {
             GpoName, SettingName, Scope, Category, State, Value, Sources,
-            Capability, RegistryTarget, Explanation, Admx?.AdmxFile ?? ""
+            Capability, RegistryTarget, Explanation, Admx?.AdmxFile ?? "",
+            Native?.SourceLocation ?? "", Native?.DataType ?? ""
         });
 }
 
@@ -40,8 +42,9 @@ public sealed record UnifiedCatalogResult(
     bool AdmxLoaded,
     string Coverage)
 {
+    public int NativeCount { get; init; }
     public string Summary =>
         $"{Rows.Count:N0} total | {ConfiguredCount:N0} configured GPMC | " +
         $"{TemplateCount:N0} ADMX templates | {MmcOnlyCount:N0} MMC-only | " +
-        Coverage;
+        $"{NativeCount:N0} GPT-only | " + Coverage;
 }
