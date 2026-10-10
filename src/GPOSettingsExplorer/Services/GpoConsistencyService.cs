@@ -38,6 +38,26 @@ public static class GptIniVersionParser
 {
     public const int MaxBytes = 64 * 1024;
 
+    public static byte[] ReadBounded(
+        string path, CancellationToken cancellation = default)
+    {
+        using var source = new FileStream(path, FileMode.Open, FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete);
+        if (source.Length > MaxBytes)
+            throw new InvalidDataException("GPT.INI exceeds the 64 KiB read cap.");
+        using var buffer = new MemoryStream();
+        var chunk = new byte[4096];
+        int read;
+        while ((read = source.Read(chunk, 0, chunk.Length)) > 0)
+        {
+            cancellation.ThrowIfCancellationRequested();
+            if (buffer.Length + read > MaxBytes)
+                throw new InvalidDataException("GPT.INI grew beyond the 64 KiB read cap.");
+            buffer.Write(chunk, 0, read);
+        }
+        return buffer.ToArray();
+    }
+
     public static GptIniVersionResult Parse(byte[] bytes)
     {
         ArgumentNullException.ThrowIfNull(bytes);
@@ -137,14 +157,11 @@ public sealed class GpoConsistencyService
                 Add("AD GPC", "Error", "AD versionNumber missing.");
 
             var advertised = Convert.ToString(entry.Properties["gPCFileSysPath"].Value) ?? "";
-            var normalized = advertised.Replace('/', '\\').TrimEnd('\\');
-            var suffix = @"\Policies\" + id;
-            var plausible = normalized.StartsWith(@"\\", StringComparison.Ordinal) &&
-                normalized.EndsWith(suffix, StringComparison.OrdinalIgnoreCase) &&
-                !normalized.Split('\\').Any(p => p == "..");
+            var plausible = GpoSysvolPathValidator.MatchesGpo(
+                advertised, context.DomainName, gpo.Id, context.ConnectedServer);
             Add("AD gPCFileSysPath", plausible ? "Pass" : "Error",
                 plausible ? "AD path identifies the selected GPO. Reads are pinned to the current DC." :
-                    "Missing, malformed, or wrong GUID: " + advertised);
+                    "Noncanonical SYSVOL path, unexpected domain/server, or wrong GPO GUID: " + advertised);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

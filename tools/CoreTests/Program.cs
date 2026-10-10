@@ -47,6 +47,8 @@ var tests = new (string Name, Action Body)[]
     ("GPO impact preview does not equate OU link with applied RSoP", TestImpactPreviewEvidence),
     ("Security template editor rejects unknown and duplicate source values", TestSecurityTemplateEditingRules),
     ("GPT.INI parses split AD/SYSVOL version and rejects corruption", TestGptIniVersionParser),
+    ("Canonical GPC SYSVOL paths reject alternate servers and malformed paths", TestCanonicalSysvolPath),
+    ("GPMC restore never disguises a failed or missing status as success", TestGpmRestoreStatus),
     ("Semantic XML diff ignores report timestamps and finds setting changes", TestSemanticXmlDiff)
 };
 
@@ -1910,6 +1912,66 @@ static void Assert(
 }
 
 
+static void TestCanonicalSysvolPath()
+{
+    const string domain = "test.example";
+    const string dc = "dc01.test.example";
+    var gpoId = Guid.Parse("11111111-2222-3333-4444-555555555555");
+    var guid = gpoId.ToString("B");
+    foreach (var candidate in new[]
+    {
+        @"\\test.example\SYSVOL\test.example\Policies\" + guid,
+        @"\\dc01.test.example\SYSVOL\test.example\Policies\" + guid,
+        @"\\dc01\SYSVOL\test.example\Policies\" + guid
+    })
+        Assert(GpoSysvolPathValidator.MatchesGpo(candidate, domain, gpoId, dc),
+            "Valid GPO SYSVOL path was rejected: " + candidate);
+
+    foreach (var invalid in new[]
+    {
+        @"\\external.example\SYSVOL\test.example\Policies\" + guid,
+        @"\\test.example\NETLOGON\test.example\Policies\" + guid,
+        @"\\test.example\SYSVOL\other.example\Policies\" + guid,
+        @"\\test.example\SYSVOL\test.example\Policies\{00000000-0000-0000-0000-000000000000}",
+        @"\\test.example\SYSVOL\test.example\Policies\..\" + guid,
+        @"\\test.example\SYSVOL\test.example\Policies\" + guid + @"\unexpected",
+        @"\\test.example\SYSVOL\test.example\Policies\" + guid + @"\..",
+        @"\\test.example\SYSVOL\test.example\Policies",
+        @"\\test.example\SYSVOL\test.example\Policies\" + guid + @"\extra",
+        @"\\test.example\SYSVOL\test.example\Policies/" + guid,
+        @"\\dc01..test.example\SYSVOL\test.example\Policies\" + guid
+    })
+        Assert(!GpoSysvolPathValidator.MatchesGpo(invalid, domain, gpoId, dc),
+            "Malformed or unrelated SYSVOL path was accepted: " + invalid);
+}
+
+static void TestGpmRestoreStatus()
+{
+    dynamic success = new System.Dynamic.ExpandoObject();
+    success.OverallStatus = (Action)(() => { });
+    GpoBackupService.EnsureOverallStatus(success);
+
+    dynamic failure = new System.Dynamic.ExpandoObject();
+    failure.OverallStatus = (Action)(() =>
+        throw new System.Runtime.InteropServices.COMException(
+            "Simulated GPMC restore failure", unchecked((int)0x80004005)));
+    var propagated = false;
+    try { GpoBackupService.EnsureOverallStatus(failure); }
+    catch (System.Runtime.InteropServices.COMException ex)
+    {
+        propagated = ex.HResult == unchecked((int)0x80004005);
+    }
+    Assert(propagated, "A COM failure HRESULT must never be silently treated as success.");
+
+    foreach (var missing in new object?[] { null, new object() })
+    {
+        var rejected = false;
+        try { GpoBackupService.EnsureOverallStatus(missing); }
+        catch (InvalidOperationException) { rejected = true; }
+        Assert(rejected, "Missing GPMC status must fail closed.");
+    }
+}
+
 static void TestGptIniVersionParser()
 {
     var input = System.Text.Encoding.UTF8.GetBytes("[General]\r\nVersion=131075\r\n");
@@ -1938,6 +2000,20 @@ static void TestGptIniVersionParser()
 
     Assert(!GptIniVersionParser.Parse(new byte[1 + GptIniVersionParser.MaxBytes]).Valid,
         "Oversized source must not be parsed.");
+
+    var file = Path.Combine(Path.GetTempPath(), "GPOSE-GPTINI-" + Guid.NewGuid().ToString("N"));
+    try
+    {
+        File.WriteAllBytes(file, input);
+        Assert(GptIniVersionParser.ReadBounded(file).SequenceEqual(input),
+            "Bounded GPT.INI reader changed valid file bytes.");
+        File.WriteAllBytes(file, new byte[GptIniVersionParser.MaxBytes + 1]);
+        var rejected = false;
+        try { GptIniVersionParser.ReadBounded(file); }
+        catch (InvalidDataException) { rejected = true; }
+        Assert(rejected, "Bounded GPT.INI reader must reject over-limit files.");
+    }
+    finally { try { File.Delete(file); } catch (IOException) { } }
 }
 
 

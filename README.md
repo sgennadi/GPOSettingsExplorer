@@ -14,7 +14,7 @@ Download the latest portable build from:
 
 **[GitHub Releases](https://github.com/sgennadi/GPOSettingsExplorer/releases/latest)**
 
-Current release: **v1.0.0**
+Current release: **v1.0.1**
 
 Available packages:
 
@@ -22,6 +22,13 @@ Available packages:
 - `GPOSettingsExplorer-win-arm64-portable.zip` — Windows on ARM64.
 
 The builds are self-contained. A separate .NET runtime installation is not required.
+
+### Release 1.0.1 - reliability fixes
+
+- GPMC RestoreGPO success now requires invoking the actual COM `OverallStatus()` HRESULT method; missing/broken status fails closed and COM failures are propagated, not replaced by zero.
+- AD `gPCFileSysPath` is validated as a domain-specific canonical SYSVOL/Policies/GPO GUID path for both single-DC and multi-DC health reports. Actual reads remain pinned to selected controllers.
+- Multi-DC GPT.INI reads enforce the 64 KiB cap during streaming, including files that grow after the initial metadata check.
+- Regression tests cover malformed advertised paths, HRESULT failure propagation, missing status and bounded reads.
 
 ### Release 1.0.0 - delivered milestones
 
