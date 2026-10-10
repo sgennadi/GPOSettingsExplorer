@@ -132,6 +132,11 @@ public static class GpoExplainWhyService
             var warnings = events.Events.Count(e => e.Level == 3);
             var starts = events.Events.Count(e => e.EventId == 4016);
             var finishes = events.Events.Count(e => e.EventId == 5016);
+            var activities = events.Events.Where(e => e.ActivityId.HasValue)
+                .GroupBy(e => e.ActivityId!.Value).ToArray();
+            var paired = activities.Count(group =>
+                group.Any(e => e.EventId == 4016) &&
+                group.Any(e => e.EventId == 5016));
             checks.Add(new("Client GroupPolicy Operational events",
                 events.Events.Count == 0 ? "Unknown" :
                     errors > 0 ? "Client errors observed" :
@@ -139,9 +144,12 @@ public static class GpoExplainWhyService
                 events.Events.Count + " recent events returned; errors " + errors +
                 ", warnings " + warnings + ", CSE start ID 4016 " + starts +
                 ", CSE completion ID 5016 " + finishes +
-                ". These are NOT tied to the selected GPO or a unique processing " +
-                "instance; absence of a completion event in this bounded window " +
-                "does not establish failure.",
+                ", distinct ActivityIDs " + activities.Length +
+                ", ActivityIDs containing both event types " + paired +
+                ". Event IDs and ActivityIDs are NOT tied to the selected GPO. " +
+                "A common ActivityID does not prove that one CSE completed " +
+                "successfully. Missing completion events in a bounded window " +
+                "do not establish failure.",
                 errors + warnings > 0
                     ? "Open Event Viewer on the target and inspect the full event details " +
                       "and ActivityID correlation for the same processing session."

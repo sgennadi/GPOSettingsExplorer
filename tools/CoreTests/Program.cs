@@ -60,6 +60,7 @@ var tests = new (string Name, Action Body)[]
     ("Advanced Audit CSV parser validates exact source and escaped fields", TestAdvancedAuditCsv),
     ("Explain Why OU path handles enforced/blocked/disabled links safely", TestExplainWhyClientScope),
     ("Explain Why preserves RSoP uncertainty and client event caveats", TestExplainWhyEvidence),
+    ("Client event parser preserves ActivityID and record number without payload", TestExplainWhyActivityId),
     ("Canonical GPC SYSVOL paths reject alternate servers and malformed paths", TestCanonicalSysvolPath),
     ("GPMC restore never disguises a failed or missing status as success", TestGpmRestoreStatus),
     ("Semantic XML diff ignores report timestamps and finds setting changes", TestSemanticXmlDiff)
@@ -2827,4 +2828,45 @@ static void TestExplainWhyEvidence()
     Assert(disabled.Overall.Contains("CURRENT GPO SECTION DISABLED") &&
            disabled.Checks.Any(x => x.Area.Contains("loopback")),
         "User scope status must reflect current disabled configuration and unknown loopback.");
+}
+
+
+static void TestExplainWhyActivityId()
+{
+    const string activity = "{8CB311C7-5942-4D73-9B6B-2B146C7845C2}";
+    var xml = "<?xml version=\"1.0\" encoding=\"utf-8\"?>" +
+        "<Event xmlns=\"http://schemas.microsoft.com/win/2004/08/events/event\">" +
+        "<System><Provider Name=\"Microsoft-Windows-GroupPolicy\"/>" +
+        "<EventID>4016</EventID><Level>4</Level><EventRecordID>32768</EventRecordID>" +
+        "<TimeCreated SystemTime=\"2026-10-10T12:00:00Z\"/>" +
+        "<Correlation ActivityID=\"" + activity + "\"/></System>" +
+        "<EventData><Data>PrivateEventContents</Data></EventData></Event>";
+    var parsed = GpoClientEventService.ParseXml("CLIENT-01", xml);
+    Assert(parsed.Events.Count == 1 &&
+           parsed.Events[0].ActivityId == Guid.Parse(activity) &&
+           parsed.Events[0].EventRecordId == 32768 &&
+           !parsed.ToText().Contains("PrivateEventContents", StringComparison.Ordinal),
+        "Event correlation identifiers must be captured without event payload.");
+    var gpo = new GpoInfo
+    {
+        Id = Guid.NewGuid(), DisplayName = "Activity sample",
+        DomainName = "test.example", ComputerEnabled = true
+    };
+    var report = GpoExplainWhyService.Build(gpo, "Computer",
+        new GpoRsopSample("Unknown / incomplete", "CLIENT-01", "Computer",
+            "Missing gpresult"),
+        null, new GpoClientEventReport("CLIENT-01", DateTimeOffset.UtcNow,
+            new[]
+            {
+                parsed.Events[0],
+                new GpoClientEvent(5016, 4, DateTimeOffset.UtcNow, "GroupPolicy",
+                    "Completed", Guid.Parse(activity), 32769)
+            }));
+    var note = report.Checks.Single(x =>
+        x.Area == "Client GroupPolicy Operational events").Finding;
+    Assert(note.Contains("distinct ActivityIDs 1") &&
+           note.Contains("containing both event types 1") &&
+           note.Contains("NOT tied to the selected GPO") &&
+           report.Overall.Contains("UNKNOWN"),
+        "ActivityID grouping must not falsely establish target GPO success.");
 }
