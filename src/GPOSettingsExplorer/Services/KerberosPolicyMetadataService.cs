@@ -35,7 +35,21 @@ public static class KerberosPolicyMetadataService
         var normalized = (name ?? "").Trim();
         if (normalized.StartsWith("Account:", StringComparison.OrdinalIgnoreCase))
             normalized = normalized["Account:".Length..].Trim();
-        return Known.TryGetValue(normalized, out descriptor!);
+        if (Known.TryGetValue(normalized, out var exact))
+        {
+            descriptor = exact;
+            return true;
+        }
+        foreach (var policy in Known.Values)
+        {
+            if (policy.DisplayName.Equals(normalized, StringComparison.OrdinalIgnoreCase))
+            {
+                descriptor = policy;
+                return true;
+            }
+        }
+        descriptor = null!;
+        return false;
     }
 
     public static bool TryDescribeGpmcNode(
