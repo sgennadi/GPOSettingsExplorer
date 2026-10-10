@@ -17,6 +17,9 @@
 - Add GitOps HMAC-SHA256 fingerprint review manifest with a local current-user-DPAPI-protected key, reducing low-entropy value guessing; exports from separate users are intentionally noncomparable. No deployment engine or automatic upload.
 - Add optional MSAL device-code Intune Graph /beta read-only policy inventory using delegated Read scope and explicit operator input, no saved token.
 - Add opt-in localhost-only Ollama advisory explanations based on whitelisted scan finding counts, no raw policy details transmitted.
+- Add bounded Registry.pol source family classification for Firewall, AppLocker, Defender, Windows Update and other known policy namespaces, without interpreting target CSE processing.
+- Add GitHub CodeQL C# scanning on pull requests and a weekly schedule.
+- Add truly standalone offline GPMC backup analysis using startup connection-window shortcut and `--offline`, without joining AD or installing RSAT.
 - Add Click-to-Edit routing from All Settings for the existing finite-choice Security Editor when WRITE ENABLED; other raw source settings remain read-only.
 - Add optional Authenticode signing with operator-configured PFX secrets and source/digest provenance attestations for GitHub-built release ZIPs.
 - Extend regression tests for offline/security/baseline/Graph/GitOps/client event parsers.

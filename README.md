@@ -35,8 +35,9 @@ The builds are self-contained. A separate .NET runtime installation is not requi
 - Opt-in MSAL device-code read-only Intune configuration policy inventory (requires Entra App Registration and delegated permissions); Microsoft Graph /beta is subject to change.
 - Privacy-safe, **current-user-DPAPI-keyed HMAC-SHA256** GitOps review fingerprints, with no automatic publishing and no policy-application engine. Different users/machines have noncomparable keys.
 - Optional locally installed Ollama model at 127.0.0.1 only, with explicit approval and whitelisted finding counts (no raw policy names, paths or values).
+- Read-only Registry.pol family names for Firewall, AppLocker, Defender, Windows Update, Edge, Chrome and Remote Desktop settings. Labels never imply CSE execution or target effectiveness.
 - Direct Click-to-Edit for supported stored Security audit/access numeric entries (after WRITE ENABLED, mandatory preflight, GPMC backup and approval); unknown settings remain view-only.
-- Optional code-signing on release builds requires manually configured Authenticode PFX GitHub secrets; otherwise executables remain unsigned. A separate GitHub build provenance attestation job covers released ZIPs.
+- Optional code-signing on release builds requires manually configured Authenticode PFX GitHub secrets; otherwise executables remain unsigned. A separate GitHub build provenance attestation job covers released ZIPs and a CodeQL workflow performs PR/weekly security analysis.
 - This is a staged foundation for further CSE/ADMX editors and impact modeling. Read-only output is NOT effective client RSoP, and live DC testing remains required.
 
 See the Advanced Analysis operator guide in docs/advanced-analysis.md.

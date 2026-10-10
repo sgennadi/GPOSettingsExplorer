@@ -19,6 +19,10 @@ To enable signing, set GitHub Actions repository secrets AUTHENTICODE_PFX_BASE64
 
 For production certificates, prefer an HSM or managed signing service over an exportable PFX. If using a managed signing provider, replace the optional PFX step with an audited OIDC / keyless signing action approved by your organization.
 
+## Automated source security scanning
+
+The repository also includes `.github/workflows/codeql.yml` running GitHub CodeQL C# security-extended queries on PRs, the main branch and weekly. Findings require review; passing CodeQL does not prove a release is safe.
+
 ## Guardrails
 
 Neither software signing nor provenance attestations bypass Safe Mode, GPMC permissions, GPO backups, before/after previews, or the requirement for controlled nonproduction live-DC tests.

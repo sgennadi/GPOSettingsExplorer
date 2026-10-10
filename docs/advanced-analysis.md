@@ -14,6 +14,10 @@ To compare two backups, open the first backup and then select **Compare with bac
 
 **Save DPAPI timeline** creates a SHA-256 fingerprint snapshot in the current user's LocalAppData. It retains up to 40 snapshots per GPO/domain and encrypts the JSON under current-user Windows DPAPI. Snapshots include policy identifier metadata and hashes, not full raw setting values. This is a local history feature, not a replacement for full GPMC Backup or a ready-made automatic restore system.
 
+## Additional source namespaces
+
+The direct `Registry.pol` reader labels known Firewall, AppLocker, Microsoft Defender, Windows Update and browser ADMX registry-policy branches to simplify search; the data remain raw stored values. The new bounded Advanced Audit Policy `Machine/Microsoft/Windows NT/Audit/audit.csv` parser reads individual audit subcategory GUIDs and configured CSV values, but does not emulate security CSE processing. Unknown formats and Item Level Targeting are not silently interpreted.
+
 ## Security triage
 
 **Security source scan** checks nonempty legacy cpassword attributes in standard GPP XML and highlights suspicious script patterns. Neither the password attribute values nor full script commands are copied into the report. Findings can be administrative/benign. Human review and credential rotation are required when appropriate. This scanner does not decrypt GPP passwords or execute a script.
