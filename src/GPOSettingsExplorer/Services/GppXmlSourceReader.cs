@@ -75,9 +75,12 @@ public static class GppXmlSourceReader
                 foreach (var attribute in node.Attributes())
                 {
                     var field = attribute.Name.LocalName;
-                    var sensitive = field.Contains("password", StringComparison.OrdinalIgnoreCase) ||
-                        field.Contains("secret", StringComparison.OrdinalIgnoreCase) ||
-                        field.Contains("credential", StringComparison.OrdinalIgnoreCase);
+                    var sensitive = new[]
+                    {
+                        "password", "passwd", "pwd", "passphrase", "secret",
+                        "credential", "token", "apiKey", "privateKey", "accessKey",
+                        "clientSecret", "connectionString", "authorization"
+                    }.Any(marker => field.Contains(marker, StringComparison.OrdinalIgnoreCase));
                     attributes.Add(prefix + field + "=" +
                         (sensitive ? "[REDACTED IN EVIDENCE]" : attribute.Value));
                     if (attributes.Count > 100)
