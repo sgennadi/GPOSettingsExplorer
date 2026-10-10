@@ -54,7 +54,9 @@ public static class GpoGitOpsExportService
                 Convert.ToHexString(SHA256.HashData(key))[..16],
                 Hmac(key, "gpo\0" + source.GpoId.ToString("N")),
                 Hmac(key, "domain\0" + source.Domain.ToLowerInvariant()),
-                source.IsPartial, source.Rows.Count, records,
+                source.IsPartial || source.Rows.Any(row =>
+                    !GpoSourceValueCompleteness.IsExactProjection(row)),
+                source.Rows.Count, records,
                 "HMAC fingerprints require this user's local DPAPI key for subsequent " +
                 "comparable exports. Different users/computers are intentionally " +
                 "not comparable. This is a review artifact, not an effective GPO " +
