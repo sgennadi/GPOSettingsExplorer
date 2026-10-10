@@ -14,7 +14,7 @@ Download the latest portable build from:
 
 **[GitHub Releases](https://github.com/sgennadi/GPOSettingsExplorer/releases/latest)**
 
-Current release: **v1.5.0**
+Current release: **v1.6.0**
 
 Available packages:
 
@@ -22,6 +22,17 @@ Available packages:
 - `GPOSettingsExplorer-win-arm64-portable.zip` — Windows on ARM64.
 
 The builds are self-contained. A separate .NET runtime installation is not required.
+
+### Release 1.6.0 - protected GitOps reviews and signed human decisions
+
+- Advanced Analysis now has a dedicated **GitOps & approvals** workspace: save privacy-safe HMAC snapshots, compare a previously saved same-key/same-GPO baseline, inspect exact opaque change counts, create a bounded review request, and independently verify reviewer signatures.
+- Approval/rejection receipts are signed using an explicitly selected local RSA/ECDSA certificate from Windows **CurrentUser/My**. Verification requires a full SHA-256 certificate pin obtained independently. The private key never leaves the Windows store; neither user authentication nor certificate chain/revocation is claimed by simple pin verification.
+- Partial source evidence, redacted/truncated projections, empty sources, and unchanged snapshots are **not approvable**. Saved reviews record source capture timestamps and immutable SHA-256 digest binding. Signed approvals are informational and never apply a policy or modify AD/SYSVOL.
+- **Export protected source...** creates an encrypted local `.gposesdpapi` archive with Windows DPAPI CurrentUser; raw GPO identities/values never appear outside the ciphertext on disk. **Check protected source...** verifies local decryption without making it an active editing context.
+- GitOps HMAC fingerprints are only comparable for the same local DPAPI key; they are not independently verifiable source attestations, full GPO backups, or Effective RSoP. Git branches, remote push, code owners and deployment stay outside this tool.
+- Core tests exercise same-key identity checks, tampered requests, signature pins, signed decision binding, encrypted source round trips, and leakage prevention.
+
+See [GitOps and reviewer approval operator guide](docs/gitops-approvals.md).
 
 ### Release 1.5.0 - Safe Intune Graph inventory and reviewed Policy CSP mapping
 
