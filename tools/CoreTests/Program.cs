@@ -40,6 +40,7 @@ var tests = new (string Name, Action Body)[]
     ("Unified catalog never interprets source-file values as effective RSoP", TestRealSettingsUnifiedEvidence),
     ("Cross-DC GPO version evidence refuses aliases and incomplete comparisons", TestCrossDcVersionEvidence),
     ("GPP XML evidence is bounded, redacted and never interpreted as effective policy", TestGppXmlEvidence),
+    ("Legacy security boolean edit rejects absent and ambiguous DWORD values", TestSafeRegistryBooleanSecurityEdit),
     ("Comprehensive evidence ZIP contains manifests, source hashes and safe CSV", TestGpoEvidenceArchive),
     ("Selective recovery requires same GPO, intact backup and supported key", TestSelectiveSecurityRecovery),
     ("GPO impact preview does not equate OU link with applied RSoP", TestImpactPreviewEvidence),
@@ -2236,4 +2237,37 @@ static void TestCrossDcVersionEvidence()
         new[] { versionOk[0], versionOk[1] with { GptVersion = null } })
         .Contains("INCOMPLETE"),
         "Unavailable DC version must never be treated as consistent.");
+}
+
+
+static void TestSafeRegistryBooleanSecurityEdit()
+{
+    var target = @"MACHINE\Software\Policies\Example\EnableFeature";
+    var original = "[Version]\r\nsignature=\"$CHICAGO$\"\r\n" +
+        "[Registry Values]\r\n" + target + "=4,1\r\n" +
+        @"MACHINE\Software\Policies\Example\Unrelated=4,0" + "\r\n";
+    var changed = SecurityTemplateEditRules.ChangeExistingRegistryBoolean(
+        original, target, expectedOld: true, proposed: false);
+    Assert(changed.Contains(target + "=4,0\r\n") &&
+        changed.Contains("Unrelated=4,0\r\n") &&
+        changed.StartsWith("[Version]\r\n", StringComparison.Ordinal),
+        "Only the exactly matched DWORD entry should be updated.");
+    foreach (var invalid in new[]
+    {
+        original.Replace(target + "=4,1", target + "=3,1"),
+        original.Replace(target + "=4,1", target + "=4,2"),
+        original.Replace(target + "=4,1", target + "=4,0"),
+        original.Replace(target + "=4,1", ""),
+        original + target + "=4,1\r\n"
+    })
+    {
+        try
+        {
+            SecurityTemplateEditRules.ChangeExistingRegistryBoolean(
+                invalid, target, expectedOld: true, proposed: false);
+            throw new InvalidOperationException(
+                "Malformed or ambiguous DWORD was permitted.");
+        }
+        catch (InvalidDataException) { }
+    }
 }

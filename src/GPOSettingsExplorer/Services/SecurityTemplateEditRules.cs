@@ -136,4 +136,65 @@ public static class SecurityTemplateEditRules
                 $"Expected one existing [{rule.Section}] {rule.Key}; found {count}. Nothing was added.");
         return string.Join(newline, lines);
     }
+
+    /// <summary>
+    /// Change exactly ONE existing DWORD boolean Registry Values entry. Never
+    /// create policy entries or normalize unsupported types. Unrelated content
+    /// remains byte-for-byte identical after encoding by the caller.
+    /// </summary>
+    public static string ChangeExistingRegistryBoolean(
+        string source, string target, bool expectedOld, bool proposed)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        if (string.IsNullOrWhiteSpace(target) ||
+            !target.StartsWith("MACHINE\\", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("A complete machine registry policy key is required.");
+
+        var hasCrLf = source.Contains("\r\n", StringComparison.Ordinal);
+        var remaining = source.Replace("\r\n", "", StringComparison.Ordinal);
+        if (hasCrLf && (remaining.Contains('\r') || remaining.Contains('\n')))
+            throw new InvalidDataException("Mixed line endings are unsafe to preserve.");
+        var newline = hasCrLf ? "\r\n" : source.Contains('\n') ? "\n" : "\r";
+        var lines = source.Split(new[] { newline }, StringSplitOptions.None);
+        var section = "";
+        var found = 0;
+        for (var i = 0; i < lines.Length; i++)
+        {
+            var trimmed = lines[i].Trim();
+            if (trimmed.StartsWith('['))
+            {
+                if (!trimmed.EndsWith(']'))
+                    throw new InvalidDataException("Malformed security section header.");
+                section = trimmed[1..^1].Trim();
+                continue;
+            }
+
+            if (!section.Equals("Registry Values", StringComparison.OrdinalIgnoreCase))
+                continue;
+            var equals = lines[i].IndexOf('=');
+            if (equals <= 0 ||
+                !lines[i][..equals].Trim().Equals(target, StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var values = lines[i][(equals + 1)..].Trim().Split(',');
+            if (values.Length != 2 ||
+                !int.TryParse(values[0].Trim(), NumberStyles.Integer,
+                    CultureInfo.InvariantCulture, out var type) ||
+                type != 4 ||
+                !int.TryParse(values[1].Trim(), NumberStyles.Integer,
+                    CultureInfo.InvariantCulture, out var current) ||
+                current is not (0 or 1) || (current == 1) != expectedOld)
+                throw new InvalidDataException(
+                    "Expected an existing DWORD boolean with exactly the displayed value.");
+
+            lines[i] = lines[i][..(equals + 1)] +
+                "4," + (proposed ? "1" : "0");
+            found++;
+        }
+
+        if (found != 1)
+            throw new InvalidDataException(
+                $"Expected exactly one existing Registry Values entry for {target}; found {found}.");
+        return string.Join(newline, lines);
+    }
 }
