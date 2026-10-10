@@ -72,7 +72,10 @@ var tests = new (string Name, Action Body)[]
     ("Client event parser preserves ActivityID and record number without payload", TestExplainWhyActivityId),
     ("Canonical GPC SYSVOL paths reject alternate servers and malformed paths", TestCanonicalSysvolPath),
     ("GPMC restore never disguises a failed or missing status as success", TestGpmRestoreStatus),
-    ("Semantic XML diff ignores report timestamps and finds setting changes", TestSemanticXmlDiff)
+    ("Semantic XML diff ignores report timestamps and finds setting changes", TestSemanticXmlDiff),
+    ("Kerberos GPMC names resolve to correct Security section, not Registry", TestKerberosGpmcRouting),
+    ("GPO settings report provides bounded native GPMC hierarchy", TestGpoSettingsReportTree),
+    ("Remote AI endpoints and prompts strictly exclude AD/GPO identities", TestRemoteAiBoundary)
 };
 
 var failures = new List<string>();
@@ -3608,4 +3611,132 @@ static void TestUnifiedPlatformAiPrivacy()
            prompt.Contains("Unknown") &&
            summary.Contains("NOT CHECKED"),
         "An advisory local AI prompt must preserve all unknown scan states.");
+}
+
+
+static void TestKerberosGpmcRouting()
+{
+    var node = System.Xml.Linq.XElement.Parse(
+        "<Account name='MaxTicketAge' SettingNumber='10' Type='Kerberos' />");
+    Assert(KerberosPolicyMetadataService.TryDescribeGpmcNode(node, out var info) &&
+           info.InternalName == "MaxTicketAge" &&
+           info.DisplayName == "Maximum lifetime for user ticket",
+        "GPMC Account: MaxTicketAge must have the official user-ticket label.");
+    var setting = new PolicySettingInfo
+    {
+        GpoId = Guid.NewGuid(), GpoName = "Security Test",
+        Scope = "Computer", Extension = "SecuritySettings",
+        Category = "SecuritySettings", SettingName = "Account: MaxTicketAge",
+        Value = "SettingNumber=10; Type=Kerberos",
+        RegistryKey = "", RegistryValue = ""
+    };
+    var expected = "Computer Configuration > Policies > Windows Settings > " +
+        "Security Settings > Account Policies > Kerberos Policy";
+    Assert(KerberosPolicyMetadataService.IsKnownKerberosSetting(setting) &&
+           GpoEditorNavigatorService.NavigationTarget(setting) == expected &&
+           !new GpoEditorNavigatorService().CanNavigateExactly(setting),
+        "Kerberos must open the correct MMC section without guessing a fake registry value or exact item.");
+    Assert(SecurityXmlEntryClassifier.InferCategory(node) ==
+           KerberosPolicyMetadataService.Category,
+        "GPMC Account SecuritySettings XML must be classified as Kerberos Policy.");
+    Assert(!KerberosPolicyMetadataService.TryGet("UnknownPolicyName", out _),
+        "Unknown Kerberos aliases must never map to an invented editor setting.");
+}
+
+static void TestGpoSettingsReportTree()
+{
+    var gpo = new GpoInfo
+    {
+        Id = Guid.NewGuid(),
+        DomainName = "test.example",
+        DisplayName = "SENSITIVE_GPO",
+        ComputerEnabled = true,
+        UserEnabled = true
+    };
+    const string xml = "<GPO><Name>SENSITIVE_GPO</Name>" +
+        "<LinksTo><SOMName>TestOU</SOMName></LinksTo>" +
+        "<Computer><Enabled>true</Enabled>" +
+        "<ExtensionData><Extension type='SecuritySettings'>" +
+        "<Account name='MaxTicketAge' SettingNumber='10' Type='Kerberos'/>" +
+        "</Extension></ExtensionData>" +
+        "<ExtensionData><Extension type='Scripts'>" +
+        "<Script password='RAW_SECRET_SHOULD_BE_REDACTED' name='Startup'>" +
+        "<Command>DWA.bat</Command></Script>" +
+        "</Extension></ExtensionData></Computer>" +
+        "<User><Enabled>true</Enabled></User></GPO>";
+    var report = GpoSettingsReportService.Parse(gpo, xml);
+    static IEnumerable<GpoReportNode> Walk(GpoReportNode node)
+    {
+        yield return node;
+        foreach (var child in node.Children)
+        foreach (var nested in Walk(child))
+            yield return nested;
+    }
+    var all = report.Sections.SelectMany(Walk).ToArray();
+    Assert(all.Any(n => n.Label == "General") &&
+           all.Any(n => n.Label == "Links") &&
+           all.Any(n => n.Label == "Computer Configuration (Enabled)") &&
+           all.Any(n => n.Label == "User Configuration (Enabled)") &&
+           all.Any(n => n.Label == "Kerberos Policy") &&
+           all.Any(n => n.Label == "Maximum lifetime for user ticket") &&
+           all.Any(n => n.Label == "Scripts"),
+        "Native report must expose GPMC General/Links/Computer/User/Scripts/Kerberos sections.");
+    var serialized = System.Text.Json.JsonSerializer.Serialize(report);
+    Assert(!serialized.Contains("RAW_SECRET_SHOULD_BE_REDACTED"),
+        "Sensitive GPMC attribute values must never be included in the native report model.");
+    ExpectFailure(() => GpoSettingsReportService.Parse(gpo,
+        "<!DOCTYPE GPO [<!ENTITY secret SYSTEM 'file:///C:/windows/win.ini'>]>" +
+        "<GPO>&secret;</GPO>"),
+        "GPMC report tree must reject DTD/external entities.");
+    ExpectFailure(() => GpoSettingsReportService.Parse(gpo,
+        new string('A', GpoSettingsReportService.MaxXmlCharacters + 1)),
+        "Oversized GPMC XML must fail before parsing.");
+}
+
+static void TestRemoteAiBoundary()
+{
+    var official = GpoRemoteAiService.Endpoint(GpoRemoteAiProvider.OpenAI, null);
+    var azure = GpoRemoteAiService.Endpoint(
+        GpoRemoteAiProvider.AzureOpenAI, "enterprise-resource");
+    Assert(official.AbsoluteUri == "https://api.openai.com/v1/chat/completions" &&
+           azure.Host == "enterprise-resource.openai.azure.com" &&
+           azure.Scheme == Uri.UriSchemeHttps &&
+           azure.AbsolutePath == "/openai/v1/chat/completions",
+        "Remote providers must use only pinned official HTTPS API paths.");
+    foreach (var value in new[]
+    {
+        "evil.com", "azure.com@evil.com", "../etc/passwd",
+        "foo/openai", "UPPERCASE", "a", "a:11434", "a?x=1"
+    })
+        ExpectFailure(() => GpoRemoteAiService.Endpoint(
+            GpoRemoteAiProvider.AzureOpenAI, value),
+            "Resource name must not permit host/path/port redirection: " + value);
+
+    var id = Guid.NewGuid();
+    var source = new RealSettingsScanResult(id,
+        "PRIVATE_GPO_DO_NOT_SEND", "private.example", "dc01.private.example",
+        DateTimeOffset.UtcNow,
+        new[]
+        {
+            new RealSettingRecord
+            {
+                GpoId = id, GpoName = "PRIVATE_GPO_DO_NOT_SEND",
+                Scope = "Computer", Category = "Custom",
+                SettingName = "LAPS key", RegistryKey = @"SOFTWARE\Secret",
+                Value = "CREDENTIAL_VALUE_DO_NOT_SEND"
+            }
+        },
+        new[] { new RealSettingsFileEvidence("Registry.pol", "Read", 1,
+            "a", "private path") });
+    var report = GpoUnifiedPlatformService.Build(source);
+    var prompt = GpoRemoteAiService.RedactedPrompt(report);
+    foreach (var secret in new[] { "PRIVATE_GPO_DO_NOT_SEND",
+                 "private.example", "CREDENTIAL_VALUE_DO_NOT_SEND",
+                 "SOFTWARE", "LAPS key", "Registry.pol", "private path" })
+        Assert(!prompt.Contains(secret, StringComparison.OrdinalIgnoreCase),
+            "Remote AI must receive anonymized counts only: " + secret);
+    Assert(prompt.Contains("Stored source records: 1") &&
+           prompt.Contains("Security checked: False") &&
+           prompt.Contains("Unknown"),
+        "Remote prompt must explicitly mark unverified sources and use counts only.");
 }
