@@ -44,6 +44,8 @@ public static class GpoCrossDcSourceFingerprintService
     private static readonly (string Relative, int MaxBytes)[] Sources =
     {
         ("GPT.INI", GptIniVersionParser.MaxBytes),
+        (@"MachineMicrosoftWindows NTAuditaudit.csv",
+            AdvancedAuditSourceReader.MaxFileBytes),
         (@"Machine\Registry.pol", RegistryPolReader.MaxFileBytes),
         (@"User\Registry.pol", RegistryPolReader.MaxFileBytes),
         (@"Machine\Microsoft\Windows NT\SecEdit\GptTmpl.inf",

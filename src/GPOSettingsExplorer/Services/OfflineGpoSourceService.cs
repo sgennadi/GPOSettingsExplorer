@@ -79,10 +79,12 @@ public static class OfflineGpoSourceService
         var sources = new List<RealSettingsFileEvidence>();
         foreach (var spec in new[]
         {
-            (Path: Path.Combine("Machine", "Registry.pol"), Scope: "Computer", Pol: true),
-            (Path: Path.Combine("User", "Registry.pol"), Scope: "User", Pol: true),
+            (Path: Path.Combine("Machine", "Registry.pol"), Scope: "Computer", Kind: "Registry"),
+            (Path: Path.Combine("User", "Registry.pol"), Scope: "User", Kind: "Registry"),
             (Path: Path.Combine("Machine", "Microsoft", "Windows NT",
-                "SecEdit", "GptTmpl.inf"), Scope: "Computer", Pol: false)
+                "SecEdit", "GptTmpl.inf"), Scope: "Computer", Kind: "Security"),
+            (Path: Path.Combine("Machine", "Microsoft", "Windows NT",
+                "Audit", "audit.csv"), Scope: "Computer", Kind: "AdvancedAudit")
         })
         {
             cancellation.ThrowIfCancellationRequested();
@@ -95,15 +97,23 @@ public static class OfflineGpoSourceService
             }
             try
             {
-                var cap = spec.Pol ? RegistryPolReader.MaxFileBytes :
-                    SecurityTemplateSourceReader.MaxFileBytes;
+                var cap = spec.Kind switch
+                {
+                    "Registry" => RegistryPolReader.MaxFileBytes,
+                    "AdvancedAudit" => AdvancedAuditSourceReader.MaxFileBytes,
+                    _ => SecurityTemplateSourceReader.MaxFileBytes
+                };
                 var original = ReadBounded(path, cap, cancellation);
                 var sha = Convert.ToHexString(SHA256.HashData(original));
-                var parsed = spec.Pol
-                    ? RegistryPolReader.Parse(original, gpoId, gpoName,
-                        spec.Scope, path, sha)
-                    : SecurityTemplateSourceReader.Parse(original, gpoId, gpoName,
-                        path, sha);
+                var parsed = spec.Kind switch
+                {
+                    "Registry" => RegistryPolReader.Parse(original, gpoId, gpoName,
+                        spec.Scope, path, sha),
+                    "AdvancedAudit" => AdvancedAuditSourceReader.Parse(original,
+                        gpoId, gpoName, path, sha),
+                    _ => SecurityTemplateSourceReader.Parse(original,
+                        gpoId, gpoName, path, sha)
+                };
                 rows.AddRange(parsed.Rows);
                 sources.Add(new RealSettingsFileEvidence(
                     path, parsed.IsComplete ? "Read" : "Partial", parsed.Rows.Count,
