@@ -38,6 +38,7 @@ var tests = new (string Name, Action Body)[]
     ("Registry.pol binary parser preserves exact source values and flags malformed data", TestRealSettingsRegistryPol),
     ("Security-template parser reports source values and invalid encodings safely", TestRealSettingsSecurityTemplate),
     ("Unified catalog never interprets source-file values as effective RSoP", TestRealSettingsUnifiedEvidence),
+    ("GPP XML evidence is bounded, redacted and never interpreted as effective policy", TestGppXmlEvidence),
     ("Comprehensive evidence ZIP contains manifests, source hashes and safe CSV", TestGpoEvidenceArchive),
     ("Selective recovery requires same GPO, intact backup and supported key", TestSelectiveSecurityRecovery),
     ("GPO impact preview does not equate OU link with applied RSoP", TestImpactPreviewEvidence),
@@ -2163,4 +2164,35 @@ static void TestGpoEvidenceArchive()
     {
         try { Directory.Delete(folder, recursive: true); } catch { }
     }
+}
+
+
+static void TestGppXmlEvidence()
+{
+    var source = System.Text.Encoding.UTF8.GetBytes(
+        "<Drives><Drive name=\"H:\" uid=\"{A}\" disabled=\"0\">" +
+        "<Properties action=\"U\" path=\"\\\\fileserver\\home\" " +
+        "cpassword=\"DO_NOT_DISCLOSE\"/>" +
+        "<Filters><FilterGroup name=\"Students\"/></Filters>" +
+        "</Drive></Drives>");
+    var parsed = GppXmlSourceReader.Parse(source, Guid.NewGuid(), "Test",
+        "User", "Drives.xml", new string('A', 64));
+    Assert(parsed.IsComplete && parsed.Rows.Count == 1,
+        "A single GPP Drive item should be projected from stored XML.");
+    Assert(parsed.Rows[0].Value.Contains("fileserver") &&
+        !parsed.Rows[0].Value.Contains("DO_NOT_DISCLOSE") &&
+        parsed.Rows[0].Value.Contains("[REDACTED IN EVIDENCE]") &&
+        parsed.Rows[0].Evidence.Contains("NOT evaluated"),
+        "Stored properties should be visible, but passwords and ILT must not leak or be inferred.");
+    var malicious = GppXmlSourceReader.Parse(
+        System.Text.Encoding.UTF8.GetBytes(
+            "<!DOCTYPE foo [<!ENTITY x SYSTEM \"file:///C:/secret\">]>" +
+            "<Drives>&x;</Drives>"),
+        Guid.NewGuid(), "Test", "User", "Drives.xml", "00");
+    Assert(!malicious.IsComplete && malicious.Rows.Count == 0,
+        "DTD and external entity references must be rejected.");
+    Assert(!GppXmlSourceReader.Parse(
+        new byte[GppXmlSourceReader.MaxFileBytes + 1],
+        Guid.NewGuid(), "Test", "User", "Drives.xml", "00").IsComplete,
+        "Oversized GPP XML must fail closed.");
 }

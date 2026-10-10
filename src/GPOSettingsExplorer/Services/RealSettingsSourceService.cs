@@ -131,6 +131,10 @@ public sealed class RealSettingsSourceService
             }
         }
 
+        // Extend the verified source snapshot with standard GPP XML files.
+        // This is a read-only, curated item projection, not a GPP CSE emulator.
+        GppXmlSourceScanService.Scan(root, gpo, rows, files, cancellation);
+
         return new RealSettingsScanResult(gpo.Id, gpo.DisplayName,
             domain, pinnedDc, DateTimeOffset.Now, rows, files);
     }
