@@ -29,6 +29,8 @@ var tests = new (string Name, Action Body)[]
     ("GPO conflicts distinguish duplicate values and linked mismatches", TestGpoConflictAnalysis),
     ("GPO permissions require separate AD and SYSVOL evidence", TestGpoCapabilityEvidence),
     ("GPO comparisons fail closed on technical XML and duplicate identities", TestGpoComparisonEvidence),
+    ("Native Registry.pol and GptTmpl.inf read-only parser tolerates UTF16, errors and missing semantics", TestNativeGpoSourceParsing),
+    ("Unified catalog joins only exact pinned GPT source registry targets", TestNativeSourceEvidenceCorrelation),
     ("GPO rights deny/unknown edge cases", TestGpoCapabilityEvidenceExtended),
     ("Comparison rejects XML details and ambiguous indexed values", TestSafeGpoSettingsComparison),
     ("RSoP verification rejects missing, excluded and nested GPOs", TestRsopVerificationEvidence),
@@ -550,6 +552,168 @@ static void TestGpoComparisonEvidence()
             SettingName = "Registry", State = "Configured", Value = "different SID"
         } }, links, gpos).Count == 0,
         "Same-label XML security ACL details must never create conflict findings.");
+}
+
+static void TestNativeGpoSourceParsing()
+{
+    var id = Guid.NewGuid();
+    using var output = new MemoryStream();
+    output.Write(System.Text.Encoding.ASCII.GetBytes("PReg"));
+    output.Write(BitConverter.GetBytes(1u));
+
+    void Wide(string input) =>
+        output.Write(System.Text.Encoding.Unicode.GetBytes(input));
+
+    void WriteRecord(string key, string name, uint type, byte[] raw)
+    {
+        Wide("[");
+        Wide(key + ";" + name + ";");
+        output.Write(BitConverter.GetBytes(type));
+        Wide(";");
+        output.Write(BitConverter.GetBytes((uint)raw.Length));
+        Wide(";");
+        output.Write(raw);
+        Wide("]");
+    }
+
+    WriteRecord(@"Software\Policies\Example", "Setting1", 4,
+        BitConverter.GetBytes(1u));
+    WriteRecord(@"Software\Policies\Example", "Welcome", 1,
+        System.Text.Encoding.Unicode.GetBytes("שלום Привет\0"));
+    WriteRecord(@"Software\Policies\Example", "**Del.Example", 3,
+        new byte[] { 1, 2, 3 });
+
+    var file = output.ToArray();
+    var rows = GpoNativeSourceReader.ParseRegistryPol(
+        file, id, "Reference GPO", "Computer", @"Machine\Registry.pol");
+    Assert(rows.Count == 3 && rows[0].Value.StartsWith("1 (0x00000001",
+            StringComparison.Ordinal) && rows[0].DataType == "REG_DWORD",
+        "Registry.pol DWORDs must decode from the original stored binary data.");
+    Assert(rows[1].Value.Contains("שלום", StringComparison.Ordinal) &&
+           rows[1].Value.Contains("Привет", StringComparison.Ordinal),
+        "Registry.pol values must preserve UTF16 Hebrew and Cyrillic text.");
+    Assert(rows[2].State == "Registry.pol directive",
+        "Delete directives must not be treated as ordinary configured values.");
+
+    var invalid = (byte[])file.Clone();
+    invalid[0] = 0x00;
+    try
+    {
+        GpoNativeSourceReader.ParseRegistryPol(invalid, id, "Reference", "Computer", "bad.pol");
+        throw new Exception("Corrupt header was accepted.");
+    }
+    catch (InvalidDataException) { }
+
+    Array.Resize(ref invalid, file.Length - 1);
+    invalid = file[..^1];
+    try
+    {
+        GpoNativeSourceReader.ParseRegistryPol(invalid, id, "Reference", "Computer", "truncated.pol");
+        throw new Exception("Truncated Registry.pol was accepted.");
+    }
+    catch (InvalidDataException) { }
+
+    var content = "[Unicode]\r\nUnicode=yes\r\n" +
+        "[Version]\r\nsignature=\"$CHICAGO$\"\r\n" +
+        "[Privilege Rights]\r\nSeServiceLogonRight = *S-1-5-32-544\r\n" +
+        "[Group Membership]\r\n*S-1-5-32-544__Members = DOMAIN\\Operators\r\n" +
+        "[Registry Values]\r\nMACHINE\\Software\\Example\\Setting = 4,1\r\n" +
+        "[Privilege Rights]\r\nSeServiceLogonRight = *S-1-5-21-123\r\n";
+    var infBytes = System.Text.Encoding.Unicode.GetPreamble()
+        .Concat(System.Text.Encoding.Unicode.GetBytes(content)).ToArray();
+    var inf = GpoNativeSourceReader.ParseSecurityInf(
+        infBytes, id, "Reference GPO", @"Machine\Microsoft\Windows NT\SecEdit\GptTmpl.inf");
+    Assert(inf.Count == 6 &&
+           inf.Count(x => x.SettingName == "SeServiceLogonRight") == 2,
+        "Duplicated INF keys must remain visible instead of silently last/first wins.");
+    Assert(inf.Any(x => x.Category.EndsWith("User Rights Assignment",
+               StringComparison.Ordinal)) &&
+           inf.Any(x => x.Category.EndsWith("Restricted Groups",
+               StringComparison.Ordinal)) &&
+           inf.Any(x => x.Category.EndsWith("Security Options",
+               StringComparison.Ordinal)),
+        "INF sections must map to meaningful Security Settings routes.");
+    Assert(inf.Any(x => x.State == "Source metadata"),
+        "INF [Version] and [Unicode] are source metadata, not policy settings.");
+
+    var unsupported = new byte[] { (byte)'[', (byte)'A', (byte)']', 0xFF };
+    try
+    {
+        GpoNativeSourceReader.ParseSecurityInf(
+            unsupported, id, "Reference", "bad.inf");
+        throw new Exception("Unknown legacy INF encoding was incorrectly guessed.");
+    }
+    catch (InvalidDataException) { }
+}
+
+static void TestNativeSourceEvidenceCorrelation()
+{
+    var a = Guid.NewGuid();
+    var b = Guid.NewGuid();
+    var policy = new PolicySettingInfo
+    {
+        GpoId = a, GpoName = "A", Scope = "Computer",
+        SettingName = "Example setting", State = "Enabled",
+        Category = "Policy", Extension = "RegistrySettings",
+        RegistryKey = @"HKEY_LOCAL_MACHINE\Software\Policies\Example",
+        RegistryValue = "Setting1", Value = "Enabled"
+    };
+    NativePolicyEvidence Source(Guid id, string name, string setting) => new()
+    {
+        GpoId = id, GpoName = name, Scope = "Computer",
+        Source = "Registry.pol", SourceLocation = @"Machine\Registry.pol",
+        State = "Stored source value", DataType = "REG_DWORD",
+        RegistryKey = @"Software\Policies\Example",
+        RegistryValue = setting, SettingName = setting,
+        Value = "1 (0x00000001)", Category = "Administrative Templates"
+    };
+    var matching = Source(a, "A", "Setting1");
+    var otherGpo = Source(b, "B", "Setting1");
+    var otherValue = Source(a, "A", "OtherValue");
+
+    var joined = UnifiedSettingsCatalogService.Build(
+        new[] { policy },
+        Array.Empty<AdmxPolicyDefinition>(),
+        null, null, "", new[] { matching, otherGpo, otherValue },
+        "3 source files read");
+
+    var configured = joined.Rows.Single(r => r.Kind == "Configured");
+    Assert(ReferenceEquals(configured.Native, matching) &&
+           configured.Sources.Contains("Registry.pol", StringComparison.Ordinal),
+        "Only exact matching GPO, scope, key and value names may correlate GPMC to GPT.");
+    Assert(joined.NativeCount == 2 &&
+           joined.Rows.Count(r => r.Kind == "Native source") == 2,
+        "Unmatched raw GPT entries must remain individually viewable and read-only.");
+    Assert(joined.Rows.Where(r => r.Kind == "Native source")
+        .All(r => r.Capability.Contains("read-only", StringComparison.Ordinal)),
+        "Source rows must never imply a direct edit operation.");
+
+    var ambiguous = UnifiedSettingsCatalogService.Build(
+        new[] { policy },
+        Array.Empty<AdmxPolicyDefinition>(),
+        null, a, "", new[] { matching, matching with { Ordinal = 4 } });
+    Assert(ambiguous.Rows.Single(r => r.Kind == "Configured").Native is null &&
+           ambiguous.NativeCount == 2,
+        "Duplicate registry source targets must not be joined by selecting the first entry.");
+
+    var onlyB = UnifiedSettingsCatalogService.Build(
+        new[] { policy },
+        Array.Empty<AdmxPolicyDefinition>(),
+        null, b, "", new[] { matching, otherGpo });
+    Assert(onlyB.Rows.Count(r => r.Kind == "Native source") == 1 &&
+           onlyB.Rows.All(r => r.GpoId == b),
+        "A selected GPO may not inherit stored evidence from another GPO.");
+
+    var missing = new NativePolicyScanResult(a, "A", "DC01",
+        Array.Empty<NativePolicyEvidence>(),
+        new[] { new NativePolicySourceStatus(
+            "Machine/Registry.pol", "Not present", 0, "Optional source missing") },
+        DateTimeOffset.UtcNow);
+    Assert(!missing.IsComplete &&
+           missing.Coverage.Contains("PARTIAL", StringComparison.Ordinal) &&
+           missing.Coverage.Contains("never infer Not Configured",
+               StringComparison.Ordinal),
+        "Absent GPO template files are not proof a setting is Not Configured.");
 }
 
 static void TestGpoConflictAnalysis()
