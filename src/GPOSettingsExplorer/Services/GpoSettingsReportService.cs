@@ -36,14 +36,23 @@ public static class GpoSettingsReportService
         if (string.IsNullOrWhiteSpace(xml) || xml.Length > MaxXmlCharacters)
             throw new InvalidDataException("GPMC XML report is absent or exceeds the 16 MiB display cap.");
 
-        using var reader = XmlReader.Create(new StringReader(xml), new XmlReaderSettings
+        XDocument document;
+        try
         {
-            DtdProcessing = DtdProcessing.Prohibit,
-            XmlResolver = null,
-            MaxCharactersInDocument = MaxXmlCharacters,
-            MaxCharactersFromEntities = 0
-        });
-        var document = XDocument.Load(reader, LoadOptions.None);
+            using var reader = XmlReader.Create(new StringReader(xml), new XmlReaderSettings
+            {
+                DtdProcessing = DtdProcessing.Prohibit,
+                XmlResolver = null,
+                MaxCharactersInDocument = MaxXmlCharacters,
+                MaxCharactersFromEntities = 0
+            });
+            document = XDocument.Load(reader, LoadOptions.None);
+        }
+        catch (XmlException ex)
+        {
+            throw new InvalidDataException(
+                "GPMC report XML is malformed or contains prohibited DTD/entities.", ex);
+        }
         var root = document.Root ??
             throw new InvalidDataException("No GPO root node was found in GPMC XML.");
         if (!root.Name.LocalName.Equals("GPO", StringComparison.OrdinalIgnoreCase))
