@@ -29,7 +29,7 @@ var tests = new (string Name, Action Body)[]
     ("GPO conflicts distinguish duplicate values and linked mismatches", TestGpoConflictAnalysis),
     ("GPO permissions require separate AD and SYSVOL evidence", TestGpoCapabilityEvidence),
     ("GPO comparisons fail closed on technical XML and duplicate identities", TestGpoComparisonEvidence),
-    ("GPO rights require independent AD and SYSVOL edit evidence", TestGpoCapabilityEvidence),
+    ("GPO rights deny/unknown edge cases", TestGpoCapabilityEvidenceExtended),
     ("Comparison rejects XML details and ambiguous indexed values", TestSafeGpoSettingsComparison),
     ("RSoP verification rejects missing, excluded and nested GPOs", TestRsopVerificationEvidence),
     ("MMC inventory verifies source, path, scope and incomplete coverage", TestMmcFullInventoryReconciliation),
@@ -417,7 +417,7 @@ static void TestSafeGpoSettingsComparison()
         "Ambiguous identity must retain all source evidence and block consolidation recommendations.");
 }
 
-static void TestGpoCapabilityEvidence()
+static void TestGpoCapabilityEvidenceExtended()
 {
     const string sid = "S-1-5-21-100-200-300-400";
     const string unrelated = "S-1-5-21-100-200-300-401";
