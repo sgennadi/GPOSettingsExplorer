@@ -38,6 +38,7 @@ var tests = new (string Name, Action Body)[]
     ("Registry.pol binary parser preserves exact source values and flags malformed data", TestRealSettingsRegistryPol),
     ("Security-template parser reports source values and invalid encodings safely", TestRealSettingsSecurityTemplate),
     ("Unified catalog never interprets source-file values as effective RSoP", TestRealSettingsUnifiedEvidence),
+    ("Comprehensive evidence ZIP contains manifests, source hashes and safe CSV", TestGpoEvidenceArchive),
     ("Selective recovery requires same GPO, intact backup and supported key", TestSelectiveSecurityRecovery),
     ("GPO impact preview does not equate OU link with applied RSoP", TestImpactPreviewEvidence),
     ("Security template editor rejects unknown and duplicate source values", TestSecurityTemplateEditingRules),
@@ -2085,5 +2086,81 @@ static void TestSelectiveSecurityRecovery()
     {
         DomainConnectionState.SetProfile(originalConnection);
         try { Directory.Delete(root, recursive: true); } catch { }
+    }
+}
+
+
+static void TestGpoEvidenceArchive()
+{
+    var folder = Path.Combine(Path.GetTempPath(),
+        "GPOSE-evidence-" + Guid.NewGuid().ToString("N"));
+    var path = Path.Combine(folder, "report.zip");
+    try
+    {
+        var id = Guid.NewGuid();
+        var gpo = new GpoInfo
+        {
+            Id = id, DisplayName = "Test GPO", DomainName = "test.example",
+            ComputerEnabled = true, UserEnabled = true
+        };
+        var record = new RealSettingRecord
+        {
+            GpoId = id, GpoName = gpo.DisplayName, Scope = "Computer",
+            Category = "Registry policy (source file)", SettingName = "FormulaTest",
+            Value = "=2+2", SourceFile = "Registry.pol",
+            SourceSha256 = new string('B', 64)
+        };
+        var sources = new RealSettingsScanResult(id, gpo.DisplayName,
+            "test.example", "dc.test.example", DateTimeOffset.Now,
+            new[] { record }, new[]
+            {
+                new RealSettingsFileEvidence("Registry.pol", "Read", 1,
+                    record.SourceSha256, "synthetic")
+            });
+        var health = new GpoConsistencyReport(gpo.DisplayName, id,
+            "test.example", "dc.test.example", DateTimeOffset.Now,
+            new[] { new GpoConsistencyFinding("GPT.INI", "Pass", "synthetic") });
+        var impact = GpoImpactPreviewService.Build(gpo,
+            Array.Empty<GpoLinkInfo>(), "test.example", "dc.test.example", true);
+
+        GpoEvidenceArchiveService.Export(path, gpo, sources, health, impact,
+            "<GPO>synthetic</GPO>");
+        using var zip = System.IO.Compression.ZipFile.OpenRead(path);
+        var names = zip.Entries.Select(entry => entry.FullName).ToHashSet(
+            StringComparer.Ordinal);
+        foreach (var expected in new[]
+        {
+            "README.txt", "sources.json", "settings.csv", "gpmc-report.xml",
+            "health.txt", "impact.txt", "sha256sums.txt", "manifest.json"
+        })
+            Assert(names.Contains(expected), "Evidence ZIP is missing " + expected);
+
+        string Read(string filename)
+        {
+            using var input = zip.GetEntry(filename)!.Open();
+            using var reader = new StreamReader(input);
+            return reader.ReadToEnd();
+        }
+
+        Assert(Read("settings.csv").Contains("'=2+2"),
+            "CSV exported setting must be neutralized against spreadsheet formulas.");
+        Assert(Read("manifest.json").Contains("\"CompleteDomainEffectiveRsop\": false") &&
+            Read("manifest.json").Contains("ContentSha256"),
+            "Manifest must record non-RSoP scope and SHA-256 evidence.");
+        Assert(Read("sha256sums.txt").Contains("sources.json"),
+            "Evidence source checksums must be included.");
+
+        try
+        {
+            GpoEvidenceArchiveService.Export(Path.Combine(folder, "bad.zip"),
+                new GpoInfo { Id = Guid.NewGuid(), DomainName = "test.example" },
+                sources, health, impact, null);
+            throw new InvalidOperationException("Different GPO evidence was mixed.");
+        }
+        catch (InvalidOperationException) { }
+    }
+    finally
+    {
+        try { Directory.Delete(folder, recursive: true); } catch { }
     }
 }
