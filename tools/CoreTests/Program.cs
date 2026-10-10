@@ -3349,10 +3349,10 @@ static void TestGitOpsReviewApproval()
             {
                 Entries = new[] { after.Entries[0], after.Entries[0] }
             }), "Duplicate HMAC identities must be rejected.");
-        ExpectFailure(() => GpoGitOpsReviewService.CreateRequest(before,
-                after with { PartialCoverage = true }),
-            "A partial manifest cannot claim a complete review.",
-            expectFailure: false);
+        var partialReview = GpoGitOpsReviewService.CreateRequest(before,
+            after with { PartialCoverage = true });
+        Assert(!GpoGitOpsReviewService.CanApprove(partialReview),
+            "Partial evidence must block approval rather than pretend completeness.");
     }
     finally
     {
@@ -3430,4 +3430,21 @@ static void TestProtectedGpoSource()
     {
         try { File.Delete(path); } catch { }
     }
+}
+
+
+static void ExpectFailure(Action action, string message)
+{
+    try
+    {
+        action();
+    }
+    catch (Exception ex) when (
+        ex is InvalidOperationException or InvalidDataException or
+              System.Security.Cryptography.CryptographicException or
+              ArgumentException or FormatException)
+    {
+        return;
+    }
+    throw new InvalidOperationException(message);
 }
