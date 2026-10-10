@@ -26,14 +26,16 @@ The builds are self-contained. A separate .NET runtime installation is not requi
 ### Release 1.2.0 - Advanced Analysis workspace (read-only)
 
 - New Advanced analysis action in All Settings opens a scrollable, resizable WPF workspace for offline backups, timeline, security triage, DC/client diagnostics, baseline checks, Intune and GitOps.
-- Offline GPMC backup reader with bounded source access to Registry.pol, SecEdit and curated GPP XML, plus same-GPO fingerprint comparisons.
+- Offline GPMC backup reader with bounded source access to Registry.pol, SecEdit, Advanced Audit audit.csv and curated GPP XML, plus same-GPO fingerprint comparisons.
 - Current-user DPAPI encrypted, 40-snapshot-per-GPO local history. Only source-identity metadata and SHA-256 fingerprints are persisted, not raw setting values.
 - Security scanner detects legacy GPP cpassword presence and script review patterns without disclosing secrets or executing commands.
-- Multi-DC SHA-256 fingerprints of a curated policy-file set and client GroupPolicy Operational event metadata through the built-in wevtutil tool.
+- Multi-DC SHA-256 fingerprints of a curated policy-file set (including Advanced Audit audit.csv) and client GroupPolicy Operational event metadata through the built-in wevtutil tool.
 - Operator-supplied JSON baseline comparison and exact reviewed registry-to-Policy-CSP mapping. Not a built-in official Microsoft baseline; unknown states remain unknown.
 - Opt-in MSAL device-code read-only Intune configuration policy inventory (requires Entra App Registration and delegated permissions); Microsoft Graph /beta is subject to change.
-- Privacy-safe GitOps review fingerprints, with no automatic publishing and no policy-application engine.
+- Privacy-safe, **current-user-DPAPI-keyed HMAC-SHA256** GitOps review fingerprints, with no automatic publishing and no policy-application engine. Different users/machines have noncomparable keys.
 - Optional locally installed Ollama model at 127.0.0.1 only, with explicit approval and whitelisted finding counts (no raw policy names, paths or values).
+- Direct Click-to-Edit for supported stored Security audit/access numeric entries (after WRITE ENABLED, mandatory preflight, GPMC backup and approval); unknown settings remain view-only.
+- Optional code-signing on release builds requires manually configured Authenticode PFX GitHub secrets; otherwise executables remain unsigned. A separate GitHub build provenance attestation job covers released ZIPs.
 - This is a staged foundation for further CSE/ADMX editors and impact modeling. Read-only output is NOT effective client RSoP, and live DC testing remains required.
 
 See the Advanced Analysis operator guide in docs/advanced-analysis.md.

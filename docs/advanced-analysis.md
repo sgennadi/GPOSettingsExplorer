@@ -6,7 +6,7 @@ Open the main application, select the GPO if you want live source evidence, then
 
 ## Offline GPMC backup
 
-Choose the original **bkupInfo.xml** from a complete GPMC backup folder. The reader reads the matching backup GUID, domain and GPO GUID, then analyzes Machine/User Registry.pol, Machine SecEdit GptTmpl.inf and a curated set of standard GPP XML files from DomainSysvol/GPO. A missing or unreadable file is explicitly recorded. Unsupported CSE formats are not inferred to be Not Configured. Source content is read in a bounded manner.
+Choose the original **bkupInfo.xml** from a complete GPMC backup folder. The reader reads the matching backup GUID, domain and GPO GUID, then analyzes Machine/User Registry.pol, Machine SecEdit GptTmpl.inf, Machine Advanced Audit audit.csv and a curated set of standard GPP XML files from DomainSysvol/GPO. A missing or unreadable file is explicitly recorded. Unsupported CSE formats are not inferred to be Not Configured. Source content is read in a bounded manner.
 
 To compare two backups, open the first backup and then select **Compare with backup...**. The comparison is limited to the same domain and GPO GUID; it shows only setting-identity changes and SHA-256 changes, not a list of plaintext credential values.
 
@@ -67,7 +67,7 @@ Microsoft Graph connectivity is opt-in. Enter an Entra tenant GUID and existing 
 
 ## GitOps export
 
-**Export GitOps fingerprints** shows portable JSON with SHA-256 hashes of source setting identities and values. The manifest does not contain raw domain identifiers, passwords, registry values or script bodies. It is an auditable review/diff artifact, NOT an executable GPO or Intune deployment specification. Never publish confidential raw evidence ZIPs publicly.
+**Export GitOps fingerprints** shows portable JSON with **HMAC-SHA256** protected fingerprints of source setting identities and values. The 256-bit private HMAC key is randomly generated and stored under current-user Windows DPAPI at first export. The exported manifest includes no raw domain identifiers, passwords, registry values or script bodies, and cannot be brute-force reversed without the local key. This avoids guessing low-entropy policy values from ordinary SHA-256 alone. **Exports from other Windows users or computers will not be comparable** until a separate, carefully designed key-sharing workflow exists. It is a review artifact, NOT an executable GPO/Intune deployment specification. Never publish confidential raw evidence ZIPs publicly.
 
 ## Client RSoP / events and cross-DC SHA-256
 

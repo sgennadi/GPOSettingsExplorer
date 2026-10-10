@@ -2531,12 +2531,23 @@ static void TestAdvancedGitopsPrivacy()
         Array.Empty<RealSettingsFileEvidence>());
     var json = GpoGitOpsExportService.ToJson(
         GpoGitOpsExportService.Capture(scan));
-    Assert(json.Contains("gposes-gitops-fingerprint-v1") &&
+    Assert(json.Contains("gposes-gitops-fingerprint-v2") &&
            !json.Contains(secret) &&
            !json.Contains(row.GpoName) &&
            !json.Contains(scan.Domain) &&
            !json.Contains("SOFTWARE"),
         "GitOps review export must omit raw source values and domain names.");
+    var exported = GpoGitOpsExportService.Capture(scan);
+    var exportedAgain = GpoGitOpsExportService.Capture(scan);
+    Assert(exported.KeyId == exportedAgain.KeyId &&
+           exported.KeyId.Length == 16 &&
+           exported.Entries.Count == 1 &&
+           exported.Entries[0].StoredValueHmacSha256 ==
+               exportedAgain.Entries[0].StoredValueHmacSha256,
+        "Current-user HMAC fingerprints should stay stable for local comparisons.");
+    Assert(!GpoGitOpsExportService.ToJson(exported)
+                .Contains("TOP_SECRET_TEST_CREDENTIAL"),
+        "No raw secret may appear in exported HMAC review JSON.");
 }
 
 static void TestAdvancedClientEvents()
