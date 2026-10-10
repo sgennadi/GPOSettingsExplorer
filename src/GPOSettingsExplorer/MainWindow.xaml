@@ -187,6 +187,8 @@
                                           Unchecked="UnifiedFilterChanged"
                                           ToolTip="Show low-level GPMC XML descriptors such as security group Member and Registry ACL. These are read-only descriptions, not independently editable policies."/>
                                 <Button Content="Refresh catalog" Click="RefreshUnifiedSettings_Click"/>
+                                <Button Content="Read GPO files..." Click="ReadGpoNativeSources_Click"
+                                        ToolTip="Read Registry.pol (Computer/User) and GptTmpl.inf on the pinned SYSVOL DC. No MMC and no policy writes."/>
                                 <Button x:Name="UnifiedActionButton"
                                         Content="View / Edit..."
                                         Style="{StaticResource UiPrimaryButton}"
@@ -224,7 +226,7 @@
                         </DataGrid>
                     </DockPanel>
                     <Expander x:Name="AdvancedSourcesExpander" Grid.Row="1"
-                              Header="Advanced sources and diagnostics (GPMC / MMC / ADMX)"
+                              Header="Advanced sources and diagnostics (GPMC / MMC / ADMX / GPT files)"
                               IsExpanded="False"
                               ToolTip="Original source lists and manual MMC inventory live here. All existing editing commands remain available.">
                         <Border BorderBrush="{DynamicResource {x:Static SystemColors.ControlDarkBrushKey}}"
@@ -344,6 +346,71 @@
                             <DataGridTextColumn Header="Registry value" Binding="{Binding ValueName}" Width="1.1*"/>
                         </DataGrid.Columns>
                     </DataGrid>
+                </DockPanel>
+            </TabItem>
+            <TabItem x:Name="NativePolicySourcesTab" Header="GPT source files (read-only)">
+                <DockPanel Margin="6">
+                    <StackPanel DockPanel.Dock="Top">
+                        <WrapPanel>
+                            <TextBlock Text="Reference GPO:" VerticalAlignment="Center"/>
+                            <ComboBox x:Name="NativePolicyGpoCombo" Width="365" MinWidth="190"
+                                      DisplayMemberPath="DisplayName"
+                                      ItemsSource="{Binding ElementName=GpoGrid, Path=ItemsSource}"
+                                      ToolTip="Read source files for one explicitly selected GPO on the pinned DC."/>
+                            <Button x:Name="NativePolicyScanButton"
+                                    Content="Read source files (read-only)"
+                                    Style="{StaticResource UiPrimaryButton}"
+                                    Click="ReadGpoNativeSources_Click"/>
+                            <Button x:Name="NativePolicyCancelButton"
+                                    Content="Cancel read" IsEnabled="False"
+                                    Click="CancelGpoNativeSources_Click"/>
+                        </WrapPanel>
+                        <TextBlock x:Name="NativePolicyCoverageText" Margin="4,3,4,5"
+                                   TextWrapping="Wrap"
+                                   Foreground="{DynamicResource UiMutedBrush}"
+                                   Text="No GPT source file scan yet. Reading is optional and does not start MMC."/>
+                        <TextBlock Text="Stored registry.pol and GptTmpl.inf values are file evidence only: not RSoP, not guaranteed ADMX Enabled/Disabled and never editable from this source view."
+                                   TextWrapping="Wrap" Margin="4,2,4,5"
+                                   Foreground="{DynamicResource UiWarningBrush}"/>
+                    </StackPanel>
+                    <TabControl>
+                        <TabItem Header="Stored policy values">
+                            <DockPanel>
+                                <TextBox x:Name="NativePolicyValueText"
+                                         DockPanel.Dock="Bottom" MinHeight="70" MaxHeight="130"
+                                         IsReadOnly="True" AcceptsReturn="True"
+                                         VerticalScrollBarVisibility="Auto"
+                                         HorizontalScrollBarVisibility="Auto"
+                                         TextWrapping="Wrap"
+                                         ToolTip="Original decoded source value of the selected policy record."/>
+                                <DataGrid x:Name="NativePolicyGrid" IsReadOnly="True"
+                                          AutoGenerateColumns="False"
+                                          SelectionChanged="NativePolicyGrid_SelectionChanged">
+                                    <DataGrid.Columns>
+                                        <DataGridTextColumn Header="Setting" Binding="{Binding SettingName}" Width="1.7*"/>
+                                        <DataGridTextColumn Header="Scope" Binding="{Binding Scope}" Width="95"/>
+                                        <DataGridTextColumn Header="Stored value" Binding="{Binding Value}" Width="1.6*"/>
+                                        <DataGridTextColumn Header="Source" Binding="{Binding Source}" Width="125"/>
+                                        <DataGridTextColumn Header="Type / section" Binding="{Binding DataType}" Width="130"/>
+                                        <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="1.3*"/>
+                                        <DataGridTextColumn Header="Registry key" Binding="{Binding RegistryKey}" Width="1.7*"/>
+                                        <DataGridTextColumn Header="Source location" Binding="{Binding SourceLocation}" Width="180"/>
+                                    </DataGrid.Columns>
+                                </DataGrid>
+                            </DockPanel>
+                        </TabItem>
+                        <TabItem Header="File coverage / errors">
+                            <DataGrid x:Name="NativePolicyStatusGrid" IsReadOnly="True"
+                                      AutoGenerateColumns="False">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="Source file" Binding="{Binding Source}" Width="2*"/>
+                                    <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="155"/>
+                                    <DataGridTextColumn Header="Records" Binding="{Binding RowCount}" Width="90"/>
+                                    <DataGridTextColumn Header="Diagnostics" Binding="{Binding Details}" Width="2*"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </TabItem>
+                    </TabControl>
                 </DockPanel>
             </TabItem>
                 </TabControl>
