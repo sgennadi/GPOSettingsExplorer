@@ -94,6 +94,14 @@ public static class GpoReferenceBaselineService
 
             var a = referenceRows[0];
             var b = currentRows[0];
+            if (!GpoSourceValueCompleteness.IsExactProjection(a) ||
+                !GpoSourceValueCompleteness.IsExactProjection(b))
+            {
+                findings.Add(new(identity, "Unknown",
+                    "A displayed source value is redacted, truncated or only partly " +
+                    "projected; equality cannot be verified from the UI data."));
+                continue;
+            }
             var matches = a.Value.Equals(b.Value, StringComparison.Ordinal) &&
                           a.ValueType.Equals(b.ValueType, StringComparison.Ordinal) &&
                           a.State.Equals(b.State, StringComparison.Ordinal);

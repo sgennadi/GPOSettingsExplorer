@@ -2995,6 +2995,43 @@ static void TestGpmReferenceBaseline()
            !diff.ToText().Contains("Value: 0"),
         "Different values must be reported without exporting raw values.");
 
+    var partialPreference = standard with
+    {
+        Category = "GPP XML source > Groups",
+        SettingName = "Local account",
+        Value = "cpassword=[REDACTED IN EVIDENCE]",
+        ValueType = "GPP XML attributes (partial projection)"
+    };
+    var partialReference = reference with
+    {
+        Rows = new[] { partialPreference }
+    };
+    var partialCurrent = current with
+    {
+        Rows = new[] { partialPreference with { GpoId = targetGpo } }
+    };
+    var unknownGpp = GpoReferenceBaselineService.Compare(
+        partialCurrent, partialReference);
+    Assert(unknownGpp.Findings.Single().Status == "Unknown",
+        "Two identically redacted GPP XML strings must not claim exact policy equality.");
+
+    var binaryPreview = standard with
+    {
+        Value = "0x" + new string('A', 96) + "... (2048 bytes total)",
+        ValueType = "REG_BINARY"
+    };
+    Assert(!GpoSourceValueCompleteness.IsExactProjection(binaryPreview),
+        "Registry.pol truncated binary previews are not exact-value comparisons.");
+
+    var customBaseline = new GpoBaselineDocument("gposes-baseline-v1", "Test",
+        "1", new[] { new GpoBaselineRule("gpp-privacy", "Computer",
+            partialPreference.Category, partialPreference.SettingName,
+            partialPreference.Value) });
+    var unknownRule = GpoBaselineAssessmentService.Assess(
+        partialCurrent, customBaseline).Findings.Single();
+    Assert(unknownRule.Status == "Unknown",
+        "User-provided baselines must not call masked source projections compliant.");
+
     var duplicate = reference with
     {
         Rows = new[] { standard, standard }
