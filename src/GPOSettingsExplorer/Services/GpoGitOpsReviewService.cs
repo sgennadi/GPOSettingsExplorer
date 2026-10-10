@@ -17,6 +17,7 @@ public sealed record GpoGitOpsReviewRequest(
     string Schema, DateTimeOffset CreatedUtc, string KeyId,
     string GpoIdentityHmacSha256, string DomainIdentityHmacSha256,
     string BaselineSha256, string CandidateSha256,
+    DateTimeOffset BaselineCapturedUtc, DateTimeOffset CandidateCapturedUtc,
     bool BaselinePartial, bool CandidatePartial,
     int BaselineRecords, int CandidateRecords,
     IReadOnlyList<GpoGitOpsChange> Changes);
@@ -98,6 +99,7 @@ public static class GpoGitOpsReviewService
             candidate.KeyId, candidate.GpoIdentityHmacSha256,
             candidate.DomainIdentityHmacSha256,
             DigestManifest(baseline), DigestManifest(candidate),
+            baseline.CapturedUtc, candidate.CapturedUtc,
             baseline.PartialCoverage, candidate.PartialCoverage,
             baseline.SourceRecords, candidate.SourceRecords, changes);
     }
@@ -114,7 +116,9 @@ public static class GpoGitOpsReviewService
         return "GITOPS REDACTED REVIEW (NO GPO WRITE)\n" +
             "Request digest: " + RequestSha256(request) + "\n" +
             "Key: " + request.KeyId + "\n" +
-            "Baseline entries: " + request.BaselineRecords +
+            "Baseline captured UTC: " + request.BaselineCapturedUtc.ToUniversalTime().ToString("O") +
+            "\nCandidate captured UTC: " + request.CandidateCapturedUtc.ToUniversalTime().ToString("O") +
+            "\nBaseline entries: " + request.BaselineRecords +
             " | Candidate entries: " + request.CandidateRecords + "\n" +
             "Added: " + request.Changes.Count(x => x.Kind == "Added") +
             " | Removed: " + request.Changes.Count(x => x.Kind == "Removed") +
@@ -298,6 +302,7 @@ public static class GpoGitOpsReviewService
             !Hex(r.GpoIdentityHmacSha256, 64) ||
             !Hex(r.DomainIdentityHmacSha256, 64) ||
             !Hex(r.BaselineSha256, 64) || !Hex(r.CandidateSha256, 64) ||
+            r.BaselineCapturedUtc == default || r.CandidateCapturedUtc == default ||
             r.BaselineRecords is < 0 or > MaxEntries ||
             r.CandidateRecords is < 0 or > MaxEntries ||
             r.Changes is null || r.Changes.Count > MaxEntries ||
