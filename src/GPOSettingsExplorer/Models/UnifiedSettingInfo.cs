@@ -24,11 +24,13 @@ public sealed record UnifiedSettingInfo
     public PolicySettingInfo? Configured { get; init; }
     public AdmxPolicyDefinition? Admx { get; init; }
     public MmcInventoryEntry? Mmc { get; init; }
+    public NativePolicyEvidence? Native { get; init; }
 
     public string SearchText =>
         string.Join(" ", new[] {
             GpoName, SettingName, Scope, Category, State, Value, Sources,
-            Capability, RegistryTarget, Explanation, Admx?.AdmxFile ?? ""
+            Capability, RegistryTarget, Explanation, Admx?.AdmxFile ?? "",
+            Native?.SourceLocation ?? "", Native?.DataType ?? ""
         });
 }
 
