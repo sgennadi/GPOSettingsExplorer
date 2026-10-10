@@ -1764,6 +1764,7 @@
                         </WrapPanel>
                         <WrapPanel>
                             <Button Content="Restore selected" Click="RestoreBackup_Click"/>
+                            <Button Content="Selective restore security..." Click="SelectiveRestoreSetting_Click" ToolTip="Restore ONE existing, reviewed Security Settings numeric value from the same-domain GPMC backup. No ACL/rights or bulk restore."/>
                             <Button Content="Import into GPO..." Click="ImportBackup_Click"/>
                             <Button Content="Generate report" Click="BackupReport_Click"/>
                             <Button Content="Compare with current" Click="CompareBackupWithCurrent_Click"/>

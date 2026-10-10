@@ -38,6 +38,7 @@ var tests = new (string Name, Action Body)[]
     ("Registry.pol binary parser preserves exact source values and flags malformed data", TestRealSettingsRegistryPol),
     ("Security-template parser reports source values and invalid encodings safely", TestRealSettingsSecurityTemplate),
     ("Unified catalog never interprets source-file values as effective RSoP", TestRealSettingsUnifiedEvidence),
+    ("Selective recovery requires same GPO, intact backup and supported key", TestSelectiveSecurityRecovery),
     ("GPO impact preview does not equate OU link with applied RSoP", TestImpactPreviewEvidence),
     ("Security template editor rejects unknown and duplicate source values", TestSecurityTemplateEditingRules),
     ("GPT.INI parses split AD/SYSVOL version and rejects corruption", TestGptIniVersionParser),
@@ -2018,4 +2019,71 @@ static void TestImpactPreviewEvidence()
         Array.Empty<GpoLinkInfo>(), "test.example", "dc.test.example", false);
     Assert(incomplete.Summary.Contains("INCOMPLETE"),
         "Failed link inventory must never be reported as zero targets.");
+}
+
+
+static void TestSelectiveSecurityRecovery()
+{
+    var root = Path.Combine(Path.GetTempPath(), "GPOSE-selective-" + Guid.NewGuid().ToString("N"));
+    var id = Guid.NewGuid();
+    var backupId = Guid.NewGuid();
+    var gpo = new GpoInfo { Id = id, DisplayName = "Test Policy",
+        DomainName = "test.example", ComputerEnabled = true, UserEnabled = true };
+    var backup = new GpoBackupInfo { GpoId = id, BackupId = backupId,
+        DomainName = "test.example", DisplayName = "Test Policy",
+        BackupDirectory = root };
+    var path = Path.Combine(root, backupId.ToString("B").ToUpperInvariant(),
+        "DomainSysvol", "GPO", "Machine", "Microsoft", "Windows NT", "SecEdit", "GptTmpl.inf");
+    var originalConnection = DomainConnectionState.Profile;
+    try
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        var backupTemplate = System.Text.Encoding.UTF8.GetBytes(
+            "[Version]\r\nSignature=\"$CHICAGO$\"\r\n[Event Audit]\r\nAuditLogonEvents = 3\r\n");
+        File.WriteAllBytes(path, backupTemplate);
+        DomainConnectionState.SetProfile(
+            DomainConnectionProfile.CurrentSession("test.example", "dc.test.example"));
+        var currentPath = @"\\dc.test.example\SYSVOL\test.example\Policies\" +
+            id.ToString("B") + @"\Machine\Microsoft\Windows NT\SecEdit\GptTmpl.inf";
+        var currentSource = SecurityTemplateSourceReader.Parse(
+            System.Text.Encoding.UTF8.GetBytes(
+                "[Version]\r\nSignature=\"$CHICAGO$\"\r\n[Event Audit]\r\nAuditLogonEvents = 1\r\n"),
+            id, "Test Policy", currentPath, new string('A', 64));
+        Assert(currentSource.IsComplete,
+            "Current test security source should parse cleanly.");
+        var live = new RealSettingsScanResult(id, "Test Policy",
+            "test.example", "dc.test.example", DateTimeOffset.Now,
+            currentSource.Rows, new[]
+            {
+                new RealSettingsFileEvidence(currentPath, "Read",
+                    currentSource.Rows.Count, new string('A', 64), "Synthetic test")
+            });
+        var plan = GpoSelectiveRecoveryService.Inspect(backup, gpo, live);
+        Assert(plan.Candidates.Count == 1 &&
+            plan.Candidates[0].CurrentValue == 1 &&
+            plan.Candidates[0].BackupValue == 3,
+            "Only changed, recognized, existing source key should be recoverable.");
+        GpoSelectiveRecoveryService.EnsureBackupUnchanged(plan);
+        try
+        {
+            GpoSelectiveRecoveryService.Inspect(
+                new GpoBackupInfo { GpoId = Guid.NewGuid(), BackupId = backupId,
+                    DomainName = backup.DomainName, BackupDirectory = root },
+                gpo, live);
+            throw new InvalidOperationException("Different GPO backup was accepted.");
+        }
+        catch (InvalidOperationException) { }
+        File.AppendAllText(path, "\r\n; Concurrent change");
+        try
+        {
+            GpoSelectiveRecoveryService.EnsureBackupUnchanged(plan);
+            throw new InvalidOperationException("Modified backup was accepted.");
+        }
+        catch (IOException) { }
+    }
+    finally
+    {
+        DomainConnectionState.SetProfile(originalConnection);
+        try { Directory.Delete(root, recursive: true); } catch { }
+    }
 }
