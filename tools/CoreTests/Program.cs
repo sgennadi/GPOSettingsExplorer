@@ -3661,7 +3661,9 @@ static void TestGpoSettingsReportTree()
         "</Extension></ExtensionData>" +
         "<ExtensionData><Extension type='Scripts'>" +
         "<Script password='RAW_SECRET_SHOULD_BE_REDACTED' name='Startup'>" +
-        "<Command>DWA.bat</Command></Script>" +
+        "<Command>DWA.bat</Command>" +
+        "<Password><Value>NESTED_SECRET_SHOULD_BE_REDACTED</Value></Password>" +
+        "</Script>" +
         "</Extension></ExtensionData></Computer>" +
         "<User><Enabled>true</Enabled></User></GPO>";
     var report = GpoSettingsReportService.Parse(gpo, xml);
@@ -3682,8 +3684,9 @@ static void TestGpoSettingsReportTree()
            all.Any(n => n.Label == "Scripts"),
         "Native report must expose GPMC General/Links/Computer/User/Scripts/Kerberos sections.");
     var serialized = System.Text.Json.JsonSerializer.Serialize(report);
-    Assert(!serialized.Contains("RAW_SECRET_SHOULD_BE_REDACTED"),
-        "Sensitive GPMC attribute values must never be included in the native report model.");
+    Assert(!serialized.Contains("RAW_SECRET_SHOULD_BE_REDACTED") &&
+           !serialized.Contains("NESTED_SECRET_SHOULD_BE_REDACTED"),
+        "Sensitive GPMC attributes and values nested under Password must be redacted.");
     ExpectFailure(() => GpoSettingsReportService.Parse(gpo,
         "<!DOCTYPE GPO [<!ENTITY secret SYSTEM 'file:///C:/windows/win.ini'>]>" +
         "<GPO>&secret;</GPO>"),
