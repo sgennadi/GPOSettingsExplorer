@@ -38,6 +38,7 @@ var tests = new (string Name, Action Body)[]
     ("Registry.pol binary parser preserves exact source values and flags malformed data", TestRealSettingsRegistryPol),
     ("Security-template parser reports source values and invalid encodings safely", TestRealSettingsSecurityTemplate),
     ("Unified catalog never interprets source-file values as effective RSoP", TestRealSettingsUnifiedEvidence),
+    ("Cross-DC GPO version evidence refuses aliases and incomplete comparisons", TestCrossDcVersionEvidence),
     ("GPP XML evidence is bounded, redacted and never interpreted as effective policy", TestGppXmlEvidence),
     ("Comprehensive evidence ZIP contains manifests, source hashes and safe CSV", TestGpoEvidenceArchive),
     ("Selective recovery requires same GPO, intact backup and supported key", TestSelectiveSecurityRecovery),
@@ -2195,4 +2196,44 @@ static void TestGppXmlEvidence()
         new byte[GppXmlSourceReader.MaxFileBytes + 1],
         Guid.NewGuid(), "Test", "User", "Drives.xml", "00").IsComplete,
         "Oversized GPP XML must fail closed.");
+}
+
+
+static void TestCrossDcVersionEvidence()
+{
+    var dcs = GpoCrossDcConsistencyService.ValidateControllers(
+        "dc01.test.example,\ndc02.test.example", "test.example");
+    Assert(dcs.Length == 2 && dcs[0] == "dc01.test.example",
+        "Explicit DC host list must preserve distinct named controllers.");
+    foreach (var bad in new[]
+    {
+        "test.example", @"\\dc01.test.example", "dc01.test.example/../x",
+        "dc01..test.example"
+    })
+    {
+        try
+        {
+            GpoCrossDcConsistencyService.ValidateControllers(bad, "test.example");
+            throw new InvalidOperationException("Invalid DC name was accepted: " + bad);
+        }
+        catch (ArgumentException) { }
+    }
+    var versionOk = new[]
+    {
+        new GpoDcVersionEvidence("dc01.test.example", 65538, 65538,
+            new string('A', 64), "test", "test"),
+        new GpoDcVersionEvidence("dc02.test.example", 65538, 65538,
+            new string('A', 64), "test", "test")
+    };
+    Assert(GpoCrossDcConsistencyService.Assess(versionOk).Contains("VERSION MATCH") &&
+        GpoCrossDcConsistencyService.Assess(versionOk).Contains("NOT a full"),
+        "Matching version numbers on two DCs are evidence, not full replication proof.");
+    Assert(GpoCrossDcConsistencyService.Assess(
+        new[] { versionOk[0], versionOk[1] with { GptVersion = 65537 } })
+        .Contains("MISMATCH"),
+        "A DC-local mismatch must be reported before cross-DC equality.");
+    Assert(GpoCrossDcConsistencyService.Assess(
+        new[] { versionOk[0], versionOk[1] with { GptVersion = null } })
+        .Contains("INCOMPLETE"),
+        "Unavailable DC version must never be treated as consistent.");
 }
