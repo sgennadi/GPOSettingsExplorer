@@ -40,6 +40,7 @@ var tests = new (string Name, Action Body)[]
     ("Unified catalog never interprets source-file values as effective RSoP", TestRealSettingsUnifiedEvidence),
     ("Cross-DC GPO version evidence refuses aliases and incomplete comparisons", TestCrossDcVersionEvidence),
     ("GPP XML evidence is bounded, redacted and never interpreted as effective policy", TestGppXmlEvidence),
+    ("Mandatory Security Settings preview cannot run headlessly or be disabled", TestRequiredSecurityPreviewGuard),
     ("Legacy security boolean edit rejects absent and ambiguous DWORD values", TestSafeRegistryBooleanSecurityEdit),
     ("Comprehensive evidence ZIP contains manifests, source hashes and safe CSV", TestGpoEvidenceArchive),
     ("Selective recovery requires same GPO, intact backup and supported key", TestSelectiveSecurityRecovery),
@@ -2272,5 +2273,35 @@ static void TestSafeRegistryBooleanSecurityEdit()
                 "Malformed or ambiguous DWORD was permitted.");
         }
         catch (InvalidDataException) { }
+    }
+}
+
+
+static void TestRequiredSecurityPreviewGuard()
+{
+    var savedWriteMode = EditingGuard.IsEnabled;
+    var savedOptionalPreviewMode = ChangePreviewGuard.IsEnabled;
+    try
+    {
+        EditingGuard.SetEnabled(true);
+        ChangePreviewGuard.IsEnabled = false;
+        // The CoreTests console has no WPF Application/visible preview window.
+        // A required preview must fail closed, even if optional previews are off.
+        try
+        {
+            ChangePreviewGuard.ConfirmRequired(new ChangePreviewRequest(
+                "Security setting", "Synthetic GPO", "0", "1"));
+            throw new InvalidOperationException("Required security preview was bypassed.");
+        }
+        catch (InvalidOperationException ex)
+        {
+            Assert(ex.Message.Contains("preview", StringComparison.OrdinalIgnoreCase),
+                "Headless security edit must fail specifically due to missing preview.");
+        }
+    }
+    finally
+    {
+        ChangePreviewGuard.IsEnabled = savedOptionalPreviewMode;
+        EditingGuard.SetEnabled(savedWriteMode);
     }
 }
