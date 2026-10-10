@@ -2174,7 +2174,8 @@ static void TestGppXmlEvidence()
     var source = System.Text.Encoding.UTF8.GetBytes(
         "<Drives><Drive name=\"H:\" uid=\"{A}\" disabled=\"0\">" +
         "<Properties action=\"U\" path=\"\\\\fileserver\\home\" " +
-        "cpassword=\"DO_NOT_DISCLOSE\"/>" +
+        "cpassword=\"DO_NOT_DISCLOSE\" apiToken=\"EXPOSE_TOKEN\" " +
+        "privateKey=\"EXPOSE_KEY\"/>" +
         "<Filters><FilterGroup name=\"Students\"/></Filters>" +
         "</Drive></Drives>");
     var parsed = GppXmlSourceReader.Parse(source, Guid.NewGuid(), "Test",
@@ -2183,6 +2184,8 @@ static void TestGppXmlEvidence()
         "A single GPP Drive item should be projected from stored XML.");
     Assert(parsed.Rows[0].Value.Contains("fileserver") &&
         !parsed.Rows[0].Value.Contains("DO_NOT_DISCLOSE") &&
+        !parsed.Rows[0].Value.Contains("EXPOSE_TOKEN") &&
+        !parsed.Rows[0].Value.Contains("EXPOSE_KEY") &&
         parsed.Rows[0].Value.Contains("[REDACTED IN EVIDENCE]") &&
         parsed.Rows[0].Evidence.Contains("NOT evaluated"),
         "Stored properties should be visible, but passwords and ILT must not leak or be inferred.");
