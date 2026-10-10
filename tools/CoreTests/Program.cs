@@ -3732,7 +3732,7 @@ static void TestRemoteAiBoundary()
     var prompt = GpoRemoteAiService.RedactedPrompt(report);
     foreach (var secret in new[] { "PRIVATE_GPO_DO_NOT_SEND",
                  "private.example", "CREDENTIAL_VALUE_DO_NOT_SEND",
-                 "SOFTWARE", "LAPS key", "Registry.pol", "private path" })
+                 "SOFTWARE", "LAPS key", "SECRET-SOURCE-NAME.pol", "private path" })
         Assert(!prompt.Contains(secret, StringComparison.OrdinalIgnoreCase),
             "Remote AI must receive anonymized counts only: " + secret);
     Assert(prompt.Contains("Stored source records: 1") &&
