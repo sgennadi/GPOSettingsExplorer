@@ -5,7 +5,7 @@ using GPOSettingsExplorer.Models;
 
 namespace GPOSettingsExplorer.Services;
 
-public sealed class SecurityTemplateService
+public sealed partial class SecurityTemplateService
 {
     private static readonly Guid SecurityExtensionGuid =
         new("827D319E-6EAC-11D2-A4EA-00C04F79F83A");

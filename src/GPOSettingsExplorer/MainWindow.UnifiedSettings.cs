@@ -324,11 +324,14 @@ public partial class MainWindow
         if (UnifiedSettingsGrid.SelectedItem is not UnifiedSettingInfo row)
         {
             UnifiedActionButton.Content = "View / Edit...";
+            SecurityEditSourceButton.IsEnabled = false;
             UnifiedSelectedDetailsText.Text =
                 "Select a setting to see evidence, state and the supported editing route.";
             return;
         }
 
+        SecurityEditSourceButton.IsEnabled = row.StoredSource is { } securitySource &&
+            SecurityTemplateEditRules.TryDescribe(securitySource, out _);
         UnifiedActionButton.Content = row.StoredSource is not null
             ? "View source evidence..."
             : row.IsTechnicalDetail

@@ -38,6 +38,7 @@ var tests = new (string Name, Action Body)[]
     ("Registry.pol binary parser preserves exact source values and flags malformed data", TestRealSettingsRegistryPol),
     ("Security-template parser reports source values and invalid encodings safely", TestRealSettingsSecurityTemplate),
     ("Unified catalog never interprets source-file values as effective RSoP", TestRealSettingsUnifiedEvidence),
+    ("Security template editor rejects unknown and duplicate source values", TestSecurityTemplateEditingRules),
     ("GPT.INI parses split AD/SYSVOL version and rejects corruption", TestGptIniVersionParser),
     ("Semantic XML diff ignores report timestamps and finds setting changes", TestSemanticXmlDiff)
 };
@@ -1930,4 +1931,52 @@ static void TestGptIniVersionParser()
 
     Assert(!GptIniVersionParser.Parse(new byte[1 + GptIniVersionParser.MaxBytes]).Valid,
         "Oversized source must not be parsed.");
+}
+
+
+static void TestSecurityTemplateEditingRules()
+{
+    var baseRecord = new RealSettingRecord
+    {
+        GpoId = Guid.NewGuid(), GpoName = "Test", Scope = "Computer",
+        Category = "Security template > Event Audit",
+        SettingName = "AuditLogonEvents", State = "Stored template value",
+        Value = "1", ValueType = "INF string",
+        SourceFile = @"\\test-dc\SYSVOL\test\GptTmpl.inf",
+        SourceSha256 = new string('F', 64)
+    };
+    Assert(SecurityTemplateEditRules.TryDescribe(baseRecord, out var rule) &&
+        rule is not null && rule.Allows(0) && rule.Allows(3) && !rule.Allows(4),
+        "An existing known audit setting must permit values 0..3 only.");
+    var text = "[Version]\r\nsignature=\"$CHICAGO$\"\r\n[Event Audit]\r\n" +
+        "AuditLogonEvents = 1\r\nAuditSystemEvents = 2\r\n[System Access]\r\n" +
+        "PasswordComplexity = 1\r\n";
+    var updated = SecurityTemplateEditRules.ChangeExistingValue(text, rule!, 3);
+    Assert(updated.Contains("AuditLogonEvents =3\r\n") &&
+        updated.Contains("AuditSystemEvents = 2\r\n") &&
+        updated.Contains("PasswordComplexity = 1\r\n"),
+        "Only exact selected security value should change; preserve other fields.");
+    try
+    {
+        SecurityTemplateEditRules.ChangeExistingValue(
+            text.Replace("AuditSystemEvents = 2\r\n",
+                "AuditLogonEvents = 2\r\n"), rule!, 3);
+        throw new InvalidOperationException("Duplicate security setting was edited.");
+    }
+    catch (InvalidDataException) { }
+
+    var rights = baseRecord with
+    {
+        Category = "Security template > Privilege Rights",
+        SettingName = "SeDebugPrivilege",
+        Value = "*S-1-5-32-544"
+    };
+    Assert(!SecurityTemplateEditRules.TryDescribe(rights, out _),
+        "Privilege Rights / SID strings must never become numeric editor inputs.");
+    Assert(!SecurityTemplateEditRules.TryDescribe(
+        baseRecord with { SourceSha256 = "bad" }, out _),
+        "Records without full source SHA-256 evidence must remain read-only.");
+    Assert(!SecurityTemplateEditRules.TryDescribe(
+        baseRecord with { Value = "6" }, out _),
+        "Unsupported current value must be read-only, not normalized.");
 }
