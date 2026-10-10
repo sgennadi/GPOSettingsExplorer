@@ -14,7 +14,7 @@ Download the latest portable build from:
 
 **[GitHub Releases](https://github.com/sgennadi/GPOSettingsExplorer/releases/latest)**
 
-Current release: **v1.4.0**
+Current release: **v1.5.0**
 
 Available packages:
 
@@ -22,6 +22,16 @@ Available packages:
 - `GPOSettingsExplorer-win-arm64-portable.zip` — Windows on ARM64.
 
 The builds are self-contained. A separate .NET runtime installation is not required.
+
+### Release 1.5.0 - Safe Intune Graph inventory and reviewed Policy CSP mapping
+
+- A manually invoked Graph Intune inventory (up to 500)... action reads at most 10 pages and 500 Microsoft Graph /beta configuration policy metadata entries, instead of silently returning only one page.
+- Graph continuation URLs must use HTTPS, the actual graph.microsoft.com host, and the exact configurationPolicies collection path. External hosts, insecure schemes, wrong paths, HTTP redirects and pagination loops are rejected before sending the delegated token.
+- Every page has a 2 MiB streaming cap, with cancellation and visible INCOMPLETE status when inventory limits are reached. Data includes policy names, platforms, technologies, setting counts, assignment metadata and last-modified timestamps; no policy values, assignment identities or writes.
+- Uses the existing operator-approved MSAL device-code sign-in and DeviceManagementConfiguration.Read.All delegated permission. Requires an existing Entra App Registration and Intune license.
+- Offline GPO-to-Intune readiness requires manually verified, scope-matched Device/User Policy CSP URLs and fully represented ordinary Registry.pol rows. Non-registry sources and redacted/truncated values remain Unsupported or Unverifiable.
+- The readiness report now separates eligible records, mapped candidates and uncertain source coverage. No Settings Catalog or OMA-URI deployment files are generated.
+- Regression tests cover off-host SSRF protections, pagination loops, limits, invalid scopes, duplicate mappings and masked Registry.pol values.
 
 ### Release 1.4.0 - cross-DC full SYSVOL integrity and reference baseline review
 
