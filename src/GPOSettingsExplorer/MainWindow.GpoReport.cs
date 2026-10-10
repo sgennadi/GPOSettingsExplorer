@@ -23,6 +23,8 @@ public partial class MainWindow
         }
         if (current is DataGridRow { Item: GpoInfo gpo })
             GpoGrid.SelectedItem = gpo;
+        else
+            GpoGrid.SelectedItem = null; // Empty-space context click cannot act on stale GPO.
     }
 
     private async void OpenGpoSettingsReport_Click(
