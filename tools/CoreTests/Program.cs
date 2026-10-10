@@ -3083,6 +3083,15 @@ static void TestGpoBoundedWalk()
         Assert(!entryLimit.Complete &&
                entryLimit.Issues.Any(x => x.Contains("entry cap")),
             "All scanned directory entries must count toward the resource limit.");
+
+        var faultyGpo = Path.Combine(root, "faulty");
+        var machine = Path.Combine(faultyGpo, "Machine");
+        Directory.CreateDirectory(machine);
+        File.WriteAllText(Path.Combine(machine, "Preferences"), "not a directory");
+        var security = GpoSecurityScannerService.Scan(faultyGpo, Guid.NewGuid());
+        Assert(!security.Complete &&
+               security.Findings.Any(x => x.Category == "Invalid source directory"),
+            "GPP security scanner must not silently accept unreadable/invalid source paths.");
     }
     finally
     {

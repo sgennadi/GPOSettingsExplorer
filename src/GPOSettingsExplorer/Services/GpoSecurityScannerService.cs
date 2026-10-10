@@ -47,7 +47,7 @@ public static class GpoSecurityScannerService
         foreach (var scope in new[] { "Machine", "User" })
         {
             var prefs = Path.Combine(root, scope, "Preferences");
-            if (Directory.Exists(prefs))
+            if (AvailableSourceDirectory(prefs, "GPP XML", scope, findings, ref complete))
             {
                 var found = GpoBoundedDirectoryWalker.Scan(prefs,
                     new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".xml" },
@@ -106,7 +106,7 @@ public static class GpoSecurityScannerService
             }
 
             var scripts = Path.Combine(root, scope, "Scripts");
-            if (!Directory.Exists(scripts))
+            if (!AvailableSourceDirectory(scripts, "Scripts", scope, findings, ref complete))
                 continue;
             var candidates = GpoBoundedDirectoryWalker.Scan(scripts,
                 new HashSet<string>(StringComparer.OrdinalIgnoreCase)
@@ -166,5 +166,37 @@ public static class GpoSecurityScannerService
         }
 
         return new GpoSecurityScan(gpoId, DateTimeOffset.UtcNow, root, complete, findings);
+    }
+
+    private static bool AvailableSourceDirectory(
+        string path, string name, string scope,
+        List<GpoSecurityFinding> findings, ref bool complete)
+    {
+        try
+        {
+            var attributes = File.GetAttributes(path);
+            if ((attributes & FileAttributes.Directory) != 0)
+                return true;
+            complete = false;
+            findings.Add(new GpoSecurityFinding("Unknown", "Invalid source directory",
+                scope, name + " source path is not a directory; coverage unknown."));
+            return false;
+        }
+        catch (Exception ex) when (ex is DirectoryNotFoundException or
+                                   FileNotFoundException)
+        {
+            // Most GPOs have no preferences or scripts in both scopes.
+            // Optional absent directory is normal; not proof of policy absence.
+            return false;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or
+                                   System.Security.SecurityException)
+        {
+            complete = false;
+            findings.Add(new GpoSecurityFinding("Unknown", "Unavailable source directory",
+                scope, name + " path could not be inspected (" +
+                ex.GetType().Name + "); skipped data is unknown."));
+            return false;
+        }
     }
 }
