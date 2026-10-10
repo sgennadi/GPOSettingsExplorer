@@ -3726,7 +3726,7 @@ static void TestRemoteAiBoundary()
                 Value = "CREDENTIAL_VALUE_DO_NOT_SEND"
             }
         },
-        new[] { new RealSettingsFileEvidence("Registry.pol", "Read", 1,
+        new[] { new RealSettingsFileEvidence("SECRET-SOURCE-NAME.pol", "Read", 1,
             "a", "private path") });
     var report = GpoUnifiedPlatformService.Build(source);
     var prompt = GpoRemoteAiService.RedactedPrompt(report);
