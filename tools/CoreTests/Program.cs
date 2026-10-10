@@ -57,6 +57,8 @@ var tests = new (string Name, Action Body)[]
     ("Local AI prompt uses only redacted categories/counts", TestAdvancedAiPrivacy),
     ("Cross-DC file evidence exposes mismatches and unknown data", TestAdvancedCrossDcFingerprints),
     ("Graph policy reader parses bounded first-page JSON without sign-in", TestAdvancedGraphJson),
+    ("Microsoft Graph pages enforce exact HTTPS continuation allowlist and finite limits", TestIntuneGraphPagination),
+    ("Intune CSP maps reject scope mismatch, unknown formats and masked source values", TestIntuneMappingSafety),
     ("Advanced Audit CSV parser validates exact source and escaped fields", TestAdvancedAuditCsv),
     ("Full GPO SYSVOL tree detects mismatches, partial paths and missing files", TestFullSysvolTreeIntegrity),
     ("Reference GPMC baseline matches exact identity without claiming compliance", TestGpmReferenceBaseline),
@@ -2518,9 +2520,18 @@ static void TestAdvancedBaselineAndMapping()
         new[] { new GpoIntuneMapping("Computer", record.RegistryKey,
             record.RegistryValue,
             "./Device/Vendor/MSFT/Policy/Config/ADMX_Example/Sample") });
-    Assert(GpoIntuneMigrationService.Assess(scan, map).MappingMatches == 1 &&
-           GpoIntuneMigrationService.Assess(scan, null).MappingMatches == 0,
-        "Intune mapping must not be inferred without explicit exact evidence.");
+    var storedPolicy = record with
+    {
+        Category = "Administrative Templates",
+        SettingName = "Example",
+        State = "Stored registry value",
+        ValueType = "REG_DWORD"
+    };
+    var registryScan = scan with { Rows = new[] { storedPolicy } };
+    Assert(GpoIntuneMigrationService.Assess(scan, map).MappingMatches == 0 &&
+           GpoIntuneMigrationService.Assess(registryScan, map).MappingMatches == 1 &&
+           GpoIntuneMigrationService.Assess(registryScan, null).MappingMatches == 0,
+        "Only an explicit exact Registry.pol mapping may yield a CSP candidate.");
 }
 
 static void TestAdvancedGitopsPrivacy()
@@ -2614,7 +2625,7 @@ static void TestAdvancedGraphJson()
 {
     var json = System.Text.Encoding.UTF8.GetBytes(
         "{\"value\":[{\"name\":\"Example Intune Policy\",\"platforms\":\"windows10\"," +
-        "\"settingCount\":2}],\"@odata.nextLink\":\"next\"}");
+        "\"settingCount\":2}],\"@odata.nextLink\":\"https://graph.microsoft.com/beta/deviceManagement/configurationPolicies?$skiptoken=next\"}");
     var parsed = GpoIntuneGraphReadOnlyService.ParsePage(json);
     Assert(parsed.HasMore && parsed.Policies.Count == 1 &&
            parsed.Policies[0].SettingCount == 2,
@@ -3099,4 +3110,179 @@ static void TestGpoBoundedWalk()
         catch (IOException) { }
         catch (UnauthorizedAccessException) { }
     }
+}
+
+
+static void TestIntuneGraphPagination()
+{
+    const string collection =
+        "https://graph.microsoft.com/beta/deviceManagement/configurationPolicies";
+    foreach (var invalid in new[]
+    {
+        "next",
+        "http://graph.microsoft.com/beta/deviceManagement/configurationPolicies?$skiptoken=A",
+        "https://evil.example/beta/deviceManagement/configurationPolicies",
+        "https://graph.microsoft.com.evil.example/beta/deviceManagement/configurationPolicies",
+        "https://graph.microsoft.com/beta/users?$skiptoken=A",
+        "https://graph.microsoft.com:444/beta/deviceManagement/configurationPolicies",
+        "https://user:pass@graph.microsoft.com/beta/deviceManagement/configurationPolicies",
+        "https://graph.microsoft.com/beta/deviceManagement/configurationPolicies#fragment"
+    })
+    {
+        var refused = false;
+        try { GpoIntuneGraphReadOnlyService.ValidateContinuation(invalid); }
+        catch (InvalidDataException) { refused = true; }
+        Assert(refused, "Untrusted Graph continuation was accepted: " + invalid);
+    }
+
+    byte[] Page(string name, bool? assigned, string? next)
+    {
+        var policy = new Dictionary<string, object?>
+        {
+            ["id"] = Guid.NewGuid().ToString(),
+            ["name"] = name,
+            ["platforms"] = "windows10",
+            ["technologies"] = "mdm",
+            ["settingCount"] = 2,
+            ["isAssigned"] = assigned,
+            ["lastModifiedDateTime"] = "2026-10-10T10:00:00Z"
+        };
+        var response = new Dictionary<string, object?>
+        {
+            ["value"] = new[] { policy }
+        };
+        if (next is not null) response["@odata.nextLink"] = next;
+        return System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(response);
+    }
+
+    var calls = new List<string>();
+    var result = GpoIntuneGraphReadOnlyService.ReadPagesAsync((uri, _) =>
+    {
+        calls.Add(uri.AbsoluteUri);
+        return Task.FromResult(calls.Count == 1
+            ? Page("Policy One", true, collection + "?$skiptoken=SECOND")
+            : Page("Policy Two", false, null));
+    }).GetAwaiter().GetResult();
+
+    Assert(result.PagesRead == 2 && result.Policies.Count == 2 &&
+           !result.HasMore && calls.Count == 2 &&
+           calls[1].Equals(collection + "?$skiptoken=SECOND", StringComparison.Ordinal) &&
+           result.Policies[0].IsAssigned == true &&
+           result.Policies[1].IsAssigned == false &&
+           result.Policies[0].ModifiedUtc is not null,
+        "Paged Graph metadata must aggregate safe pages and preserve assignment/date states.");
+
+    var maliciousCalls = 0;
+    var blocked = false;
+    try
+    {
+        GpoIntuneGraphReadOnlyService.ReadPagesAsync((uri, _) =>
+        {
+            maliciousCalls++;
+            return Task.FromResult(Page("Policy", true,
+                "https://attacker.example/beta/deviceManagement/configurationPolicies"));
+        }).GetAwaiter().GetResult();
+    }
+    catch (InvalidDataException) { blocked = true; }
+    Assert(blocked && maliciousCalls == 1,
+        "An off-host continuation must be rejected before any second bearer request.");
+
+    var loopCalls = 0;
+    blocked = false;
+    try
+    {
+        GpoIntuneGraphReadOnlyService.ReadPagesAsync((uri, _) =>
+        {
+            loopCalls++;
+            return Task.FromResult(Page("Repeated", false, uri.AbsoluteUri));
+        }).GetAwaiter().GetResult();
+    }
+    catch (InvalidDataException) { blocked = true; }
+    Assert(blocked && loopCalls == 1,
+        "Repeated Graph nextLink must fail closed instead of fetching forever.");
+
+    var pages = 0;
+    var capped = GpoIntuneGraphReadOnlyService.ReadPagesAsync((_, _) =>
+    {
+        pages++;
+        return Task.FromResult(Page("Policy " + pages, null,
+            collection + "?$skiptoken=PAGE" + pages));
+    }).GetAwaiter().GetResult();
+    Assert(capped.PagesRead == 10 && capped.Policies.Count == 10 &&
+           capped.HasMore && pages == 10 &&
+           capped.ToText().Contains("INCOMPLETE"),
+        "Graph page cap must preserve a visible incomplete-result warning.");
+
+    var empty = GpoIntuneGraphReadOnlyService.ParsePage(
+        System.Text.Encoding.UTF8.GetBytes("{\"value\":[]}"));
+    Assert(empty.Policies.Count == 0 && !empty.HasMore,
+        "Graph empty page should not be reported as a failure or an infinite sequence.");
+}
+
+static void TestIntuneMappingSafety()
+{
+    const string valid = "./Device/Vendor/MSFT/Policy/Config/ADMX_Example/Sample";
+    var accepted = new GpoIntuneMapping(
+        "Computer", @"Software\Policies\Example", "Enabled", valid);
+    Assert(GpoIntuneMigrationService.IsSafeMapping(accepted),
+        "A canonical Device CSP mapping should be accepted as reviewed candidate.");
+    foreach (var invalid in new[]
+    {
+        accepted with { OmaUri = "./User/Vendor/MSFT/Policy/Config/ADMX_Example/Sample" },
+        accepted with { OmaUri = "./Device/Vendor/MSFT/Policy/Config/../Admin" },
+        accepted with { OmaUri = "./Device/Vendor/MSFT/Policy/Config/" },
+        accepted with { OmaUri = "./Device/Vendor/MSFT/Policy/Config/Encoded%2FSlash" },
+        accepted with { OmaUri = valid + "?change=true" },
+        accepted with { OmaUri = valid + "#fragment" },
+        accepted with { Scope = "Unknown" }
+    })
+        Assert(!GpoIntuneMigrationService.IsSafeMapping(invalid),
+            "Unsafe or scope-mismatched CSP mapping should be refused: " + invalid.OmaUri);
+
+    var gpo = Guid.NewGuid();
+    var registry = new RealSettingRecord
+    {
+        GpoId = gpo, GpoName = "GPO", Scope = "Computer",
+        Category = "Administrative Templates", SettingName = "Example",
+        State = "Stored registry value", ValueType = "REG_DWORD",
+        RegistryKey = accepted.RegistryKey, RegistryValue = accepted.RegistryValue,
+        Value = "1"
+    };
+    var map = new GpoIntuneMappingDocument(
+        "gposes-csp-map-v1", "Reviewed", new[] { accepted });
+    var sample = new RealSettingsScanResult(
+        gpo, "GPO", "test.example", "OFFLINE", DateTimeOffset.UtcNow,
+        new[] { registry },
+        new[] { new RealSettingsFileEvidence("Registry.pol", "Read", 1, "123", "read") });
+    var correct = GpoIntuneMigrationService.Assess(sample, map);
+    Assert(correct.MappingMatches == 1 && correct.EligibleRegistryRows == 1 &&
+           !correct.SourcePartial,
+        "Exact ordinary Registry.pol evidence and reviewed CSP mapping should produce candidate.");
+
+    var truncated = registry with
+    {
+        ValueType = "REG_BINARY",
+        Value = "0x" + new string('A', 96) + "... (4096 bytes total)"
+    };
+    var hidden = GpoIntuneMigrationService.Assess(
+        sample with { Rows = new[] { truncated } }, map);
+    Assert(hidden.MappingMatches == 0 &&
+           hidden.Candidates.Single().Status == "Unverifiable",
+        "Truncated binary preview cannot be reported as Intune-compatible.");
+
+    var security = registry with
+    {
+        State = "Stored template value", ValueType = "INF string"
+    };
+    var unknown = GpoIntuneMigrationService.Assess(
+        sample with { Rows = new[] { security } }, map);
+    Assert(unknown.MappingMatches == 0 &&
+           unknown.Candidates.Single().Status == "Unsupported source",
+        "Non-Registry.pol source must not silently become an Intune CSP candidate.");
+
+    var ambiguous = GpoIntuneMigrationService.Assess(sample,
+        map with { Mappings = new[] { accepted, accepted } });
+    Assert(ambiguous.MappingMatches == 0 &&
+           ambiguous.Candidates.Single().Status == "Ambiguous",
+        "Duplicate CSP mappings must be flagged, not selected arbitrarily.");
 }
