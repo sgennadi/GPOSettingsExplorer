@@ -38,6 +38,7 @@ var tests = new (string Name, Action Body)[]
     ("Registry.pol binary parser preserves exact source values and flags malformed data", TestRealSettingsRegistryPol),
     ("Security-template parser reports source values and invalid encodings safely", TestRealSettingsSecurityTemplate),
     ("Unified catalog never interprets source-file values as effective RSoP", TestRealSettingsUnifiedEvidence),
+    ("GPT.INI parses split AD/SYSVOL version and rejects corruption", TestGptIniVersionParser),
     ("Semantic XML diff ignores report timestamps and finds setting changes", TestSemanticXmlDiff)
 };
 
@@ -1898,4 +1899,35 @@ static void Assert(
         throw new InvalidOperationException(
             message);
     }
+}
+
+
+static void TestGptIniVersionParser()
+{
+    var input = System.Text.Encoding.UTF8.GetBytes("[General]\r\nVersion=131075\r\n");
+    var parsed = GptIniVersionParser.Parse(input);
+    Assert(parsed.Valid && parsed.Version == 131075 &&
+        parsed.ComputerVersion == 2 && parsed.UserVersion == 3,
+        "GPT.INI must preserve AD computer/user 16-bit version halves.");
+
+    var utf16 = System.Text.Encoding.Unicode.GetPreamble()
+        .Concat(System.Text.Encoding.Unicode.GetBytes("[General]\r\nVersion=4294967295\r\n"))
+        .ToArray();
+    var max = GptIniVersionParser.Parse(utf16);
+    Assert(max.Valid && max.ComputerVersion == 65535 && max.UserVersion == 65535,
+        "Unsigned UInt32 version must not overflow a signed int.");
+
+    foreach (var value in new[]
+    {
+        "[General]\nVersion=-1",
+        "[General]\nVersion=4294967296",
+        "[General]\nVersion=1\nVersion=2",
+        "[Other]\nVersion=1",
+        "[General]\nVersion=garbage"
+    })
+        Assert(!GptIniVersionParser.Parse(System.Text.Encoding.UTF8.GetBytes(value)).Valid,
+            "Ambiguous or corrupt GPT.INI version must fail closed: " + value);
+
+    Assert(!GptIniVersionParser.Parse(new byte[1 + GptIniVersionParser.MaxBytes]).Valid,
+        "Oversized source must not be parsed.");
 }
