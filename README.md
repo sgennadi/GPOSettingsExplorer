@@ -14,7 +14,7 @@ Download the latest portable build from:
 
 **[GitHub Releases](https://github.com/sgennadi/GPOSettingsExplorer/releases/latest)**
 
-Current release: **v1.3.0**
+Current release: **v1.4.0**
 
 Available packages:
 
@@ -22,6 +22,15 @@ Available packages:
 - `GPOSettingsExplorer-win-arm64-portable.zip` — Windows on ARM64.
 
 The builds are self-contained. A separate .NET runtime installation is not required.
+
+### Release 1.4.0 - cross-DC full SYSVOL integrity and reference baseline review
+
+- **Full SYSVOL tree SHA-256...** under Advanced Analysis > Client & DC health reads an entire bounded GPO directory tree on 2-16 explicitly selected DCs. It compares file paths, missing/present states and SHA-256. Safety caps: 4,000 entries per DC, 30 levels, 32 MiB per file, 256 MiB per DC; no reparse-point traversal.
+- Unavailable roots, permission failures, skipped symlinks, oversized files, missing GPT.INI and concurrent source changes are **INCOMPLETE/UNKNOWN**.
+- Existing curated-file hash comparison remains available for quick diagnostics. Matching hashes do not prove full DFSR/AD replication, winning GPO settings or client RSoP.
+- **Compare reference GPMC baseline...** under Baseline / Intune / GitOps compares a selected GPO against an independently reviewed GPMC backup (including one from a different GPO). Reports exact stored matches, differences, Unknown rows and ambiguous duplicate identities. No official Microsoft baseline is bundled.
+- Hardened GPP XML/script scanner uses bounded, no-reparse file discovery and explicit coverage/oversize failures.
+- Fixed the Advanced Audit CSV relative path used by the existing curated cross-DC hash scanner; added regression coverage of tree comparison, partial sources, GPMC reference baselines and bounded directory walks.
 
 ### Release 1.3.0 - Explain Why GPO / per-client diagnostics
 

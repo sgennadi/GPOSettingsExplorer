@@ -77,6 +77,10 @@ public static class GpoBaselineAssessmentService
                     "Not observed in selected stored source files; do not infer Not Configured."),
                 > 1 => new GpoBaselineFinding(rule.Id, "Ambiguous",
                     "More than one source entry matches; no compliant conclusion."),
+                _ when !GpoSourceValueCompleteness.IsExactProjection(matches[0]) =>
+                    new GpoBaselineFinding(rule.Id, "Unknown",
+                        "Stored value is redacted, truncated or a partial projection; " +
+                        "a visible string match cannot prove exact equality."),
                 _ when matches[0].Value.Equals(rule.Expected, StringComparison.Ordinal) =>
                     new GpoBaselineFinding(rule.Id, "Observed match",
                         "Exact expected stored value observed; effective policy unverified."),

@@ -4,6 +4,18 @@
 
 - No unreleased changes yet.
 
+## 1.4.0 - 2026-10-10
+
+- Add bounded, read-only full-GPO SYSVOL directory-tree file inventory and SHA-256 comparison on 2–16 explicit DCs, with confirmed vs Unknown path differences.
+- Skip reparse points and report incomplete scans when byte, directory-entry and depth caps are reached; fail closed on missing root GPT.INI or files modified during streaming reads.
+- Add local GPMC baseline reference comparison of stored source values, types and states; missing and duplicate identities are Unknown/Ambiguous, not compliant/not-configured.
+- Constrain GPP XML / scripts source security scanner to bounded directory walks with explicit partial coverage, no reparse traversal and oversized-file error handling.
+- Fix malformed Advanced Audit CSV relative path in cross-DC curated-file checker.
+- Add regression coverage for complete/incomplete SYSVOL snapshots, same/different/missing file hashes, reference baseline ambiguity and bounded traversal.
+- New functionality is read-only. Windows CI cannot verify remote AD, DFSR, SYSVOL permissions or client GPO application. Validate on nonproduction domain controllers.
+
+
+
 ## 1.3.0 - 2026-10-10
 
 - Add Explain why (full evidence) in Advanced Analysis: independent logged client RSoP, loaded GPO scope metadata with staleness warning, pinned-DC computer OU path and bounded GroupPolicy event metadata.

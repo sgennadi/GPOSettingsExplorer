@@ -58,6 +58,9 @@ var tests = new (string Name, Action Body)[]
     ("Cross-DC file evidence exposes mismatches and unknown data", TestAdvancedCrossDcFingerprints),
     ("Graph policy reader parses bounded first-page JSON without sign-in", TestAdvancedGraphJson),
     ("Advanced Audit CSV parser validates exact source and escaped fields", TestAdvancedAuditCsv),
+    ("Full GPO SYSVOL tree detects mismatches, partial paths and missing files", TestFullSysvolTreeIntegrity),
+    ("Reference GPMC baseline matches exact identity without claiming compliance", TestGpmReferenceBaseline),
+    ("GPO security file discovery is bounded and never silently follows reparse", TestGpoBoundedWalk),
     ("Explain Why OU path handles enforced/blocked/disabled links safely", TestExplainWhyClientScope),
     ("Explain Why preserves RSoP uncertainty and client event caveats", TestExplainWhyEvidence),
     ("Client event parser preserves ActivityID and record number without payload", TestExplainWhyActivityId),
@@ -2869,4 +2872,231 @@ static void TestExplainWhyActivityId()
            note.Contains("NOT tied to the selected GPO") &&
            report.Overall.Contains("UNKNOWN"),
         "ActivityID grouping must not falsely establish target GPO success.");
+}
+
+
+static void TestFullSysvolTreeIntegrity()
+{
+    var folder = Path.Combine(Path.GetTempPath(),
+        "GPOSE-tree-" + Guid.NewGuid().ToString("N"));
+    var dcA = Path.Combine(folder, "dcA");
+    var dcB = Path.Combine(folder, "dcB");
+    var guid = Guid.NewGuid();
+    try
+    {
+        foreach (var dir in new[] { dcA, dcB })
+        {
+            var machine = Path.Combine(dir, "Machine");
+            Directory.CreateDirectory(machine);
+            File.WriteAllText(Path.Combine(dir, "GPT.INI"), "[General]\r\nVersion=65537\r\n");
+            File.WriteAllBytes(Path.Combine(machine, "Registry.pol"),
+                new byte[] { 0x50, 0x52, 0x65, 0x67, 1, 0, 0, 0 });
+        }
+
+        GpoSysvolTreeSnapshot Snap(string dir, string dc) =>
+            GpoSysvolTreeIntegrityService.ScanTree(dir, dc);
+
+        var a = Snap(dcA, "dc01.test.example");
+        var b = Snap(dcB, "dc02.test.example");
+        var matching = GpoSysvolTreeIntegrityService.CompareSnapshots(
+            guid, "test.example", new[] { a, b });
+        Assert(matching.Complete && matching.ChangedCount == 0 &&
+               matching.Differences.All(x => x.Status == "Match") &&
+               matching.Differences.Count == 2,
+            "Two identical bounded SYSVOL trees should have matching stored file hashes.");
+
+        File.WriteAllText(Path.Combine(dcB, "GPT.INI"), "[General]\r\nVersion=65539\r\n");
+        var changed = GpoSysvolTreeIntegrityService.CompareSnapshots(
+            guid, "test.example", new[] { a, Snap(dcB, "dc02.test.example") });
+        Assert(changed.ChangedCount == 1 &&
+               changed.Differences.Any(x => x.RelativePath == "GPT.INI" &&
+                                            x.Status == "Content mismatch"),
+            "Content mismatch must be attributed to its source relative path.");
+
+        File.Delete(Path.Combine(dcB, "Machine", "Registry.pol"));
+        var missing = GpoSysvolTreeIntegrityService.CompareSnapshots(
+            guid, "test.example", new[] { a, Snap(dcB, "dc02.test.example") });
+        Assert(missing.Differences.Any(x =>
+            x.Status == "Different presence" &&
+            x.RelativePath.EndsWith("Registry.pol", StringComparison.Ordinal)),
+            "A file missing from a completely enumerated DC must show different presence.");
+
+        var incomplete = GpoSysvolTreeIntegrityService.CompareSnapshots(
+            guid, "test.example",
+            new[]
+            {
+                a,
+                new GpoSysvolTreeSnapshot("dc02.test.example", dcB, false, 0,
+                    Array.Empty<GpoSysvolTreeFile>(), new[] { "Access denied" })
+            });
+        Assert(!incomplete.Complete &&
+               incomplete.Differences.All(x => x.Status == "Unknown") &&
+               incomplete.ToText().Contains("INCOMPLETE"),
+            "Missing files in an unreadable DC cannot be treated as replicated deletions.");
+
+        var emptyGpo = Path.Combine(folder, "empty");
+        Directory.CreateDirectory(emptyGpo);
+        var empty = Snap(emptyGpo, "dc03.test.example");
+        Assert(!empty.Complete && empty.Issues.Any(x => x.Contains("GPT.INI")),
+            "A purported GPO root missing GPT.INI must be incomplete.");
+    }
+    finally
+    {
+        try { Directory.Delete(folder, recursive: true); }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+    }
+}
+
+static void TestGpmReferenceBaseline()
+{
+    var baselineGpo = Guid.NewGuid();
+    var targetGpo = Guid.NewGuid();
+    var standard = new RealSettingRecord
+    {
+        GpoId = baselineGpo, GpoName = "Approved baseline",
+        Scope = "Computer", Category = "Security template > System Access",
+        SettingName = "PasswordComplexity", Value = "1", ValueType = "INF string"
+    };
+    var missing = standard with
+    {
+        SettingName = "ClearTextPassword",
+        Value = "0"
+    };
+    var sourceFiles = new[]
+    {
+        new RealSettingsFileEvidence("GptTmpl.inf", "Read", 2, "hash", "ok")
+    };
+    var reference = new RealSettingsScanResult(
+        baselineGpo, "Reviewed reference", "test.example", "OFFLINE-GPMC-BACKUP",
+        DateTimeOffset.UtcNow, new[] { standard, missing }, sourceFiles);
+    var current = new RealSettingsScanResult(
+        targetGpo, "Target GPO", "test.example", "dc01.test.example",
+        DateTimeOffset.UtcNow, new[] { standard with
+        {
+            GpoId = targetGpo, GpoName = "Target GPO"
+        } }, sourceFiles);
+    var result = GpoReferenceBaselineService.Compare(current, reference);
+    Assert(result.Matching == 1 && result.Unknown == 1 &&
+           result.Different == 0 &&
+           result.ToText().Contains("NOT a Microsoft-certified benchmark"),
+        "Only exact stored source matches qualify; missing settings stay unknown.");
+
+    var changed = current with
+    {
+        Rows = new[]
+        {
+            standard with { GpoId = targetGpo, Value = "0" }
+        }
+    };
+    var diff = GpoReferenceBaselineService.Compare(changed, reference);
+    Assert(diff.Different == 1 &&
+           diff.ToText().Contains("Observed difference") &&
+           !diff.ToText().Contains("Value: 0"),
+        "Different values must be reported without exporting raw values.");
+
+    var partialPreference = standard with
+    {
+        Category = "GPP XML source > Groups",
+        SettingName = "Local account",
+        Value = "cpassword=[REDACTED IN EVIDENCE]",
+        ValueType = "GPP XML attributes (partial projection)"
+    };
+    var partialReference = reference with
+    {
+        Rows = new[] { partialPreference }
+    };
+    var partialCurrent = current with
+    {
+        Rows = new[] { partialPreference with { GpoId = targetGpo } }
+    };
+    var unknownGpp = GpoReferenceBaselineService.Compare(
+        partialCurrent, partialReference);
+    Assert(unknownGpp.Findings.Single().Status == "Unknown",
+        "Two identically redacted GPP XML strings must not claim exact policy equality.");
+
+    var binaryPreview = standard with
+    {
+        Value = "0x" + new string('A', 96) + "... (2048 bytes total)",
+        ValueType = "REG_BINARY"
+    };
+    Assert(!GpoSourceValueCompleteness.IsExactProjection(binaryPreview),
+        "Registry.pol truncated binary previews are not exact-value comparisons.");
+
+    var customBaseline = new GpoBaselineDocument("gposes-baseline-v1", "Test",
+        "1", new[] { new GpoBaselineRule("gpp-privacy", "Computer",
+            partialPreference.Category, partialPreference.SettingName,
+            partialPreference.Value) });
+    var unknownRule = GpoBaselineAssessmentService.Assess(
+        partialCurrent, customBaseline).Findings.Single();
+    Assert(unknownRule.Status == "Unknown",
+        "User-provided baselines must not call masked source projections compliant.");
+
+    var duplicate = reference with
+    {
+        Rows = new[] { standard, standard }
+    };
+    var ambiguous = GpoReferenceBaselineService.Compare(current, duplicate);
+    Assert(ambiguous.Unknown == 1 &&
+           ambiguous.Findings[0].Status == "Ambiguous",
+        "Duplicate semantic baseline identifiers cannot be treated as compliant.");
+
+    try
+    {
+        GpoReferenceBaselineService.Compare(current, reference with
+        {
+            Rows = Array.Empty<RealSettingRecord>()
+        });
+        throw new InvalidOperationException("Empty reference baseline was accepted.");
+    }
+    catch (InvalidDataException) { }
+}
+
+static void TestGpoBoundedWalk()
+{
+    var root = Path.Combine(Path.GetTempPath(),
+        "GPOSE-walk-" + Guid.NewGuid().ToString("N"));
+    try
+    {
+        Directory.CreateDirectory(Path.Combine(root, "nested"));
+        File.WriteAllText(Path.Combine(root, "a.xml"), "<A/>");
+        File.WriteAllText(Path.Combine(root, "nested", "b.XML"), "<B/>");
+        File.WriteAllText(Path.Combine(root, "nested", "c.xml"), "<C/>");
+        File.WriteAllText(Path.Combine(root, "run.ps1"), "Write-Output OK");
+
+        var allow = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ".xml"
+        };
+        var full = GpoBoundedDirectoryWalker.Scan(root, allow, 50, 10);
+        Assert(full.Complete && full.Files.Count == 3 &&
+               full.Files.All(x => x.EndsWith(".xml",
+                   StringComparison.OrdinalIgnoreCase)),
+            "Bounded GPP walker must find permitted XML files case insensitively.");
+
+        var limited = GpoBoundedDirectoryWalker.Scan(root, allow, 50, 1);
+        Assert(!limited.Complete && limited.Files.Count == 1 &&
+               limited.Issues.Any(x => x.Contains("cap")),
+            "When the matched-file cap is hit, a partial scan must remain explicit.");
+
+        var entryLimit = GpoBoundedDirectoryWalker.Scan(root, allow, 1, 10);
+        Assert(!entryLimit.Complete &&
+               entryLimit.Issues.Any(x => x.Contains("entry cap")),
+            "All scanned directory entries must count toward the resource limit.");
+
+        var faultyGpo = Path.Combine(root, "faulty");
+        var machine = Path.Combine(faultyGpo, "Machine");
+        Directory.CreateDirectory(machine);
+        File.WriteAllText(Path.Combine(machine, "Preferences"), "not a directory");
+        var security = GpoSecurityScannerService.Scan(faultyGpo, Guid.NewGuid());
+        Assert(!security.Complete &&
+               security.Findings.Any(x => x.Category == "Invalid source directory"),
+            "GPP security scanner must not silently accept unreadable/invalid source paths.");
+    }
+    finally
+    {
+        try { Directory.Delete(root, recursive: true); }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+    }
 }

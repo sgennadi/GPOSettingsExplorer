@@ -181,6 +181,7 @@ public sealed class GpoAdvancedAnalysisWindow : Window
         healthPanel.Children.Add(Label("DCs:"));
         healthPanel.Children.Add(_controllers);
         AddAction(healthPanel, "Compare source SHA-256", CrossDcAsync);
+        AddAction(healthPanel, "Full SYSVOL tree SHA-256...", FullSysvolTreeAsync);
         healthPanel.Children.Add(Label("Client:"));
         healthPanel.Children.Add(_computer);
         AddAction(healthPanel, "Client GP events", ClientEventsAsync);
@@ -194,6 +195,7 @@ public sealed class GpoAdvancedAnalysisWindow : Window
 
         var compliance = Tab("Baseline / Intune / GitOps", out var compliancePanel);
         AddAction(compliancePanel, "Compare baseline JSON...", CompareBaselineAsync);
+        AddAction(compliancePanel, "Compare reference GPMC baseline...", ReferenceBaselineAsync);
         AddAction(compliancePanel, "Load reviewed CSP map...", LoadCspMappingAsync);
         AddAction(compliancePanel, "Assess Intune readiness", IntuneReadinessAsync);
         AddAction(compliancePanel, "Export GitOps fingerprints", GitOpsAsync);
@@ -426,6 +428,16 @@ public sealed class GpoAdvancedAnalysisWindow : Window
         return report.ToText();
     }
 
+    private async Task<string> FullSysvolTreeAsync()
+    {
+        var gpo = Target();
+        var hosts = _controllers.Text;
+        var report = await Task.Run(() =>
+            GpoSysvolTreeIntegrityService.Compare(gpo, hosts, _lifetime.Token),
+            _lifetime.Token);
+        return report.ToText();
+    }
+
     private Task<string> ClientEventsAsync() =>
         ReadClientEventsAsync();
 
@@ -513,6 +525,26 @@ public sealed class GpoAdvancedAnalysisWindow : Window
             return GpoBaselineAssessmentService.Assess(current, baseline);
         }, _lifetime.Token);
         return result.ToText();
+    }
+
+    private async Task<string> ReferenceBaselineAsync()
+    {
+        var current = Source();
+        var dialog = new OpenFileDialog
+        {
+            Title = "Choose a reviewed reference baseline GPMC backup",
+            Filter = "GPMC backup manifest (bkupInfo.xml)|bkupInfo.xml"
+        };
+        if (dialog.ShowDialog(this) != true)
+            return "No reference baseline was chosen.";
+        var selected = dialog.FileName;
+        var report = await Task.Run(() =>
+        {
+            var reference = OfflineGpoSourceService.ReadManifest(
+                selected, _lifetime.Token);
+            return GpoReferenceBaselineService.Compare(current, reference);
+        }, _lifetime.Token);
+        return report.ToText();
     }
 
     private async Task<string> LoadCspMappingAsync()

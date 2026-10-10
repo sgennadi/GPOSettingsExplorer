@@ -47,20 +47,20 @@ public static class GpoSecurityScannerService
         foreach (var scope in new[] { "Machine", "User" })
         {
             var prefs = Path.Combine(root, scope, "Preferences");
-            if (Directory.Exists(prefs))
+            if (AvailableSourceDirectory(prefs, "GPP XML", scope, findings, ref complete))
             {
-                var visited = 0;
-                foreach (var file in Directory.EnumerateFiles(prefs, "*.xml",
-                             SearchOption.AllDirectories))
+                var found = GpoBoundedDirectoryWalker.Scan(prefs,
+                    new HashSet<string>(StringComparer.OrdinalIgnoreCase) { ".xml" },
+                    maxEntries: 2000, maxMatches: MaxXmlFiles, cancellation);
+                if (!found.Complete)
+                {
+                    complete = false;
+                    findings.Add(new("Unknown", "GPP scan coverage", scope,
+                        string.Join(" | ", found.Issues.Take(6))));
+                }
+                foreach (var file in found.Files)
                 {
                     cancellation.ThrowIfCancellationRequested();
-                    if (++visited > MaxXmlFiles)
-                    {
-                        complete = false;
-                        findings.Add(new("Unknown", "Scan limit", scope,
-                            "More GPP XML files exist than the per-scope inspection cap."));
-                        break;
-                    }
                     var relative = Path.GetRelativePath(root, file);
                     try
                     {
@@ -94,7 +94,7 @@ public static class GpoSecurityScannerService
                                 "Rotate affected credentials and remove old preference passwords. " +
                                 "Values are NOT exposed."));
                     }
-                    catch (Exception ex) when (ex is IOException or XmlException or
+                    catch (Exception ex) when (ex is IOException or InvalidDataException or XmlException or
                         UnauthorizedAccessException or System.Security.SecurityException)
                     {
                         complete = false;
@@ -106,25 +106,24 @@ public static class GpoSecurityScannerService
             }
 
             var scripts = Path.Combine(root, scope, "Scripts");
-            if (!Directory.Exists(scripts))
+            if (!AvailableSourceDirectory(scripts, "Scripts", scope, findings, ref complete))
                 continue;
-            var checkedScripts = 0;
-            foreach (var file in Directory.EnumerateFiles(scripts, "*",
-                         SearchOption.AllDirectories))
+            var candidates = GpoBoundedDirectoryWalker.Scan(scripts,
+                new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ".ps1", ".psm1", ".bat", ".cmd", ".vbs",
+                    ".js", ".wsf", ".hta"
+                },
+                maxEntries: 2500, maxMatches: MaxScripts, cancellation);
+            if (!candidates.Complete)
+            {
+                complete = false;
+                findings.Add(new("Unknown", "Script scan coverage", scope,
+                    string.Join(" | ", candidates.Issues.Take(6))));
+            }
+            foreach (var file in candidates.Files)
             {
                 cancellation.ThrowIfCancellationRequested();
-                var ext = Path.GetExtension(file);
-                if (!new[] { ".ps1", ".psm1", ".bat", ".cmd", ".vbs",
-                             ".js", ".wsf", ".hta" }
-                    .Contains(ext, StringComparer.OrdinalIgnoreCase))
-                    continue;
-                if (++checkedScripts > MaxScripts)
-                {
-                    complete = false;
-                    findings.Add(new("Unknown", "Scan limit", scope,
-                        "Script count exceeds the bounded inspection cap."));
-                    break;
-                }
                 var relative = Path.GetRelativePath(root, file);
                 try
                 {
@@ -155,8 +154,9 @@ public static class GpoSecurityScannerService
                                 " found; may be legitimate administration. " +
                                 "Review original locally before acting."));
                 }
-                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or
-                                           System.Security.SecurityException or RegexMatchTimeoutException)
+                catch (Exception ex) when (ex is IOException or InvalidDataException or
+                            UnauthorizedAccessException or System.Security.SecurityException or
+                            RegexMatchTimeoutException)
                 {
                     complete = false;
                     findings.Add(new("Unknown", "Unreadable script",
@@ -166,5 +166,37 @@ public static class GpoSecurityScannerService
         }
 
         return new GpoSecurityScan(gpoId, DateTimeOffset.UtcNow, root, complete, findings);
+    }
+
+    private static bool AvailableSourceDirectory(
+        string path, string name, string scope,
+        List<GpoSecurityFinding> findings, ref bool complete)
+    {
+        try
+        {
+            var attributes = File.GetAttributes(path);
+            if ((attributes & FileAttributes.Directory) != 0)
+                return true;
+            complete = false;
+            findings.Add(new GpoSecurityFinding("Unknown", "Invalid source directory",
+                scope, name + " source path is not a directory; coverage unknown."));
+            return false;
+        }
+        catch (Exception ex) when (ex is DirectoryNotFoundException or
+                                   FileNotFoundException)
+        {
+            // Most GPOs have no preferences or scripts in both scopes.
+            // Optional absent directory is normal; not proof of policy absence.
+            return false;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or
+                                   System.Security.SecurityException)
+        {
+            complete = false;
+            findings.Add(new GpoSecurityFinding("Unknown", "Unavailable source directory",
+                scope, name + " path could not be inspected (" +
+                ex.GetType().Name + "); skipped data is unknown."));
+            return false;
+        }
     }
 }
