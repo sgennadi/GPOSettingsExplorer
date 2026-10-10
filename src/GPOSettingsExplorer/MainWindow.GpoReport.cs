@@ -46,7 +46,8 @@ public partial class MainWindow
         {
             MarkGpoRecent(selected.Id);
             var xml = await Task.Run(() =>
-                _gpmService.GenerateXmlReport(context.DomainName, selected.Id));
+                _gpmService.GenerateXmlReport(context.DomainName, selected.Id,
+                    GpoSettingsReportService.MaxXmlCharacters * 2 + 4096));
             var report = await Task.Run(() =>
                 GpoSettingsReportService.Parse(selected, xml));
 
