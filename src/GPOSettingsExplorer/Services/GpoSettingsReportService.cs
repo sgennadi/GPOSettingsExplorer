@@ -149,10 +149,14 @@ public static class GpoSettingsReportService
             if (type.Equals("SecuritySettings", StringComparison.OrdinalIgnoreCase))
                 sections.Add(SecurityExtension(ext, budget));
             else
+            {
+                if (ext.Elements().Skip(200).Any())
+                    budget.Limited = true;
                 sections.Add(new GpoReportNode(Display(type),
                     "GPMC source extension: " + type + ". Values are stored GPO source, not RSoP.",
                     ext.Elements().Take(200).Select(node =>
                         XmlNode(node, budget, 0)).ToArray()));
+            }
         }
 
         static IReadOnlyList<GpoReportNode> Assemble(
@@ -200,10 +204,14 @@ public static class GpoSettingsReportService
                 }));
         }
         if (other.Length > 0)
+        {
+            if (other.Length > 200)
+                budget.Limited = true;
             items.Add(new GpoReportNode("Other Security Settings",
                 "Other extension values are grouped without inventing their MMC section.",
                 other.Take(200).Select(e =>
                     XmlNode(e, budget, 0)).ToArray()));
+        }
         return new GpoReportNode("Security Settings",
             "Policies > Windows Settings > Security Settings. " +
             "Native GPMC security data is not a Registry source.",
@@ -228,7 +236,8 @@ public static class GpoSettingsReportService
         var nameAttr = element.Attributes().FirstOrDefault(a =>
             a.Name.LocalName.Equals("name", StringComparison.OrdinalIgnoreCase));
         if (nameAttr is not null && !string.IsNullOrWhiteSpace(nameAttr.Value))
-            label += ": " + Cut(nameAttr.Value, 130);
+            label += ": " + (IsSensitive(element.Name.LocalName)
+                ? "[redacted]" : Cut(nameAttr.Value, 130));
         var children = element.Elements().Take(180).Select(e =>
             XmlNode(e, budget, depth + 1)).ToArray();
         if (element.Elements().Skip(180).Any())
@@ -241,12 +250,16 @@ public static class GpoSettingsReportService
         var parts = new List<string> { "GPMC source element: " + element.Name.LocalName };
         foreach (var a in element.Attributes().Where(a => !a.IsNamespaceDeclaration).Take(24))
         {
-            var value = IsSensitive(a.Name.LocalName) ? "[redacted]" : Cut(a.Value, 400);
+            var value = IsSensitive(a.Name.LocalName) ||
+                        IsSensitive(element.Name.LocalName) ||
+                        element.Ancestors().Any(x => IsSensitive(x.Name.LocalName))
+                ? "[redacted]" : Cut(a.Value, 400);
             parts.Add(a.Name.LocalName + ": " + value);
         }
         if (!element.HasElements && !string.IsNullOrWhiteSpace(element.Value))
         {
-            parts.Add("Value: " + (IsSensitive(element.Name.LocalName)
+            parts.Add("Value: " + (IsSensitive(element.Name.LocalName) ||
+                element.Ancestors().Any(x => IsSensitive(x.Name.LocalName))
                 ? "[redacted]" : Cut(element.Value.Trim(), 5000)));
         }
         return string.Join("\n", parts);
@@ -256,6 +269,9 @@ public static class GpoSettingsReportService
         name.Contains("password", StringComparison.OrdinalIgnoreCase) ||
         name.Contains("cpassword", StringComparison.OrdinalIgnoreCase) ||
         name.Contains("secret", StringComparison.OrdinalIgnoreCase) ||
+        name.Contains("credential", StringComparison.OrdinalIgnoreCase) ||
+        name.Contains("privatekey", StringComparison.OrdinalIgnoreCase) ||
+        name.Contains("accesstoken", StringComparison.OrdinalIgnoreCase) ||
         name.Contains("recoverykey", StringComparison.OrdinalIgnoreCase);
 
     private static string Cut(string value, int limit) =>
