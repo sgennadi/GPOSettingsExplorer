@@ -81,6 +81,13 @@ public static class GpoNativeSourceReader
                 statuses.Add(new NativePolicySourceStatus(
                     source.Relative, "Parse error", 0, ex.Message));
             }
+            catch (DecoderFallbackException ex)
+            {
+                statuses.Add(new NativePolicySourceStatus(
+                    source.Relative, "Parse error", 0,
+                    "Invalid source text encoding; no replacement or silent character conversion: " +
+                    ex.Message));
+            }
             catch (IOException ex)
             {
                 statuses.Add(new NativePolicySourceStatus(
