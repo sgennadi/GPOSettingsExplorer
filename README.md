@@ -14,7 +14,7 @@ Download the latest portable build from:
 
 **[GitHub Releases](https://github.com/sgennadi/GPOSettingsExplorer/releases/latest)**
 
-Current release: **v0.8.0**
+Current release: **v1.0.0**
 
 Available packages:
 
@@ -23,9 +23,18 @@ Available packages:
 
 The builds are self-contained. A separate .NET runtime installation is not required.
 
+### Release 1.0.0 - delivered milestones
+
+- **0.8 Real Settings Engine:** direct bounded Machine/User Registry.pol (PReg), Machine GptTmpl.inf and curated standard GPP XML item attributes from one session-pinned DC, independent source SHA-256. GPP attributes are a partial projection with cpassword and other sensitive attributes redacted; Item Level Targeting and CSE execution are NOT evaluated. Other CSE formats are still unsupported.
+- **0.9 Security Settings Editor:** finite-choice editor for existing Event Audit and the PasswordComplexity/ClearTextPassword System Access entries. Requires WRITE ENABLED, validated same-domain source path, a completed GPMC backup, source-hash concurrency check, mandatory before/after approval and audit trail. Privilege Rights, SIDs, ACLs, Restricted Groups and arbitrary INF text are not editable.
+- **0.10 GPO Health Check:** read-only AD GPC versionNumber vs pinned-DC SYSVOL GPT.INI comparison, policy-file read status, source fingerprinting and TXT export. **Compare DC versions...** compares up to 16 explicitly named DCs without a DFS alias; disagreement and unknown values are never treated as consistent. Version matching is not proof of all-file DFSR convergence.
+- **0.11 Impact / RSoP preview:** direct site/domain/OU GPO link evidence, enabled/enforced state, WMI/scope caveats and optional last-logged client gpresult sample. It cannot predict exact recipients of a hypothetical change, and no domain-wide effective-policy verdict is claimed.
+- **1.0 Full evidence and limited selective recovery:** local, operator-requested ZIP with GPMC XML when available, stored-source JSON/CSV, SHA-256 sums, GPO health, link footprint and coverage manifest. Confidential data is not uploaded automatically. Backups tab can selectively restore **one existing supported SecEdit numeric value** from an original-domain GPMC backup; no other GPO settings, ACLs or links are changed.
+- Core regression tests, Windows WPF CI, x64 and ARM64 portable builds. **Before production writes, perform a nonproduction GPO smoke test on a real DC**; live AD/SYSVOL writes, network File.Replace support, GPMC Save and client RSoP cannot be fully validated in GitHub CI. Safe mode is read-only by default.
+
 ### Real Settings Engine: source-file evidence (0.8.0)
 
-In **All Settings**, select a specific GPO and click **Read selected GPO files**. This is a read-only source snapshot on the session-pinned domain controller, requiring no MMC navigation. It parses Machine/User `Registry.pol` as binary PReg v1 and Machine's `Microsoft/Windows NT/SecEdit/GptTmpl.inf` as an encoding-aware security template. The file scan produces source rows with actual stored values, type, category, source path, SHA-256 and clear evidence/coverage. Set the Source filter to **Stored GPO files (read only)** and open a record's **View source evidence...** dialog. No editing is offered for a raw source-file row.
+In **All Settings**, select a specific GPO and click **Read selected GPO files**. This is a read-only source snapshot on the session-pinned domain controller, requiring no MMC navigation. It parses Machine/User `Registry.pol` as binary PReg v1 and Machine's `Microsoft/Windows NT/SecEdit/GptTmpl.inf` as an encoding-aware security template. The file scan produces source rows with actual stored values, type, category, source path, SHA-256 and clear evidence/coverage. Set the Source filter to **Stored GPO files (read only)** and open a record's **View source evidence...** dialog. Raw source rows remain read-only by default. The separate **Edit stored security...** action permits only existing, recognized Event Audit and selected System Access numeric entries after enabling write mode, a GPMC safety backup, SHA-256 freshness checks and mandatory confirmation. All other raw source rows remain read-only.
 
 A file absent from SYSVOL is marked **Absent**, NOT an inferred Not Configured policy. Corrupt, unsupported-version or truncated files are marked **PARTIAL** with diagnostics, preserving any verified prior rows. Raw source values do not establish winning settings, RSoP, WMI applicability or security-filter permissions. Registry.pol special deletion operations remain labeled as instructions, not current values. This is a first-stage source engine; additional CSE formats need separate modules and independent regression tests before treating them as supported.
 

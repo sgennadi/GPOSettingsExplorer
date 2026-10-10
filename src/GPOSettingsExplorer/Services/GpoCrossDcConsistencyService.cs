@@ -40,7 +40,7 @@ public sealed record GpoCrossDcConsistencyReport(
 public static class GpoCrossDcConsistencyService
 {
     private static readonly Regex DcName = new(
-        @"^[a-zA-Z0-9][a-zA-Z0-9.-]{0,251}[a-zA-Z0-9]$",
+        @"^[a-zA-Z0-9](?:[a-zA-Z0-9.-]{0,251}[a-zA-Z0-9])?$",
         RegexOptions.Compiled | RegexOptions.CultureInvariant);
 
     public static string[] ValidateControllers(string input, string domain)
@@ -71,10 +71,16 @@ public static class GpoCrossDcConsistencyService
 
         var distinct = controllers.Select(item => (item.AdVersion, item.GptVersion))
             .Distinct().Count();
-        return distinct == 1
-            ? $"VERSION MATCH: {controllers.Count} selected DCs agree on version numbers; " +
-              "this is NOT a full replication or policy-content proof."
-            : "CROSS-DC VERSION DRIFT: values disagree between controllers.";
+        if (distinct != 1)
+            return "CROSS-DC VERSION DRIFT: values disagree between controllers.";
+        var distinctHashes = controllers.Select(item => item.GptIniSha256)
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Distinct(StringComparer.OrdinalIgnoreCase).Count();
+        if (distinctHashes > 1)
+            return "VERSION MATCH, DIFFERENT GPT.INI BYTES: review differing SHA-256 " +
+                "across DCs even though the version values agree.";
+        return $"VERSION MATCH: {controllers.Count} selected DCs agree on version numbers; " +
+            "this is NOT a full replication or policy-content proof.";
     }
 
     public static GpoCrossDcConsistencyReport Compare(

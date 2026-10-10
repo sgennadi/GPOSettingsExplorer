@@ -44,7 +44,7 @@ public partial class MainWindow
             StatusText.Text = "Writing stored security setting with SHA-256 precondition...";
             await StaTask.Run(() => _securityTemplateService.ApplyStoredNumeric(
                 gpo, _domainContext.DomainDistinguishedName, source,
-                editor.SelectedValue));
+                editor.SelectedValue, backup));
 
             _auditService.Write("Edit Security Settings", "GPO", gpo.DisplayName,
                 $"[{spec.Section}] {spec.Key}; backup: {backup}; source SHA-256: {source.SourceSha256}",

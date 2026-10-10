@@ -4,6 +4,18 @@
 
 - No unreleased changes yet.
 
+## 1.0.0 - 2026-10-10
+
+- Build on v0.8.0 with bounded, read-only curated GPP XML attribute evidence from stored Machine/User Preferences paths. Sensitive password-like attributes are redacted; no GPP/ILT execution inference.
+- Add finite-choice Security Settings edits for existing Event Audit and two System Access fields only. Require WRITE ENABLED, completed GPMC safety backup manifest, same-domain/selected DC source path, SHA-256 precondition and mandatory preview. Unknown/ambiguous or unsupported values remain read-only.
+- Add read-only GPO Health Check comparing AD GPC versionNumber to SYSVOL GPT.INI and source file health on the pinned DC, with copy/TXT export.
+- Add explicit multi-DC version comparison for up to 16 named DCs, including unknown/mismatch states and GPT.INI SHA-256 fingerprint differences; no automated repairs or assumption of full DFSR convergence.
+- Add read-only link impact footprint and optional single-client logged gpresult/RSoP observation; never claim domain-wide effective policy or future impact prediction.
+- Add local-only comprehensive evidence ZIP (GPMC report, source JSON/CSV, health/impact, SHA-256, coverage manifest), with confidentiality warning and no automatic uploads.
+- Add limited selective recovery of ONE existing, vetted Security Settings numeric value from a matching original-domain GPMC backup, a fresh safety backup, precondition checks and confirmation. This does not restore ACLs, rights, missing settings, scripts, GPP, links, WMI or Registry.pol.
+- Extend CoreTests for GPT.INI, GPP XML safe parsing, SecEdit editor, cross-DC status, impact, local ZIP and selective recovery. Windows CI builds portable x64/ARM64.
+- NOTE: Domain-controller live smoke testing is still required before production writes. Values from source files are not RSoP; cross-DC matching version numbers do not prove full content replication.
+
 ## 0.8.0 - 2026-10-10
 
 - Introduce **Real Settings Engine (phase 1)** as a read-only direct GPO source inspector in **All Settings**, without adding a main tab.

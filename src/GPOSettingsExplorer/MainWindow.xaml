@@ -193,7 +193,7 @@
                                 <Button x:Name="ReadRealSourcesButton"
                                         Content="Read selected GPO files"
                                         Click="ReadRealSources_Click"
-                                        ToolTip="Read-only inspection of Machine/User Registry.pol and Machine SecEdit GptTmpl.inf on the pinned domain controller. Select a GPO first. Never edits or applies policies."/>
+                                        ToolTip="Read-only inspection of Machine/User Registry.pol, Machine SecEdit GptTmpl.inf, and standard GPP XML attributes on the pinned domain controller. Select a GPO first. Never edits or applies policies."/>
                                 <Button x:Name="SecurityEditSourceButton" Content="Edit stored security..." Click="EditSecuritySource_Click" IsEnabled="False" ToolTip="Only selected, recognized existing Event Audit and System Access values. Requires WRITE ENABLED, backup, source SHA-256 match and preview."/>
                                 <Button x:Name="UnifiedActionButton"
                                         Content="View / Edit..."
@@ -207,7 +207,7 @@
                             <TextBlock x:Name="UnifiedSettingsCountText"
                                        Margin="4,3,4,5" TextWrapping="Wrap"
                                        Foreground="{DynamicResource UiMutedBrush}"
-                                       Text="Unified catalog: GPMC/ADMX/MMC; optional Read selected GPO files shows actual stored Registry.pol and GptTmpl.inf entries (not effective RSoP)."/>
+                                       Text="Unified catalog: GPMC/ADMX/MMC; optional Read selected GPO files shows actual stored Registry.pol, GptTmpl.inf and GPP XML entries (not effective RSoP)."/>
                             <TextBlock x:Name="UnifiedSelectedDetailsText"
                                        Margin="4,1,4,5" TextWrapping="Wrap"
                                        Foreground="{DynamicResource UiMutedBrush}"

@@ -28,20 +28,27 @@ public static class ChangePreviewGuard
                 value ? 1 : 0);
     }
 
-    public static void Confirm(
-        ChangePreviewRequest request)
+    public static void Confirm(ChangePreviewRequest request) =>
+        ConfirmCore(request, required: false);
+
+    /// <summary>Security and restore operations always require a visible approval.</summary>
+    public static void ConfirmRequired(ChangePreviewRequest request) =>
+        ConfirmCore(request, required: true);
+
+    private static void ConfirmCore(ChangePreviewRequest request, bool required)
     {
         EditingGuard.EnsureEnabled(
             request.Title);
 
-        if (!IsEnabled)
+        if (!required && !IsEnabled)
             return;
 
         var application =
             Application.Current;
 
         if (application is null)
-            return;
+            throw new InvalidOperationException(
+                "Interactive change preview is unavailable. Editing is blocked.");
 
         bool approved =
             false;

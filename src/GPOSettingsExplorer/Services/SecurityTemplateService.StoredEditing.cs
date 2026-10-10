@@ -13,11 +13,17 @@ public sealed partial class SecurityTemplateService
 {
     public void ApplyStoredNumeric(
         GpoInfo gpo, string domainDistinguishedName,
-        RealSettingRecord record, int proposedValue)
+        RealSettingRecord record, int proposedValue, string gpmcBackupDirectory)
     {
         EditingGuard.EnsureEnabled("Edit stored security policy");
         ArgumentNullException.ThrowIfNull(gpo);
         ArgumentNullException.ThrowIfNull(record);
+        if (string.IsNullOrWhiteSpace(gpmcBackupDirectory) ||
+            !Directory.Exists(gpmcBackupDirectory) ||
+            !Directory.EnumerateFiles(gpmcBackupDirectory, "bkupInfo.xml",
+                SearchOption.AllDirectories).Any())
+            throw new InvalidOperationException(
+                "Completed GPMC safety backup (bkupInfo.xml) is mandatory before source edits.");
         if (!SecurityTemplateEditRules.TryDescribe(record, out var rule) ||
             rule is null || !rule.Allows(proposedValue))
             throw new InvalidOperationException("Unsupported or malformed Security Settings record.");
@@ -72,7 +78,7 @@ public sealed partial class SecurityTemplateService
         var updated = SecurityTemplateEditRules.ChangeExistingValue(text, rule, proposedValue);
         var output = encoding.GetPreamble().Concat(encoding.GetBytes(updated)).ToArray();
 
-        ChangePreviewGuard.Confirm(new ChangePreviewRequest(
+        ChangePreviewGuard.ConfirmRequired(new ChangePreviewRequest(
             $"Edit Security Settings: {record.SettingName}", gpo.DisplayName,
             $"{record.Category}\n{record.SettingName} = {rule.CurrentValue}",
             $"{record.Category}\n{record.SettingName} = {proposedValue}",
@@ -108,8 +114,13 @@ public sealed partial class SecurityTemplateService
                 var tool = SecurityToolGuid;
                 policy.Save(machine: true, add: true, ref extension, ref tool);
             }
-            // Drop redundant rollback after a completed GPMC save.
-            File.Delete(localRollback);
+            // Drop redundant rollback after a completed GPMC save. A cleanup
+            // failure must never be reported as failure of the COM save.
+            try { File.Delete(localRollback); }
+            catch (Exception cleanup) when (cleanup is IOException or UnauthorizedAccessException)
+            {
+                CrashLogService.Write("Cleanup local Security Settings rollback", cleanup);
+            }
         }
         catch (Exception ex) when (replaced)
         {

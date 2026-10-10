@@ -71,7 +71,7 @@ public partial class MainWindow
             await Task.Run(() => GpoSelectiveRecoveryService.EnsureBackupUnchanged(plan));
             await StaTask.Run(() => _securityTemplateService.ApplyStoredNumeric(
                 gpo, _domainContext.DomainDistinguishedName,
-                candidate.CurrentSource, candidate.BackupValue));
+                candidate.CurrentSource, candidate.BackupValue, safetyBackup));
 
             _auditService.Write("Selective Security Setting Restore", "GPO",
                 gpo.DisplayName,
