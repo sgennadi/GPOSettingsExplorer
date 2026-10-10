@@ -490,9 +490,11 @@ public sealed class GpoAdvancedAnalysisWindow : Window
             CrashLogService.Write("Explain Why: client events", ex);
         }
 
-        return GpoExplainWhyService.Build(
+        var explanation = GpoExplainWhyService.Build(
             gpo, scope, lastLogged, location, events,
-            locationError, eventError).ToText();
+            locationError, eventError);
+        new GpoExplanationWindow(explanation) { Owner = this }.ShowDialog();
+        return explanation.ToText();
     }
 
     private async Task<string> CompareBaselineAsync()
