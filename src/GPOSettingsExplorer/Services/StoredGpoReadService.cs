@@ -1,3 +1,4 @@
+using System.Text;
 using GPOSettingsExplorer.Models;
 
 namespace GPOSettingsExplorer.Services;
@@ -64,17 +65,32 @@ public static class StoredGpoReadService
                     throw new FormatException("Stored policy file exceeded the 32 MiB safety limit.");
 
                 // Open strictly for read; other administrators may still save
-                // the GPO. A write during this read is not a stable snapshot.
+                // the GPO. Avoid unbounded CopyTo allocations and detect
+                // obvious concurrent writes before accepting evidence.
                 byte[] file;
                 using (var stream = new FileStream(path, FileMode.Open,
                     FileAccess.Read, FileShare.ReadWrite | FileShare.Delete))
                 {
-                    using var data = new MemoryStream();
-                    stream.CopyTo(data);
-                    if (data.Length > StoredGpoFileParser.MaxFileBytes)
-                        throw new FormatException("GPO source changed beyond the size limit during reading.");
+                    var length = stream.Length;
+                    if (length > StoredGpoFileParser.MaxFileBytes)
+                        throw new FormatException("GPO source changed beyond size limit during reading.");
+                    using var data = new MemoryStream((int)length);
+                    var buffer = new byte[64 * 1024];
+                    int count;
+                    while ((count = stream.Read(buffer)) > 0)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        if (data.Length + count > StoredGpoFileParser.MaxFileBytes)
+                            throw new FormatException("GPO file grew beyond size limit while reading.");
+                        data.Write(buffer, 0, count);
+                    }
+                    if (stream.Length != length || data.Length != length)
+                        throw new IOException("GPO file changed length during this read; retry.");
                     file = data.ToArray();
                 }
+                info.Refresh();
+                if (info.Length != file.Length)
+                    throw new IOException("GPO file changed while scanning; retry.");
 
                 cancellationToken.ThrowIfCancellationRequested();
                 var parsed = c.Name == "Registry.pol"
