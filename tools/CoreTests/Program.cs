@@ -3700,7 +3700,8 @@ static void TestGpoSettingsReportTree()
            all.Any(n => n.Label == "Computer Configuration (Enabled)") &&
            all.Any(n => n.Label == "User Configuration (Enabled)") &&
            all.Any(n => n.Label == "Kerberos Policy") &&
-           all.Any(n => n.Label == "Maximum lifetime for user ticket") &&
+           all.Any(n => n.Label == "Maximum lifetime for user ticket" &&
+                        n.Details.Contains("SettingNumber: 10")) &&
            all.Any(n => n.Label == "Scripts"),
         "Native report must expose GPMC General/Links/Computer/User/Scripts/Kerberos sections.");
     var serialized = System.Text.Json.JsonSerializer.Serialize(report);
