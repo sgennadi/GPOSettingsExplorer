@@ -41,6 +41,47 @@ public static class GpoDiscoveryEvidenceService
         }).ToArray();
     }
 
+    /// <summary>
+    /// Promote a candidate to an observed section/row only if a unique native
+    /// MMC inventory entry agrees on GPO, scope, literal name and section.
+    /// An MMC observation does not validate the underlying configured value.
+    /// </summary>
+    public static IReadOnlyList<Evidence> CorrelateMmc(
+        IEnumerable<Evidence> evidence, IEnumerable<MmcInventoryEntry> observed)
+    {
+        ArgumentNullException.ThrowIfNull(evidence);
+        ArgumentNullException.ThrowIfNull(observed);
+        var rows = observed.ToArray();
+        return evidence.Select(item =>
+        {
+            if (item.NavigationStatus != "SECTION_CANDIDATE")
+                return item;
+
+            var matches = rows.Where(row =>
+                row.GpoId == item.GpoId &&
+                row.Scope.Equals(item.Scope, StringComparison.OrdinalIgnoreCase) &&
+                row.SettingName.Equals(item.SettingName, StringComparison.OrdinalIgnoreCase) &&
+                row.TreeSegments.SequenceEqual(
+                    item.MmcSection.Split(" > ", StringSplitOptions.RemoveEmptyEntries),
+                    StringComparer.OrdinalIgnoreCase)).ToArray();
+
+            return matches.Length switch
+            {
+                1 => item with
+                {
+                    NavigationStatus = "MMC_ROW_OBSERVED",
+                    Notes = "One matching native MMC row observed. Value and effective RSoP are not verified."
+                },
+                > 1 => item with
+                {
+                    NavigationStatus = "AMBIGUOUS",
+                    Notes = "Multiple matching MMC rows; manual review required."
+                },
+                _ => item
+            };
+        }).ToArray();
+    }
+
     public static string ExportTsv(IEnumerable<Evidence> evidence)
     {
         ArgumentNullException.ThrowIfNull(evidence);
