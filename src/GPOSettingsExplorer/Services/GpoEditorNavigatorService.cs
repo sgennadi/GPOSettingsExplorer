@@ -55,11 +55,14 @@ public sealed class GpoEditorNavigatorService
                !setting.SettingName.Equals("Security option", StringComparison.OrdinalIgnoreCase);
     }
 
+    // A GPMC extension name alone does not establish a valid MMC section.
+    // Only routes which can be derived from explicitly known source/category
+    // evidence are eligible for automatic navigation.
+    public static bool HasVerifiedSection(PolicySettingInfo setting) =>
+        BuildTreePath(setting).Count > 0;
+
     private static bool CanNavigateToSection(PolicySettingInfo setting) =>
-        setting.Extension.Equals("SecuritySettings", StringComparison.OrdinalIgnoreCase) ||
-        setting.Extension.Equals("AuditSettings", StringComparison.OrdinalIgnoreCase) ||
-        setting.Extension.Equals("RegistrySettings", StringComparison.OrdinalIgnoreCase) ||
-        GpoPolicySectionRoutes.Resolve(setting).Count > 0;
+        HasVerifiedSection(setting);
 
     public async Task<bool> OpenAtSettingAsync(
         GpoInfo gpo,
@@ -68,13 +71,15 @@ public sealed class GpoEditorNavigatorService
         IProgress<string>? progress = null,
         CancellationToken cancellationToken = default)
     {
-        var process =
-            StartEditor(
-                gpo,
-                domainDistinguishedName);
-
+        // Unsupported extension routes must not be redirected into
+        // Windows Settings > Security Settings. Open the correct GPO at its
+        // root for manual inspection instead of pretending to open a policy.
+        var process = StartEditor(gpo, domainDistinguishedName);
         if (!CanNavigateExactly(setting) && !CanNavigateToSection(setting))
         {
+            progress?.Report("No verified MMC section for GPMC extension '" +
+                setting.Extension + "'. Opened the GPO editor at its root; " +
+                "select the required section manually. No policy dialog opened.");
             return false;
         }
 
@@ -529,57 +534,8 @@ public sealed class GpoEditorNavigatorService
         }
     }
 
-    private static IReadOnlyList<string> BuildTreePath(
-        PolicySettingInfo setting)
-    {
-        var mappedSection = GpoPolicySectionRoutes.Resolve(setting);
-        if (mappedSection.Count > 0)
-            return mappedSection;
-
-        var scope =
-            setting.Scope.Equals("User", StringComparison.OrdinalIgnoreCase)
-                ? "User Configuration"
-                : "Computer Configuration";
-
-        if (setting.Extension.Equals("RegistrySettings", StringComparison.OrdinalIgnoreCase))
-        {
-            // registry.pol / Extra Registry Settings are Administrative Templates,
-            // NOT Group Policy Preferences Registry items.
-            return new[] { scope, "Policies", "Administrative Templates" };
-        }
-
-        var security = new List<string>
-        {
-            scope, "Policies", "Windows Settings", "Security Settings"
-        };
-
-        if (setting.Extension.Equals("AuditSettings", StringComparison.OrdinalIgnoreCase) ||
-            setting.Category.Contains("Advanced Audit", StringComparison.OrdinalIgnoreCase))
-        {
-            security.Add("Advanced Audit Policy Configuration");
-            security.Add("Audit Policies");
-            return security;
-        }
-
-        if (setting.Category.Contains("Account Policies", StringComparison.OrdinalIgnoreCase))
-        {
-            security.Add("Account Policies");
-            return security;
-        }
-
-        if (setting.Category.Contains("Local Policies", StringComparison.OrdinalIgnoreCase))
-        {
-            security.Add("Local Policies");
-            if (setting.Category.Contains("Security Options", StringComparison.OrdinalIgnoreCase))
-                security.Add("Security Options");
-            else if (setting.Category.Contains("Audit Policy", StringComparison.OrdinalIgnoreCase))
-                security.Add("Audit Policy");
-            else if (setting.Category.Contains("User Rights Assignment", StringComparison.OrdinalIgnoreCase))
-                security.Add("User Rights Assignment");
-        }
-
-        return security;
-    }
+    private static IReadOnlyList<string> BuildTreePath(PolicySettingInfo setting) =>
+        GpoPolicySectionRoutes.Resolve(setting);
 
     private static AutomationElement? FindTreeItem(
         AutomationElement parent,
