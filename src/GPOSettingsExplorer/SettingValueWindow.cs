@@ -316,6 +316,16 @@ public sealed class SettingValueWindow : Window
                 BuildRegistrySummary(
                     setting)));
 
+        if (setting.Extension.Equals("SecuritySettings", StringComparison.OrdinalIgnoreCase) &&
+            setting.Category.Equals(
+                "Security Settings > Local Policies > Security Options",
+                StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrWhiteSpace(setting.RegistryKey))
+        {
+            panel.Children.Add(Meta("GPMC Security Options KeyName (not verified Registry.pol)",
+                setting.RegistryKey));
+        }
+
         if (SecurityXmlEntryClassifier.IsTechnicalDetail(setting))
         {
             panel.Children.Add(new TextBlock
