@@ -303,6 +303,8 @@
                                     <Button Content="Open exact in MMC..." Click="OpenMmcInventoryRow_Click"
                                             ToolTip="Open only a uniquely verified literal row in the standard MMC editor. No automatic GPO write."/>
                                     <Button Content="Export CSV..." Click="ExportMmcInventory_Click"/>
+                                    <Button Content="Export discovery evidence..." Click="ExportDiscoveryEvidence_Click"
+                                            ToolTip="Read-only source classification and candidate MMC routes for the selected GPO. No values are verified by this export."/>
                                     <TextBlock x:Name="MmcInventoryShownCountText" Margin="12,0,0,0"
                                                VerticalAlignment="Center"
                                                Foreground="{DynamicResource UiMutedBrush}"/>
