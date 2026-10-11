@@ -1378,11 +1378,13 @@ static void TestExtendedMmcSectionRouting()
         SettingName = "Trustee Auditing"
     }), "Nested package ACL metadata cannot be opened as a Security Option.");
 
-    var notMapped = GpoPolicySectionRoutes.Resolve(new PolicySettingInfo
+    var registryRoute = GpoPolicySectionRoutes.Resolve(new PolicySettingInfo
     {
         Extension = "RegistrySettings", Scope = "Computer", SettingName = "Registry: raw"
     });
-    Assert(notMapped.Count == 0, "Raw registry.pol navigation must remain unchanged.");
+    Assert(registryRoute.Count == 3 &&
+           registryRoute[^1] == "Administrative Templates",
+        "Registry.pol may open only the Administrative Templates root; never GPP Registry.");
 }
 
 static void TestUnmappedGpmcFailClosed()
