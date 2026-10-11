@@ -19,6 +19,9 @@ public static class GpoDiscoveryEvidenceService
         public string MmcObservedState { get; init; } = string.Empty;
         public string MmcObservedValue { get; init; } = string.Empty;
         public string ValueVerificationStatus { get; init; } = "NOT_VERIFIED";
+        public string SourceStoredValue { get; init; } = string.Empty;
+        public string SourceStoredType { get; init; } = string.Empty;
+        public string SourceFileHash { get; init; } = string.Empty;
     }
 
     public static IReadOnlyList<Evidence> Build(
@@ -124,6 +127,9 @@ public static class GpoDiscoveryEvidenceService
                 {
                     SourceStatus = "REGISTRY_SOURCE_LOCATED",
                     ValueVerificationStatus = "SOURCE_RECORD_LOCATED_VALUE_NOT_COMPARED",
+                    SourceStoredValue = matching[0].Value,
+                    SourceStoredType = matching[0].ValueType,
+                    SourceFileHash = matching[0].SourceSha256,
                     Notes = item.Notes + " Unique Registry.pol target located; GPMC/MMC value and units not compared."
                 },
                 > 1 => item with
@@ -150,14 +156,15 @@ public static class GpoDiscoveryEvidenceService
         }
 
         var output = new StringBuilder();
-        output.AppendLine("GpoId\tScope\tExtension\tSettingName\tSourceType\tSourceStatus\tRegistryTarget\tMmcSection\tNavigationStatus\tIdentityHash\tNotes\tMmcObservedState\tMmcObservedValue\tValueVerificationStatus");
+        output.AppendLine("GpoId\tScope\tExtension\tSettingName\tSourceType\tSourceStatus\tRegistryTarget\tMmcSection\tNavigationStatus\tIdentityHash\tNotes\tMmcObservedState\tMmcObservedValue\tValueVerificationStatus\tSourceStoredValue\tSourceStoredType\tSourceFileHash");
         foreach (var row in evidence)
             output.AppendLine(string.Join("\t", new[]
             {
                 row.GpoId.ToString("D"), row.Scope, row.Extension, row.SettingName,
                 row.SourceType, row.SourceStatus, row.RegistryTarget, row.MmcSection,
                 row.NavigationStatus, row.IdentityHash, row.Notes,
-                row.MmcObservedState, row.MmcObservedValue, row.ValueVerificationStatus
+                row.MmcObservedState, row.MmcObservedValue, row.ValueVerificationStatus,
+                row.SourceStoredValue, row.SourceStoredType, row.SourceFileHash
             }.Select(Safe)));
         return output.ToString();
     }
