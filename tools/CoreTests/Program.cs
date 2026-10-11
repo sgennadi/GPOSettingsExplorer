@@ -3622,6 +3622,25 @@ static void TestKerberosGpmcRouting()
            info.InternalName == "MaxTicketAge" &&
            info.DisplayName == "Maximum lifetime for user ticket",
         "GPMC Account: MaxTicketAge must have the official user-ticket label.");
+    // GPMC normally writes SecuritySettings Account as child elements,
+    // not attributes. This regression fixture matches the live screenshot.
+    var childFields = System.Xml.Linq.XElement.Parse(
+        "<Account xmlns='http://www.microsoft.com/GroupPolicy/Settings/Security'>" +
+        "<Name>MaxTicketAge</Name><SettingNumber>10</SettingNumber>" +
+        "<Type>Kerberos</Type></Account>");
+    Assert(KerberosPolicyMetadataService.TryDescribeGpmcNode(childFields, out var childInfo) &&
+           childInfo.DisplayName == "Maximum lifetime for user ticket" &&
+           SecurityXmlEntryClassifier.InferCategory(childFields) ==
+               KerberosPolicyMetadataService.Category,
+        "GPMC child-element Name/Type must resolve to Kerberos Policy.");
+    Assert(!KerberosPolicyMetadataService.TryDescribeGpmcNode(
+            System.Xml.Linq.XElement.Parse(
+                "<Account><Name>MaxTicketAge</Name><Type>Password</Type></Account>"), out _) &&
+           !KerberosPolicyMetadataService.TryDescribeGpmcNode(
+            System.Xml.Linq.XElement.Parse(
+                "<Account><Name>MaxTicketAge</Name></Account>"), out _),
+        "Kerberos names without explicit Kerberos type evidence must remain unknown.");
+
     var setting = new PolicySettingInfo
     {
         GpoId = Guid.NewGuid(), GpoName = "Security Test",
@@ -3657,7 +3676,8 @@ static void TestGpoSettingsReportTree()
         "<LinksTo><SOMName>TestOU</SOMName></LinksTo>" +
         "<Computer><Enabled>true</Enabled>" +
         "<ExtensionData><Extension type='SecuritySettings'>" +
-        "<Account name='MaxTicketAge' SettingNumber='10' Type='Kerberos'/>" +
+        "<Account><Name>MaxTicketAge</Name><SettingNumber>10</SettingNumber>" +
+        "<Type>Kerberos</Type></Account>" +
         "</Extension></ExtensionData>" +
         "<ExtensionData><Extension type='Scripts'>" +
         "<Script password='RAW_SECRET_SHOULD_BE_REDACTED' name='Startup'>" +
@@ -3680,7 +3700,8 @@ static void TestGpoSettingsReportTree()
            all.Any(n => n.Label == "Computer Configuration (Enabled)") &&
            all.Any(n => n.Label == "User Configuration (Enabled)") &&
            all.Any(n => n.Label == "Kerberos Policy") &&
-           all.Any(n => n.Label == "Maximum lifetime for user ticket") &&
+           all.Any(n => n.Label == "Maximum lifetime for user ticket" &&
+                        n.Details.Contains("SettingNumber: 10")) &&
            all.Any(n => n.Label == "Scripts"),
         "Native report must expose GPMC General/Links/Computer/User/Scripts/Kerberos sections.");
     var serialized = System.Text.Json.JsonSerializer.Serialize(report);
