@@ -3956,6 +3956,22 @@ static void TestDiscoveryEvidence()
     Assert(located[0].SourceStatus == "REGISTRY_SOURCE_LOCATED" &&
            located[0].ValueVerificationStatus == "SOURCE_RECORD_LOCATED_VALUE_NOT_COMPARED",
         "Unique Registry.pol target may be located but not value-verified.");
+    var typedSource = GpoDiscoveryEvidenceService.CorrelateRegistrySource(
+        registryEvidence, new[] { registrySource with
+        {
+            Value = "1", ValueType = "REG_DWORD", SourceSha256 = new string('A', 64)
+        } });
+    Assert(typedSource[0].SourceStoredValue == "1" &&
+           typedSource[0].SourceStoredType == "REG_DWORD" &&
+           typedSource[0].SourceFileHash.Length == 64,
+        "Discovery must preserve source value, registry type and file hash.");
+    Assert(typedSource[0].ValueVerificationStatus ==
+           "SOURCE_RECORD_LOCATED_VALUE_NOT_COMPARED",
+        "Typed source evidence alone does not prove MMC/source value equality.");
+    var typedExport = GpoDiscoveryEvidenceService.ExportTsv(typedSource);
+    Assert(typedExport.Contains("SourceStoredType", StringComparison.Ordinal) &&
+           typedExport.Contains("REG_DWORD", StringComparison.Ordinal),
+        "Discovery TSV must include typed source evidence.");
     var duplicateSource = GpoDiscoveryEvidenceService.CorrelateRegistrySource(
         registryEvidence, new[] { registrySource, registrySource });
     Assert(duplicateSource[0].SourceStatus == "AMBIGUOUS_REGISTRY_SOURCE",
