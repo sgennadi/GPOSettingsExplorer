@@ -14,7 +14,7 @@ Download the latest portable build from:
 
 **[GitHub Releases](https://github.com/sgennadi/GPOSettingsExplorer/releases/latest)**
 
-Current release: **v2.0.1**
+Current release: **v2.0.2**
 
 Available packages:
 
@@ -22,6 +22,13 @@ Available packages:
 - `GPOSettingsExplorer-win-arm64-portable.zip` — Windows on ARM64.
 
 The builds are self-contained. A separate .NET runtime installation is not required.
+
+### Release 2.0.2 - GPMC Kerberos Account XML compatibility hotfix
+
+- Fixes the original **MaxTicketAge** case when GPMC XML uses nested `<Name>` and `<Type>` elements instead of XML attributes. Attribute-style reports remain supported.
+- Verifies `Type=Kerberos` before mapping an Account setting. This prevents unrelated Account metadata from being routed to **Computer Configuration > Policies > Windows Settings > Security Settings > Account Policies > Kerberos Policy**.
+- Updates both the GPO Settings report tree and the All Settings metadata path with the same classification logic. Kerberos is a Security Settings source, never a fabricated registry.pol key or GPP Registry item.
+- All v2.0.1 features, including GPO right-click Settings and optional remote OpenAI/Azure OpenAI advisory, remain unchanged. External AI stays disabled by default, aggregate-only, opt-in and non-deploying.
 
 ### Release 2.0.1 - GPO report context menu, Kerberos navigation and optional cloud AI
 
