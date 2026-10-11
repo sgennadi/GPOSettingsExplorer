@@ -3990,6 +3990,32 @@ static void TestDiscoveryEvidence()
     Assert(numericUnverified.ValueVerificationStatus ==
            "SOURCE_RECORD_LOCATED_VALUE_NOT_COMPARED",
         "Numeric values with MMC units must remain unverified.");
+    var integerCandidate = literalCandidate with
+    {
+        SourceStoredType = "REG_DWORD", SourceStoredValue = "600",
+        MmcObservedValue = "600"
+    };
+    Assert(GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(
+        new[] { integerCandidate })[0].ValueVerificationStatus == "MATCH_LITERAL_INTEGER",
+        "Canonical decimal DWORD values should match.");
+    Assert(GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(
+        new[] { integerCandidate with { MmcObservedValue = "601" } })[0]
+        .ValueVerificationStatus == "MISMATCH_LITERAL_INTEGER",
+        "Different canonical DWORD values should mismatch.");
+    foreach (var unsafeDisplay in new[] { "600 minutes", "0600", "0x258", "-1", "600.0" })
+        Assert(GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(
+            new[] { integerCandidate with { MmcObservedValue = unsafeDisplay } })[0]
+            .ValueVerificationStatus == "SOURCE_RECORD_LOCATED_VALUE_NOT_COMPARED",
+            "Formatted or ambiguous numeric MMC values must remain unverified.");
+    Assert(GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(
+        new[] { integerCandidate with { SourceStoredValue = "4294967296" } })[0]
+        .ValueVerificationStatus == "SOURCE_RECORD_LOCATED_VALUE_NOT_COMPARED",
+        "DWORD overflow must not be compared.");
+    Assert(GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(
+        new[] { integerCandidate with { SourceStoredType = "REG_QWORD",
+            SourceStoredValue = "4294967296", MmcObservedValue = "4294967296" } })[0]
+        .ValueVerificationStatus == "MATCH_LITERAL_INTEGER",
+        "QWORD values may exceed the DWORD range.");
     var noHash = GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(
         new[] { literalCandidate with { SourceFileHash = "" } })[0];
     Assert(noHash.ValueVerificationStatus ==
