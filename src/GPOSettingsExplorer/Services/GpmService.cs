@@ -1329,8 +1329,16 @@ public sealed class GpmService
                     .Take(32)
                     .ToArray();
 
-                var key = DescendantValue(policy, "Key");
-                var valueName = DescendantValue(policy, "ValueName");
+                // GPMC <Policy> can represent multiple kinds of sources.
+                // Only an actual Administrative Templates/RegistrySettings
+                // policy may expose a Registry.pol key/value here.
+                var isRegistryPolicy = extension.Equals("RegistrySettings",
+                    StringComparison.OrdinalIgnoreCase) ||
+                    extension.Equals("Administrative Templates",
+                    StringComparison.OrdinalIgnoreCase);
+                var key = isRegistryPolicy ? DescendantValue(policy, "Key") : string.Empty;
+                var valueName = isRegistryPolicy
+                    ? DescendantValue(policy, "ValueName") : string.Empty;
 
                 settings.Add(new PolicySettingInfo
                 {
