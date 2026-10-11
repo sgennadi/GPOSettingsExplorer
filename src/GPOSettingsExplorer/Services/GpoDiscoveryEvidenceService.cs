@@ -14,7 +14,12 @@ public static class GpoDiscoveryEvidenceService
         Guid GpoId, string Scope, string Extension, string SettingName,
         string SourceType, string SourceStatus, string RegistryTarget,
         string MmcSection, string NavigationStatus, string IdentityHash,
-        string Notes);
+        string Notes)
+    {
+        public string MmcObservedState { get; init; } = string.Empty;
+        public string MmcObservedValue { get; init; } = string.Empty;
+        public string ValueVerificationStatus { get; init; } = "NOT_VERIFIED";
+    }
 
     public static IReadOnlyList<Evidence> Build(
         IEnumerable<PolicySettingInfo> settings)
@@ -70,6 +75,9 @@ public static class GpoDiscoveryEvidenceService
                 1 => item with
                 {
                     NavigationStatus = "MMC_ROW_OBSERVED",
+                    MmcObservedState = matches[0].MmcState,
+                    MmcObservedValue = matches[0].MmcValue,
+                    ValueVerificationStatus = "MMC_OBSERVED_SOURCE_NOT_COMPARED",
                     Notes = "One matching native MMC row observed. Value and effective RSoP are not verified."
                 },
                 > 1 => item with
@@ -95,13 +103,14 @@ public static class GpoDiscoveryEvidenceService
         }
 
         var output = new StringBuilder();
-        output.AppendLine("GpoId\tScope\tExtension\tSettingName\tSourceType\tSourceStatus\tRegistryTarget\tMmcSection\tNavigationStatus\tIdentityHash\tNotes");
+        output.AppendLine("GpoId\tScope\tExtension\tSettingName\tSourceType\tSourceStatus\tRegistryTarget\tMmcSection\tNavigationStatus\tIdentityHash\tNotes\tMmcObservedState\tMmcObservedValue\tValueVerificationStatus");
         foreach (var row in evidence)
             output.AppendLine(string.Join("\t", new[]
             {
                 row.GpoId.ToString("D"), row.Scope, row.Extension, row.SettingName,
                 row.SourceType, row.SourceStatus, row.RegistryTarget, row.MmcSection,
-                row.NavigationStatus, row.IdentityHash, row.Notes
+                row.NavigationStatus, row.IdentityHash, row.Notes,
+                row.MmcObservedState, row.MmcObservedValue, row.ValueVerificationStatus
             }.Select(Safe)));
         return output.ToString();
     }
