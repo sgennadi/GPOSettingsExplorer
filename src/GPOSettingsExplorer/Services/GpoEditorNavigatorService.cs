@@ -50,7 +50,11 @@ public sealed class GpoEditorNavigatorService
         // Generic entries such as "Audit Setting" must never be opened as
         // an unrelated Security Option because their extension name matches.
         return setting.Extension.Equals("SecuritySettings", StringComparison.OrdinalIgnoreCase) &&
-               setting.Category.Contains("Security Options", StringComparison.OrdinalIgnoreCase) &&
+               setting.Scope.Equals("Computer", StringComparison.OrdinalIgnoreCase) &&
+               setting.Category.Equals(
+                   "Security Settings > Local Policies > Security Options",
+                   StringComparison.OrdinalIgnoreCase) &&
+               HasVerifiedSection(setting) &&
                !string.IsNullOrWhiteSpace(setting.SettingName) &&
                !setting.SettingName.Equals("Security option", StringComparison.OrdinalIgnoreCase);
     }
