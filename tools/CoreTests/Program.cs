@@ -3972,6 +3972,29 @@ static void TestDiscoveryEvidence()
     Assert(typedExport.Contains("SourceStoredType", StringComparison.Ordinal) &&
            typedExport.Contains("REG_DWORD", StringComparison.Ordinal),
         "Discovery TSV must include typed source evidence.");
+    var literalCandidate = typedSource[0] with
+    {
+        NavigationStatus = "MMC_ROW_OBSERVED", MmcObservedValue = "alpha",
+        SourceStoredValue = "alpha", SourceStoredType = "REG_SZ"
+    };
+    var literalMatch = GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(
+        new[] { literalCandidate })[0];
+    Assert(literalMatch.ValueVerificationStatus == "MATCH_LITERAL_REG_SZ",
+        "Exact REG_SZ text can match when native row and source are unique.");
+    var literalMismatch = GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(
+        new[] { literalCandidate with { MmcObservedValue = "beta" } })[0];
+    Assert(literalMismatch.ValueVerificationStatus == "MISMATCH_LITERAL_REG_SZ",
+        "Different literal REG_SZ text must be reported as mismatch.");
+    var numericUnverified = GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(
+        new[] { literalCandidate with { SourceStoredType = "REG_DWORD", MmcObservedValue = "10 hours" } })[0];
+    Assert(numericUnverified.ValueVerificationStatus ==
+           "SOURCE_RECORD_LOCATED_VALUE_NOT_COMPARED",
+        "Numeric values with MMC units must remain unverified.");
+    var noHash = GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(
+        new[] { literalCandidate with { SourceFileHash = "" } })[0];
+    Assert(noHash.ValueVerificationStatus ==
+           "SOURCE_RECORD_LOCATED_VALUE_NOT_COMPARED",
+        "Missing source hash must fail closed.");
     var duplicateSource = GpoDiscoveryEvidenceService.CorrelateRegistrySource(
         registryEvidence, new[] { registrySource, registrySource });
     Assert(duplicateSource[0].SourceStatus == "AMBIGUOUS_REGISTRY_SOURCE",
