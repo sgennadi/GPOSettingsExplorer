@@ -161,7 +161,12 @@ public partial class MainWindow
 
         try
         {
-            var evidence = GpoDiscoveryEvidenceService.Build(configured);
+            var evidence = GpoDiscoveryEvidenceService.CorrelateMmc(
+                GpoDiscoveryEvidenceService.Build(configured),
+                _mmcInventoryResult is not null &&
+                _mmcInventoryRows.All(row => row.GpoId == gpo.Id)
+                    ? _mmcInventoryRows
+                    : Array.Empty<MmcInventoryEntry>());
             System.IO.File.WriteAllText(dialog.FileName,
                 GpoDiscoveryEvidenceService.ExportTsv(evidence),
                 new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
