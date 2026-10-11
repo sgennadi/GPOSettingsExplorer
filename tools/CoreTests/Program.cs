@@ -77,7 +77,8 @@ var tests = new (string Name, Action Body)[]
     ("Semantic XML diff ignores report timestamps and finds setting changes", TestSemanticXmlDiff),
     ("Kerberos GPMC names resolve to correct Security section, not Registry", TestKerberosGpmcRouting),
     ("GPO settings report provides bounded native GPMC hierarchy", TestGpoSettingsReportTree),
-    ("Remote AI endpoints and prompts strictly exclude AD/GPO identities", TestRemoteAiBoundary)
+    ("Remote AI endpoints and prompts strictly exclude AD/GPO identities", TestRemoteAiBoundary),
+    ("Discovery evidence is read-only, fail-closed and spreadsheet-safe", TestDiscoveryEvidence)
 };
 
 var failures = new List<string>();
@@ -3874,4 +3875,37 @@ static void TestRemoteAiBoundary()
            prompt.Contains("Security checked: False") &&
            prompt.Contains("Unknown"),
         "Remote prompt must explicitly mark unverified sources and use counts only.");
+}
+
+static void TestDiscoveryEvidence()
+{
+    var id = Guid.NewGuid();
+    var settings = new[]
+    {
+        new PolicySettingInfo
+        {
+            GpoId = id, Scope = "Computer", Extension = "SecuritySettings",
+            Category = "Security Settings > Account Policies > Kerberos Policy",
+            SettingName = "Account: MaxTicketAge", Value = "Type=Kerberos"
+        },
+        new PolicySettingInfo
+        {
+            GpoId = id, Scope = "User", Extension = "ScheduledTasksSettings",
+            Category = "Unknown", SettingName = "=HYPERLINK(\"bad\")",
+            RegistryKey = @"SOFTWARE\\Fake", RegistryValue = "Name"
+        }
+    };
+    var rows = GpoDiscoveryEvidenceService.Build(settings);
+    Assert(rows.Count == 2, "Discovery must retain both input records.");
+    Assert(rows[0].NavigationStatus == "SECTION_CANDIDATE",
+        "Known section is a candidate, not exact row verified.");
+    Assert(rows[1].NavigationStatus == "UNMAPPED" &&
+           string.IsNullOrEmpty(rows[1].RegistryTarget),
+        "Unknown GPP source must not fabricate MMC/registry paths.");
+    Assert(rows[0].IdentityHash.Length == 64 &&
+           rows[0].IdentityHash == GpoDiscoveryEvidenceService.Build(settings)[0].IdentityHash,
+        "Identity hashes must be stable SHA-256.");
+    var tsv = GpoDiscoveryEvidenceService.ExportTsv(rows);
+    Assert(tsv.Contains("'=HYPERLINK", StringComparison.Ordinal),
+        "TSV export must escape spreadsheet formulas.");
 }
