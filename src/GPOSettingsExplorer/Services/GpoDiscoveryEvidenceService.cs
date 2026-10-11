@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Globalization;
 using System.Text;
 using GPOSettingsExplorer.Models;
 
@@ -164,8 +165,28 @@ public static class GpoDiscoveryEvidenceService
 
             // REG_SZ is a literal string; numeric types require explicit MMC units.
             // Refuse comparisons where the source is a registry operation directive.
-            if (!item.SourceStoredType.Equals("REG_SZ", StringComparison.OrdinalIgnoreCase) ||
-                item.RegistryTarget.Contains(" / **", StringComparison.Ordinal))
+            if (item.RegistryTarget.Contains(" / **", StringComparison.Ordinal))
+                return item;
+            if (item.SourceStoredType.Equals("REG_DWORD", StringComparison.OrdinalIgnoreCase) ||
+                item.SourceStoredType.Equals("REG_QWORD", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!IsCanonicalDecimal(item.MmcObservedValue) ||
+                    !IsCanonicalDecimal(item.SourceStoredValue) ||
+                    !ulong.TryParse(item.MmcObservedValue, NumberStyles.None,
+                        CultureInfo.InvariantCulture, out var displayed) ||
+                    !ulong.TryParse(item.SourceStoredValue, NumberStyles.None,
+                        CultureInfo.InvariantCulture, out var stored) ||
+                    (item.SourceStoredType.Equals("REG_DWORD", StringComparison.OrdinalIgnoreCase) &&
+                     (displayed > uint.MaxValue || stored > uint.MaxValue)))
+                    return item;
+                return item with
+                {
+                    ValueVerificationStatus = displayed == stored
+                        ? "MATCH_LITERAL_INTEGER" : "MISMATCH_LITERAL_INTEGER",
+                    Notes = item.Notes + " Canonical unsigned decimal comparison only; MMC units and effective RSoP not verified."
+                };
+            }
+            if (!item.SourceStoredType.Equals("REG_SZ", StringComparison.OrdinalIgnoreCase))
                 return item;
 
             // No trimming or case folding: a literal value must match exactly.
@@ -178,6 +199,10 @@ public static class GpoDiscoveryEvidenceService
             };
         }).ToArray();
     }
+
+    private static bool IsCanonicalDecimal(string value) =>
+        value.Length > 0 && value.All(c => c >= '0' && c <= '9') &&
+        (value.Length == 1 || value[0] != '0');
 
     public static string ExportTsv(IEnumerable<Evidence> evidence)
     {
