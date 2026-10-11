@@ -167,6 +167,17 @@ public partial class MainWindow
                 _mmcInventoryRows.All(row => row.GpoId == gpo.Id)
                     ? _mmcInventoryRows
                     : Array.Empty<MmcInventoryEntry>());
+            // Reuse only the explicitly scanned, pinned-DC source snapshot.
+            // Never silently scan another DC or equate source presence with value agreement.
+            var currentDc = DomainConnectionState.GetServerFor(
+                _domainContext?.DomainName ?? "");
+            if (_realSourceSnapshot is not null &&
+                _realSourceSnapshot.GpoId == gpo.Id &&
+                _realSourceSnapshot.Matches(_domainContext?.DomainName ?? "", currentDc))
+            {
+                evidence = GpoDiscoveryEvidenceService.CorrelateRegistrySource(
+                    evidence, _realSourceSnapshot.Rows);
+            }
             System.IO.File.WriteAllText(dialog.FileName,
                 GpoDiscoveryEvidenceService.ExportTsv(evidence),
                 new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
