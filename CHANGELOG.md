@@ -8,6 +8,7 @@
 
 - Correct GPMC SecuritySettings Account XML parsing for the common nested child element representation (`<Account><Name>MaxTicketAge</Name><Type>Kerberos</Type></Account>`) as well as existing attribute-based layouts.
 - Require an explicit `Type=Kerberos` before assigning a legacy Account entry to Kerberos Policy. Unknown/missing types remain unidentified instead of being routed to the wrong MMC section.
+- Display bounded, strictly parsed `SettingNumber` / `SettingBoolean` from nested Kerberos Account XML in the native report; never print arbitrary unverified child fields.
 - Keep the five verified Kerberos display names, correct `Account Policies > Kerberos Policy` route and non-registry classification introduced in 2.0.1; no policy changes or implicit registry keys.
 - Extend Windows regression tests with the actual GPMC child-element structure, negative type cases and native GPO report-tree rendering.
 - Validate against a real nonproduction GPMC report on the connected DC before production use.
