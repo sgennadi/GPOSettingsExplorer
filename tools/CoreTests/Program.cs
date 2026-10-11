@@ -3938,6 +3938,40 @@ static void TestDiscoveryEvidence()
         new[] { observed[0] with { GpoId = Guid.NewGuid() } });
     Assert(otherGpo[0].NavigationStatus == "SECTION_CANDIDATE",
         "MMC observations from another GPO must never verify this GPO.");
+    var registrySetting = new PolicySettingInfo
+    {
+        GpoId = id, Scope = "Computer", Extension = "RegistrySettings",
+        Category = "Administrative Templates", SettingName = "Example policy",
+        RegistryKey = @"Software\\Policies\\Example", RegistryValue = "Enabled"
+    };
+    var registryEvidence = GpoDiscoveryEvidenceService.Build(new[] { registrySetting });
+    var registrySource = new RealSettingRecord
+    {
+        GpoId = id, Scope = "Computer",
+        RegistryKey = @"Software\\Policies\\Example", RegistryValue = "Enabled",
+        SourceFile = @"Machine\\Registry.pol", Value = "1"
+    };
+    var located = GpoDiscoveryEvidenceService.CorrelateRegistrySource(
+        registryEvidence, new[] { registrySource });
+    Assert(located[0].SourceStatus == "REGISTRY_SOURCE_LOCATED" &&
+           located[0].ValueVerificationStatus == "SOURCE_RECORD_LOCATED_VALUE_NOT_COMPARED",
+        "Unique Registry.pol target may be located but not value-verified.");
+    var duplicateSource = GpoDiscoveryEvidenceService.CorrelateRegistrySource(
+        registryEvidence, new[] { registrySource, registrySource });
+    Assert(duplicateSource[0].SourceStatus == "AMBIGUOUS_REGISTRY_SOURCE",
+        "Duplicate Registry.pol source entries must remain ambiguous.");
+    var otherSource = GpoDiscoveryEvidenceService.CorrelateRegistrySource(
+        registryEvidence, new[] { registrySource with { GpoId = Guid.NewGuid() } });
+    Assert(otherSource[0].SourceStatus == "REGISTRY_METADATA",
+        "Source from another GPO must not match.");
+    var otherScope = GpoDiscoveryEvidenceService.CorrelateRegistrySource(
+        registryEvidence, new[] { registrySource with { Scope = "User" } });
+    Assert(otherScope[0].SourceStatus == "REGISTRY_METADATA",
+        "Source from another scope must not match.");
+    var otherFormat = GpoDiscoveryEvidenceService.CorrelateRegistrySource(
+        registryEvidence, new[] { registrySource with { SourceFile = "Registry.xml" } });
+    Assert(otherFormat[0].SourceStatus == "REGISTRY_METADATA",
+        "GPP Registry XML must not be mistaken for Registry.pol.");
     var tsv = GpoDiscoveryEvidenceService.ExportTsv(rows);
     Assert(tsv.Contains("'=HYPERLINK", StringComparison.Ordinal),
         "TSV export must escape spreadsheet formulas.");
