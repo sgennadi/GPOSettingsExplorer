@@ -1539,27 +1539,13 @@ public sealed class GpmService
                     : $"Configured ({ExpandPreferenceAction(action)})";
             }
 
-            var key = FirstNonEmpty(
-                GetDirectOrAttributeValue(element, "Key"),
-                GetDirectOrAttributeValue(element, "key"),
-                FindNamedValue(element, "Key"),
-                FindNamedAttributeValue(element, "Key"),
-                FindNamedAttributeValue(element, "key"));
-
-            var valueName = FirstNonEmpty(
-                GetDirectOrAttributeValue(element, "ValueName"),
-                GetDirectOrAttributeValue(element, "valueName"),
-                FindNamedValue(element, "ValueName"),
-                // GPMC SecuritySettings Account.Name is a policy identifier,
-                // never an implicit RegistryValue or registry.pol address.
-                extensionType.Equals("SecuritySettings", StringComparison.OrdinalIgnoreCase)
-                    ? string.Empty : FindNamedValue(element, "Name"),
-                FindNamedAttributeValue(element, "ValueName"),
-                FindNamedAttributeValue(element, "valueName"),
-                extensionType.Equals("SecuritySettings", StringComparison.OrdinalIgnoreCase)
-                    ? string.Empty : FindNamedAttributeValue(element, "Name"),
-                extensionType.Equals("SecuritySettings", StringComparison.OrdinalIgnoreCase)
-                    ? string.Empty : FindNamedAttributeValue(element, "name"));
+            // Generic extension XML may contain <Key>, <Name> and
+            // <ValueName> as identifiers or metadata. They are not proof
+            // of a Registry.pol target. RegistrySettings has its own
+            // dedicated parser, and SecurityOptions has an explicit KeyName
+            // parser above; all other GPMC extension rows remain non-registry.
+            var key = string.Empty;
+            var valueName = string.Empty;
 
             var value = BuildGenericValueSummary(element, settingName, state);
 
