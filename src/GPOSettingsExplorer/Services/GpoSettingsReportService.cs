@@ -262,6 +262,26 @@ public static class GpoSettingsReportService
                 element.Ancestors().Any(x => IsSensitive(x.Name.LocalName))
                 ? "[redacted]" : Cut(element.Value.Trim(), 5000)));
         }
+        // GPMC frequently serializes Account policy data as nested child
+        // elements rather than attributes. The report tree otherwise shows
+        // "Maximum lifetime for user ticket" with no stored value at all.
+        // Only strictly typed number/boolean fields from VERIFIED Kerberos
+        // Account nodes are displayed; never arbitrary child XML or secrets.
+        if (!element.AncestorsAndSelf().Any(x => IsSensitive(x.Name.LocalName)) &&
+            KerberosPolicyMetadataService.TryDescribeGpmcNode(element, out _))
+        {
+            foreach (var child in element.Elements().Where(x => !x.HasElements))
+            {
+                if (child.Name.LocalName.Equals("SettingNumber",
+                        StringComparison.OrdinalIgnoreCase) &&
+                    long.TryParse(child.Value.Trim(), out var number))
+                    parts.Add("SettingNumber: " + number);
+                else if (child.Name.LocalName.Equals("SettingBoolean",
+                             StringComparison.OrdinalIgnoreCase) &&
+                         bool.TryParse(child.Value.Trim(), out var flag))
+                    parts.Add("SettingBoolean: " + flag);
+            }
+        }
         return string.Join("\n", parts);
     }
 
