@@ -178,6 +178,7 @@ public partial class MainWindow
                 evidence = GpoDiscoveryEvidenceService.CorrelateRegistrySource(
                     evidence, _realSourceSnapshot.Rows);
             }
+            evidence = GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(evidence);
             System.IO.File.WriteAllText(dialog.FileName,
                 GpoDiscoveryEvidenceService.ExportTsv(evidence),
                 new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
