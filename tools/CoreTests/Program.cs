@@ -3914,6 +3914,18 @@ static void TestDiscoveryEvidence()
         }
     };
     var verified = GpoDiscoveryEvidenceService.CorrelateMmc(rows, observed);
+    Assert(verified[0].ValueVerificationStatus == "MMC_OBSERVED_SOURCE_NOT_COMPARED",
+        "An MMC row must not claim source-value verification.");
+    Assert(verified[0].MmcObservedState == "Not reported" &&
+           string.IsNullOrEmpty(verified[0].MmcObservedValue),
+        "Native MMC state and value must remain distinct from configured source values.");
+    var observedValue = GpoDiscoveryEvidenceService.CorrelateMmc(rows,
+        new[] { observed[0] with { MmcState = "Enabled", MmcValue = "10 hours" } });
+    Assert(observedValue[0].MmcObservedValue == "10 hours" &&
+           observedValue[0].ValueVerificationStatus == "MMC_OBSERVED_SOURCE_NOT_COMPARED",
+        "An observed MMC value must be exported without claiming SYSVOL agreement.");
+    Assert(GpoDiscoveryEvidenceService.ExportTsv(observedValue).Contains("10 hours"),
+        "Observed MMC value must be included in evidence TSV.");
     Assert(verified[0].NavigationStatus == "MMC_ROW_OBSERVED",
         "A single exact MMC row may be marked observed, not value-verified.");
     Assert(verified[1].NavigationStatus == "UNMAPPED",
