@@ -15,7 +15,8 @@ public static class GpoSettingSourceProvenance
         if (string.IsNullOrWhiteSpace(setting.RegistryKey))
             return false;
 
-        if (setting.Extension.Equals("RegistrySettings", StringComparison.OrdinalIgnoreCase))
+        if (setting.Extension.Equals("RegistrySettings", StringComparison.OrdinalIgnoreCase) ||
+            setting.Extension.Equals("Administrative Templates", StringComparison.OrdinalIgnoreCase))
             return true;
 
         // Security Options may encode an actual registry-backed policy target
@@ -49,7 +50,7 @@ public static class GpoSettingSourceProvenance
     public static string SourceType(PolicySettingInfo setting) =>
         setting.Extension switch
         {
-            "RegistrySettings" => "Registry.pol / Administrative Templates",
+            "RegistrySettings" or "Administrative Templates" => "Registry.pol / Administrative Templates",
             "SecuritySettings" => "GPMC Security Settings (not GPP Registry)",
             "AuditSettings" => "GPMC Advanced Audit",
             "NrptSettings" => "GPMC Name Resolution Policy",
