@@ -3905,6 +3905,27 @@ static void TestDiscoveryEvidence()
     Assert(rows[0].IdentityHash.Length == 64 &&
            rows[0].IdentityHash == GpoDiscoveryEvidenceService.Build(settings)[0].IdentityHash,
         "Identity hashes must be stable SHA-256.");
+    var observed = new[]
+    {
+        new MmcInventoryEntry
+        {
+            GpoId = id, Scope = "Computer", SettingName = "Account: MaxTicketAge",
+            TreeSegments = rows[0].MmcSection.Split(" > ")
+        }
+    };
+    var verified = GpoDiscoveryEvidenceService.CorrelateMmc(rows, observed);
+    Assert(verified[0].NavigationStatus == "MMC_ROW_OBSERVED",
+        "A single exact MMC row may be marked observed, not value-verified.");
+    Assert(verified[1].NavigationStatus == "UNMAPPED",
+        "Unknown sources must remain unmapped even with other MMC evidence.");
+    var ambiguous = GpoDiscoveryEvidenceService.CorrelateMmc(rows,
+        new[] { observed[0], observed[0] });
+    Assert(ambiguous[0].NavigationStatus == "AMBIGUOUS",
+        "Duplicate native MMC observations must fail closed.");
+    var otherGpo = GpoDiscoveryEvidenceService.CorrelateMmc(rows,
+        new[] { observed[0] with { GpoId = Guid.NewGuid() } });
+    Assert(otherGpo[0].NavigationStatus == "SECTION_CANDIDATE",
+        "MMC observations from another GPO must never verify this GPO.");
     var tsv = GpoDiscoveryEvidenceService.ExportTsv(rows);
     Assert(tsv.Contains("'=HYPERLINK", StringComparison.Ordinal),
         "TSV export must escape spreadsheet formulas.");
