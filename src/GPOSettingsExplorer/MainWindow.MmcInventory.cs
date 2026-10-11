@@ -128,6 +128,52 @@ public partial class MainWindow
         }
     }
 
+    private void ExportDiscoveryEvidence_Click(object sender, RoutedEventArgs e)
+    {
+        var gpo = MmcInventoryGpoCombo.SelectedItem as GpoInfo ??
+                  GpoGrid.SelectedItem as GpoInfo;
+        if (gpo is null)
+        {
+            MessageBox.Show(this, "Select a GPO first.", "Discovery evidence",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var configured = _settings.Where(s => s.GpoId == gpo.Id).ToArray();
+        if (configured.Length == 0)
+        {
+            MessageBox.Show(this,
+                "No configured settings are currently indexed for this GPO. Load the settings index first. This is not proof the GPO is empty.",
+                "Discovery evidence", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        var dialog = new SaveFileDialog
+        {
+            Title = "Export GPO discovery evidence (read-only)",
+            FileName = "gpo-discovery-" + gpo.Id.ToString("N") + ".tsv",
+            Filter = "Tab-separated evidence (*.tsv)|*.tsv",
+            DefaultExt = ".tsv",
+            AddExtension = true
+        };
+        if (dialog.ShowDialog(this) != true)
+            return;
+
+        try
+        {
+            var evidence = GpoDiscoveryEvidenceService.Build(configured);
+            System.IO.File.WriteAllText(dialog.FileName,
+                GpoDiscoveryEvidenceService.ExportTsv(evidence),
+                new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+            StatusText.Text = $"Exported {evidence.Count:N0} discovery evidence records (not verified MMC rows).";
+        }
+        catch (Exception ex)
+        {
+            ErrorDialog.Show(this, "Discovery evidence",
+                "Could not export the discovery evidence.", ex);
+        }
+    }
+
     private void CancelMmcInventory_Click(object sender, RoutedEventArgs e)
     {
         _mmcInventoryCancellation?.Cancel();
