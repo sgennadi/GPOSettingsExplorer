@@ -58,16 +58,32 @@ public static class KerberosPolicyMetadataService
         descriptor = null!;
         if (!element.Name.LocalName.Equals("Account", StringComparison.OrdinalIgnoreCase))
             return false;
-        var name = element.Attributes().FirstOrDefault(a =>
-            a.Name.LocalName.Equals("name", StringComparison.OrdinalIgnoreCase))?.Value;
-        return TryGet(name, out descriptor);
+        // Real GPMC SecuritySettings reports commonly encode Account fields
+        // as <Name>MaxTicketAge</Name> and <Type>Kerberos</Type>. Some exported
+        // variants use attributes instead. Both require the explicit Kerberos
+        // type: an Account name alone is NOT proof of this MMC policy family.
+        static string Field(XElement source, string key) =>
+            source.Elements().FirstOrDefault(e =>
+                e.Name.LocalName.Equals(key, StringComparison.OrdinalIgnoreCase))?
+                .Value.Trim() ??
+            source.Attributes().FirstOrDefault(a =>
+                a.Name.LocalName.Equals(key, StringComparison.OrdinalIgnoreCase))?
+                .Value.Trim() ?? string.Empty;
+
+        if (!Field(element, "Type").Equals("Kerberos",
+                StringComparison.OrdinalIgnoreCase))
+            return false;
+        return TryGet(Field(element, "Name"), out descriptor);
     }
 
     public static bool IsKnownKerberosSetting(PolicySettingInfo setting) =>
         setting.Scope.Equals("Computer", StringComparison.OrdinalIgnoreCase) &&
         setting.Extension.Equals("SecuritySettings", StringComparison.OrdinalIgnoreCase) &&
         (setting.Category.Contains("Kerberos Policy", StringComparison.OrdinalIgnoreCase) ||
-         setting.Category.Equals("SecuritySettings", StringComparison.OrdinalIgnoreCase)) &&
+         (setting.Category.Equals("SecuritySettings", StringComparison.OrdinalIgnoreCase) &&
+          setting.Value.Split(';', StringSplitOptions.TrimEntries)
+              .Any(part => part.Equals("Type=Kerberos",
+                  StringComparison.OrdinalIgnoreCase)))) &&
         TryGet(setting.SettingName, out _);
 
     public static IReadOnlyList<string> EditorSection => new[]
