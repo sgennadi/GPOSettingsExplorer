@@ -3,59 +3,77 @@ using GPOSettingsExplorer.Models;
 namespace GPOSettingsExplorer.Services;
 
 /// <summary>
-/// Maps configured non-ADMX GPO extension summaries to *existing* MMC tree
-/// nodes. These are section-only targets: never mistake them for an exact
-/// editable policy row.
+/// Conservative GPMC-to-MMC SECTION route registry. A section-only route is
+/// never proof that a particular value can be located or edited. An unhandled
+/// GPMC extension remains unmapped; do NOT invent "Security Settings".
 /// </summary>
 public static class GpoPolicySectionRoutes
 {
+    private static readonly IReadOnlyDictionary<string, string[]> SecurityCategories =
+        new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Security Settings > Account Policies > Password Policy"] =
+                new[] { "Account Policies", "Password Policy" },
+            ["Security Settings > Account Policies > Account Lockout Policy"] =
+                new[] { "Account Policies", "Account Lockout Policy" },
+            ["Security Settings > Account Policies > Kerberos Policy"] =
+                new[] { "Account Policies", "Kerberos Policy" },
+            ["Security Settings > Local Policies > Audit Policy"] =
+                new[] { "Local Policies", "Audit Policy" },
+            ["Security Settings > Local Policies > User Rights Assignment"] =
+                new[] { "Local Policies", "User Rights Assignment" },
+            ["Security Settings > Local Policies > Security Options"] =
+                new[] { "Local Policies", "Security Options" },
+            ["Security Settings > Event Log"] = new[] { "Event Log" },
+            ["Security Settings > Restricted Groups"] = new[] { "Restricted Groups" },
+            ["Security Settings > System Services"] = new[] { "System Services" },
+            ["Security Settings > Registry"] = new[] { "Registry" },
+            ["Security Settings > File System"] = new[] { "File System" }
+        };
+
     public static IReadOnlyList<string> Resolve(PolicySettingInfo setting)
     {
-        var scope = setting.Scope.Equals("User", StringComparison.OrdinalIgnoreCase)
-            ? "User Configuration"
-            : "Computer Configuration";
+        ArgumentNullException.ThrowIfNull(setting);
+        var computer = setting.Scope.Equals("Computer", StringComparison.OrdinalIgnoreCase);
+        var user = setting.Scope.Equals("User", StringComparison.OrdinalIgnoreCase);
+        if (!computer && !user)
+            return Array.Empty<string>();
 
-        if (setting.Extension.Equals("NrptSettings", StringComparison.OrdinalIgnoreCase))
-        {
-            // Name Resolution Policy is not below Security Settings.
-            return new[] { scope, "Policies", "Windows Settings", "Name Resolution Policy" };
-        }
+        var scope = computer ? "Computer Configuration" : "User Configuration";
+        var extension = setting.Extension.Trim();
 
-        if (setting.Extension.Equals("SoftwareInstallationSettings", StringComparison.OrdinalIgnoreCase))
-        {
-            // GPO XML may expose nested Trustee Permissions/Auditing from an
-            // MSI package's security descriptor. These are package metadata,
-            // not separate Security Options or Administrative Templates.
+        if (extension.Equals("RegistrySettings", StringComparison.OrdinalIgnoreCase) ||
+            extension.Equals("Administrative Templates", StringComparison.OrdinalIgnoreCase))
+            return new[] { scope, "Policies", "Administrative Templates" };
+
+        if (extension.Equals("SoftwareInstallationSettings", StringComparison.OrdinalIgnoreCase))
             return new[] { scope, "Policies", "Software Settings", "Software installation" };
-        }
 
-        if (setting.Extension.Equals("SecuritySettings", StringComparison.OrdinalIgnoreCase) &&
-            scope == "Computer Configuration" &&
-            (KerberosPolicyMetadataService.IsKnownKerberosSetting(setting) ||
-             setting.Category.Contains("Kerberos Policy", StringComparison.OrdinalIgnoreCase)))
-            return KerberosPolicyMetadataService.EditorSection;
+        if (extension.Equals("NrptSettings", StringComparison.OrdinalIgnoreCase) && computer)
+            return new[] { scope, "Policies", "Windows Settings", "Name Resolution Policy" };
 
-        if (setting.Extension.Equals("SecuritySettings", StringComparison.OrdinalIgnoreCase) &&
-            scope == "Computer Configuration")
+        if (extension.Equals("AuditSettings", StringComparison.OrdinalIgnoreCase) && computer)
+            return new[] { scope, "Policies", "Windows Settings", "Security Settings",
+                "Advanced Audit Policy Configuration", "Audit Policies" };
+
+        if (extension.Equals("SecuritySettings", StringComparison.OrdinalIgnoreCase) && computer)
         {
-            // These GPMC report rows describe security template sections,
-            // not individual settings with a verified native MMC edit dialog.
-            var category = SecurityXmlEntryClassifier.InferLegacyCategory(setting);
-            var section = category switch
-            {
-                SecurityXmlEntryClassifier.RegistrySection => "Registry",
-                SecurityXmlEntryClassifier.RestrictedGroupsSection => "Restricted Groups",
-                _ => null
-            };
+            if (KerberosPolicyMetadataService.IsKnownKerberosSetting(setting))
+                return KerberosPolicyMetadataService.EditorSection;
 
-            if (section is not null)
-                return new[]
-                {
-                    scope, "Policies", "Windows Settings", "Security Settings", section
-                };
+            var category = SecurityXmlEntryClassifier.InferLegacyCategory(setting) ??
+                setting.Category;
+            // A category string is evidence only when it is the exact known
+            // security-tree hierarchy. Arbitrary "SecuritySettings" and other
+            // unknown names must never be routed to a plausible parent node.
+            if (!SecurityCategories.TryGetValue(category.Trim(), out var relative))
+                return Array.Empty<string>();
+
+            return new[] { scope, "Policies", "Windows Settings", "Security Settings" }
+                .Concat(relative).ToArray();
         }
 
-        if (!setting.Extension.Equals("PublicKeySettings", StringComparison.OrdinalIgnoreCase))
+        if (!extension.Equals("PublicKeySettings", StringComparison.OrdinalIgnoreCase))
             return Array.Empty<string>();
 
         var result = new List<string>
@@ -63,23 +81,24 @@ public static class GpoPolicySectionRoutes
             scope, "Policies", "Windows Settings", "Security Settings", "Public Key Policies"
         };
 
-        var name = setting.SettingName;
-        if (name.Contains("Root Certificate", StringComparison.OrdinalIgnoreCase))
+        // Only explicit section names get a deeper MMC route. A fuzzy
+        // "Root Certificate" substring could refer to the wrong store.
+        var name = setting.SettingName.Trim();
+        if (name.Equals("Root Certificate Settings", StringComparison.OrdinalIgnoreCase) ||
+            name.Equals("Trusted Root Certification Authorities", StringComparison.OrdinalIgnoreCase))
         {
             result.Add("Trusted Root Certification Authorities");
         }
-        else if (name.Contains("EFS", StringComparison.OrdinalIgnoreCase) ||
-                 name.Contains("Encrypting File", StringComparison.OrdinalIgnoreCase))
+        else if (name.Equals("EFS", StringComparison.OrdinalIgnoreCase) ||
+                 name.Equals("Encrypting File System", StringComparison.OrdinalIgnoreCase))
         {
             result.Add("Encrypting File System");
         }
-        else if (name.Contains("Certificate Path Validation", StringComparison.OrdinalIgnoreCase))
+        else if (name.Equals("Certificate Path Validation Settings",
+                     StringComparison.OrdinalIgnoreCase))
         {
             result.Add("Certificate Path Validation Settings");
         }
-        // For other PublicKeySettings summaries, stop at Public Key Policies.
-        // Picking an unrelated certificate store would be unsafe.
-
         return result;
     }
 }
