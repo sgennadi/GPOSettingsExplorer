@@ -12,6 +12,8 @@ var tests = new (string Name, Action Body)[]
     ("Public Key, NRPT and MSI metadata route to the right MMC sections", TestExtendedMmcSectionRouting),
     ("Security XML registry and restricted-group details remain read-only", TestSecurityXmlClassificationAndRoutes),
     ("MMC navigation does not confuse audit and registry with security options", TestMmcNavigationRouting),
+    ("Unmapped GPMC extensions never fabricate Security Settings MMC routes", TestUnmappedGpmcFailClosed),
+    ("GPMC non-registry metadata never becomes a registry target in catalog or viewer", TestGpmcSourceProvenance),
     ("MMC policy names must match uniquely and exactly", TestMmcPolicyNameMatcher),
     ("MMC ADMX tree suffix is recognized only with unique section identity", TestMmcTreePathMatcher),
     ("Domain connection pins LDAP and SYSVOL", TestDomainConnectionPaths),
@@ -1381,6 +1383,113 @@ static void TestExtendedMmcSectionRouting()
         Extension = "RegistrySettings", Scope = "Computer", SettingName = "Registry: raw"
     });
     Assert(notMapped.Count == 0, "Raw registry.pol navigation must remain unchanged.");
+}
+
+static void TestUnmappedGpmcFailClosed()
+{
+    var unknown = new[]
+    {
+        "ScheduledTasksSettings", "Scripts", "DriveMapSettings",
+        "PowerOptionsSettings", "WindowsFirewallSettings",
+        "FoldersSettings", "FolderRedirectionSettings",
+        "LugsSettings", "Policy", "ThirdPartyUnknown",
+        "SoftwareRestrictionSettings", "ServiceSettings"
+    };
+    foreach (var extension in unknown)
+    {
+        var setting = new PolicySettingInfo
+        {
+            Extension = extension,
+            Scope = "Computer",
+            Category = "SecuritySettings",
+            SettingName = "Unknown setting",
+            Value = "Name=SomeMetadata"
+        };
+        Assert(!GpoEditorNavigatorService.HasVerifiedSection(setting) &&
+               GpoEditorNavigatorService.NavigationTarget(setting).Length == 0,
+            "An unhandled source must not open an unrelated Security Settings node: " +
+            extension);
+    }
+
+    var missingScope = new PolicySettingInfo
+    {
+        Extension = "RegistrySettings", Scope = "Unknown",
+        SettingName = "Registry: unknown scope"
+    };
+    Assert(!GpoEditorNavigatorService.HasVerifiedSection(missingScope),
+        "No GPMC computer/user scope means no safe MMC tree route.");
+
+    var security = new PolicySettingInfo
+    {
+        Extension = "SecuritySettings", Scope = "Computer",
+        SettingName = "Network security: LAN Manager authentication level",
+        Category = "Security Settings > Local Policies > Security Options"
+    };
+    Assert(GpoEditorNavigatorService.NavigationTarget(security).EndsWith(
+        "Security Settings > Local Policies > Security Options",
+        StringComparison.Ordinal),
+        "Exact Security Options categories must still route correctly.");
+
+    var userRights = new PolicySettingInfo
+    {
+        Scope = "Computer", Extension = "SecuritySettings",
+        Category = "Security Settings > Local Policies > User Rights Assignment",
+        SettingName = "Log on as a service"
+    };
+    Assert(GpoEditorNavigatorService.NavigationTarget(userRights).EndsWith(
+        "Local Policies > User Rights Assignment", StringComparison.Ordinal),
+        "Known User Rights section must use its real hierarchy.");
+
+    var legacyWithoutType = new PolicySettingInfo
+    {
+        Scope = "Computer", Extension = "SecuritySettings",
+        Category = "SecuritySettings", SettingName = "Account: MaxTicketAge",
+        Value = "SettingNumber=10"
+    };
+    Assert(!GpoEditorNavigatorService.HasVerifiedSection(legacyWithoutType),
+        "Kerberos aliases without explicit Type=Kerberos evidence must stay unmapped.");
+}
+
+static void TestGpmcSourceProvenance()
+{
+    var fake = new PolicySettingInfo
+    {
+        GpoId = Guid.NewGuid(), GpoName = "Example", Scope = "Computer",
+        Extension = "ScheduledTasksSettings", Category = "SecuritySettings",
+        SettingName = "Task: example",
+        RegistryKey = @"SOFTWARE\Fake", RegistryValue = "Name",
+        State = "Configured", Value = "GPMC task metadata"
+    };
+    Assert(!GpoSettingSourceProvenance.IsVerifiedRegistryTarget(fake) &&
+           GpoSettingSourceProvenance.RegistryTarget(fake).Length == 0 &&
+           GpoSettingSourceProvenance.RegistrySummary(fake).Contains(
+               "not verified", StringComparison.OrdinalIgnoreCase),
+        "Generic GPMC XML Key/Name fields must not become registry paths.");
+
+    var securityMetadata = new PolicySettingInfo
+    {
+        Scope = "Computer", Extension = "SecuritySettings",
+        Category = "SecuritySettings", SettingName = "Account: MaxTicketAge",
+        Value = "Type=Kerberos", RegistryKey = @"SOFTWARE\Wrong",
+        RegistryValue = "MaxTicketAge"
+    };
+    Assert(!GpoSettingSourceProvenance.IsVerifiedRegistryTarget(securityMetadata),
+        "A Kerberos Account item with legacy cached Key/Value fields must be non-registry.");
+
+    var registry = new PolicySettingInfo
+    {
+        Scope = "Computer", Extension = "RegistrySettings",
+        RegistryKey = @"SOFTWARE\Policies\Actual", RegistryValue = "Enabled"
+    };
+    Assert(GpoSettingSourceProvenance.IsVerifiedRegistryTarget(registry) &&
+           GpoSettingSourceProvenance.RegistryTarget(registry).Contains("Enabled"),
+        "Real RegistrySettings must retain their source metadata.");
+
+    var catalog = UnifiedSettingsCatalogService.Build(
+        new[] { fake, securityMetadata }, null, null, null);
+    Assert(catalog.Rows.Where(x => x.Configured is not null).All(x =>
+            string.IsNullOrWhiteSpace(x.RegistryTarget)),
+        "Unified All Settings must hide unproven generic extension registry fields.");
 }
 
 static void TestMmcTreePathMatcher()
