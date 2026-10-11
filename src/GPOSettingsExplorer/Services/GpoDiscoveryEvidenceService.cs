@@ -143,6 +143,42 @@ public static class GpoDiscoveryEvidenceService
         }).ToArray();
     }
 
+    /// <summary>
+    /// Compare only a narrowly supported, unambiguous literal registry value.
+    /// MMC display strings are not a typed API: never infer units, enabled state,
+    /// security-template values, or effective RSoP from textual resemblance.
+    /// </summary>
+    public static IReadOnlyList<Evidence> VerifyLiteralRegistryValues(IEnumerable<Evidence> evidence)
+    {
+        ArgumentNullException.ThrowIfNull(evidence);
+        return evidence.Select(item =>
+        {
+            if (item.NavigationStatus != "MMC_ROW_OBSERVED" ||
+                item.SourceStatus != "REGISTRY_SOURCE_LOCATED" ||
+                string.IsNullOrWhiteSpace(item.MmcObservedValue) ||
+                string.IsNullOrWhiteSpace(item.SourceStoredType) ||
+                string.IsNullOrWhiteSpace(item.SourceFileHash) ||
+                item.SourceFileHash.Length != 64 ||
+                !item.SourceFileHash.All(Uri.IsHexDigit))
+                return item;
+
+            // REG_SZ is a literal string; numeric types require explicit MMC units.
+            // Refuse comparisons where the source is a registry operation directive.
+            if (!item.SourceStoredType.Equals("REG_SZ", StringComparison.OrdinalIgnoreCase) ||
+                item.RegistryTarget.Contains(" / **", StringComparison.Ordinal))
+                return item;
+
+            // No trimming or case folding: a literal value must match exactly.
+            return item with
+            {
+                ValueVerificationStatus = string.Equals(
+                    item.MmcObservedValue, item.SourceStoredValue,
+                    StringComparison.Ordinal) ? "MATCH_LITERAL_REG_SZ" : "MISMATCH_LITERAL_REG_SZ",
+                Notes = item.Notes + " Literal REG_SZ comparison only; effective RSoP not verified."
+            };
+        }).ToArray();
+    }
+
     public static string ExportTsv(IEnumerable<Evidence> evidence)
     {
         ArgumentNullException.ThrowIfNull(evidence);
