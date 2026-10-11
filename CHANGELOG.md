@@ -4,6 +4,16 @@
 
 - No unreleased changes yet.
 
+## 2.0.3 - 2026-10-11
+
+- Stop routing arbitrary GPMC extensions to the `Security Settings` MMC root. Use a strict, known extension/section whitelist for Administrative Templates, Software Installation, NRPT, Advanced Audit, Security Options, selected exact Account/Local Security policy categories, and Public Key policies.
+- Unknown GPMC extension sections are `UNMAPPED` instead of fake successful navigation. Their setting-detail window opens the GPO editor at its root only, with explicit manual-navigation instructions and no policy dialog auto-opened.
+- Separate GPMC XML metadata fields (`Name`, `Key`, `ValueName`) from Registry.pol provenance. Generic extensions no longer invent a registry path; known registry policies preserve their supported key/value target. Security Options GPMC KeyName is shown as source metadata, not a verified Registry.pol path.
+- Harden Security Options exact-row navigation to the full verified Computer/Policies/Windows Settings/Security Settings/Local Policies/Security Options route.
+- MMC Route Audit now reports the number of mapped/unmapped indexed rows and groups unsupported source extension families. `FOUND` validates a section only, never the exact policy or an effective client RSoP.
+- Add regression tests for real RegistrySettings, mapped Security categories, missing Kerberos type and unsupported GPP/XML extensions. No AD/SYSVOL writes.
+- This is a fail-closed safety correction, not universal MMC editor coverage. Validate on a nonproduction DC before production use.
+
 ## 2.0.2 - 2026-10-11
 
 - Correct GPMC SecuritySettings Account XML parsing for the common nested child element representation (`<Account><Name>MaxTicketAge</Name><Type>Kerberos</Type></Account>`) as well as existing attribute-based layouts.
