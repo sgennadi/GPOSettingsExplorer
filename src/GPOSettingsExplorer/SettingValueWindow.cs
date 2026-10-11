@@ -57,6 +57,8 @@ public sealed class SettingValueWindow : Window
             footer,
             Dock.Bottom);
 
+        var verifiedSectionPath = GpoEditorNavigatorService.NavigationTarget(setting);
+        var hasVerifiedSection = GpoEditorNavigatorService.HasVerifiedSection(setting);
         var manualSecuritySection =
             SecurityXmlEntryClassifier.InferLegacyCategory(setting);
         var securitySectionLabel = manualSecuritySection switch
@@ -71,7 +73,10 @@ public sealed class SettingValueWindow : Window
             {
                 Text =
                     exactNavigationAvailable
-                        ? $"Exact MMC target: {GpoEditorNavigatorService.NavigationTarget(setting)}"
+                        ? $"Exact MMC target: {verifiedSectionPath}"
+                        : !hasVerifiedSection
+                            ? "No verified MMC section is mapped for this GPMC source. " +
+                              "The full GPO editor can be opened for manual inspection."
                         : securitySectionLabel is not null
                             ? "Read-only XML detail. Related MMC section (manual navigation only): " +
                               GpoEditorNavigatorService.NavigationTarget(setting)
@@ -100,6 +105,8 @@ public sealed class SettingValueWindow : Window
                 Content =
                     exactNavigationAvailable
                         ? "Open exact setting in GPO editor..."
+                        : !hasVerifiedSection
+                            ? "Open full GPO editor (manual)..."
                         : securitySectionLabel is not null
                             ? "Open " + securitySectionLabel + "..."
                         : setting.Extension.Equals("RegistrySettings", StringComparison.OrdinalIgnoreCase)
@@ -153,10 +160,11 @@ public sealed class SettingValueWindow : Window
                 {
                     navigationStatus.Foreground = UiStyle.WarningBrush;
                     var sectionPath = GpoEditorNavigatorService.NavigationTarget(setting);
-                    navigationStatus.Text =
-                        setting.Extension.Equals("RegistrySettings", StringComparison.OrdinalIgnoreCase)
-                            ? "MMC opened for Administrative Templates. This raw registry.pol entry may not have a matching ADMX editor. Value retained below."
-                            : $"MMC section navigation requested: {sectionPath}. Verify the correct section is visible; this report entry cannot be focused or edited by an unverified alias. The source value remains visible.";
+                    navigationStatus.Text = !hasVerifiedSection
+                        ? "The GPO editor was opened at its root; no verified section exists for this extension. Navigate manually. No policy row was selected."
+                        : setting.Extension.Equals("RegistrySettings", StringComparison.OrdinalIgnoreCase)
+                            ? "MMC opened for Administrative Templates. This registry.pol entry may not have an ADMX editor. Value retained below."
+                            : $"MMC section navigation requested: {sectionPath}. Verify the correct section is visible; exact row editing is unavailable for this report entry.";
                     return;
                 }
 
@@ -201,7 +209,7 @@ public sealed class SettingValueWindow : Window
 
         // A raw registry.pol entry has no guaranteed MMC row. Make its real
         // key/value easy to inspect without opening the live local registry.
-        if (!string.IsNullOrWhiteSpace(setting.RegistryKey))
+        if (GpoSettingSourceProvenance.IsVerifiedRegistryTarget(setting))
         {
             var copyKey = new Button
             {
@@ -212,7 +220,8 @@ public sealed class SettingValueWindow : Window
             footer.Children.Add(copyKey);
         }
 
-        if (!string.IsNullOrWhiteSpace(setting.RegistryValue))
+        if (GpoSettingSourceProvenance.IsVerifiedRegistryTarget(setting) &&
+            !string.IsNullOrWhiteSpace(setting.RegistryValue))
         {
             var copyValueName = new Button { Content = "Copy value name" };
             copyValueName.Click += (_, _) => Clipboard.SetText(setting.RegistryValue);
@@ -295,11 +304,27 @@ public sealed class SettingValueWindow : Window
                     ? KerberosPolicyMetadataService.Category
                     : manualSecuritySection ?? setting.Category));
 
+        panel.Children.Add(Meta("Source type",
+            GpoSettingSourceProvenance.SourceType(setting)));
+        panel.Children.Add(Meta("MMC section",
+            hasVerifiedSection ? verifiedSectionPath :
+                "UNMAPPED - full editor supports manual navigation only"));
+
         panel.Children.Add(
             Meta(
                 "Registry",
                 BuildRegistrySummary(
                     setting)));
+
+        if (setting.Extension.Equals("SecuritySettings", StringComparison.OrdinalIgnoreCase) &&
+            setting.Category.Equals(
+                "Security Settings > Local Policies > Security Options",
+                StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrWhiteSpace(setting.RegistryKey))
+        {
+            panel.Children.Add(Meta("GPMC Security Options KeyName (not verified Registry.pol)",
+                setting.RegistryKey));
+        }
 
         if (SecurityXmlEntryClassifier.IsTechnicalDetail(setting))
         {
@@ -486,24 +511,8 @@ public sealed class SettingValueWindow : Window
         };
     }
 
-    private static string BuildRegistrySummary(
-        PolicySettingInfo setting)
-    {
-        if (string.IsNullOrWhiteSpace(
-                setting.RegistryKey))
-        {
-            return KerberosPolicyMetadataService.IsKnownKerberosSetting(setting)
-                ? "Not applicable - Kerberos security policy (not Registry.pol)"
-                : "<not reported>";
-        }
-
-        return string.IsNullOrWhiteSpace(
-                setting.RegistryValue)
-            ? setting.RegistryKey
-            : setting.RegistryKey +
-              " \\ " +
-              setting.RegistryValue;
-    }
+    private static string BuildRegistrySummary(PolicySettingInfo setting) =>
+        GpoSettingSourceProvenance.RegistrySummary(setting);
 
     private static FrameworkElement Meta(
         string name,

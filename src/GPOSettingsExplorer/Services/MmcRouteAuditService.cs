@@ -51,6 +51,35 @@ public static class MmcRouteAuditService
             .OrderBy(g => g.Path, StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
+        // Older versions assigned all unrecognized extension families to
+        // "Security Settings" and counted that parent as FOUND. The audit
+        // must now explicitly report routing coverage rather than silently
+        // claiming success for a guessed tree path.
+        var unmapped = settings.Where(s =>
+            !GpoEditorNavigatorService.HasVerifiedSection(s)).ToArray();
+        report.AppendLine($"INDEX COVERAGE: total_entries={settings.Count}; " +
+            $"mapped_entries={settings.Count - unmapped.Length}; " +
+            $"unmapped_entries={unmapped.Length}; unique_mapped_routes={targets.Length}");
+        report.AppendLine("UNMAPPED means no safe MMC section mapping; it does NOT " +
+            "mean the GPO setting is missing or Not Configured.");
+        if (unmapped.Length > 0)
+        {
+            report.AppendLine("### Unmapped source families (no fallback to Security Settings)");
+            foreach (var family in unmapped
+                .GroupBy(x => string.IsNullOrWhiteSpace(x.Extension)
+                    ? "(unknown extension)" : x.Extension,
+                    StringComparer.OrdinalIgnoreCase)
+                .OrderByDescending(g => g.Count())
+                .ThenBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
+            {
+                report.AppendLine("[UNMAPPED] Extension: " + family.Key +
+                    "; records=" + family.Count() +
+                    "; categories=" + family.Select(x => x.Category)
+                        .Distinct(StringComparer.OrdinalIgnoreCase).Count());
+            }
+            report.AppendLine();
+        }
+
         var deadline = DateTime.UtcNow.AddMinutes(3);
         var system = Environment.GetFolderPath(Environment.SpecialFolder.System);
         var path = Path.Combine(system, "mmc.exe");
@@ -201,6 +230,7 @@ public static class MmcRouteAuditService
         report.AppendLine(
             $"SUMMARY: found={found}; missing={missing}; errors={errors}; skipped={skipped}; unchecked={uncheckedRoutes}; total={targets.Length}");
         report.AppendLine("FOUND confirms only a matching MMC tree path. It does not prove exact setting-dialog navigation.");
+        report.AppendLine($"Unmapped extension rows (excluded from MMC route attempts): {unmapped.Length}");
         report.AppendLine();
 
         const int snapshotNodeLimit = 1500;

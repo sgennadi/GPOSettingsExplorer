@@ -14,7 +14,7 @@ Download the latest portable build from:
 
 **[GitHub Releases](https://github.com/sgennadi/GPOSettingsExplorer/releases/latest)**
 
-Current release: **v2.0.2**
+Current release: **v2.0.3**
 
 Available packages:
 
@@ -22,6 +22,14 @@ Available packages:
 - `GPOSettingsExplorer-win-arm64-portable.zip` — Windows on ARM64.
 
 The builds are self-contained. A separate .NET runtime installation is not required.
+
+### Release 2.0.3 - Honest GPMC source classification and fail-closed MMC routing
+
+- **Not only Kerberos:** eliminated the generic `Security Settings` fallback for unsupported GPMC XML extensions. `ScheduledTasksSettings`, `Scripts`, `DriveMapSettings`, `FolderRedirectionSettings` and other unmapped items now receive an explicit **UNMAPPED** diagnostic and can be inspected manually in the native GPO editor, never silently routed to a wrong section.
+- Verified categories (Security Options, User Rights, Audit, Password/Lockout/Kerberos policy, Software Installation, Administrative Templates, Public Key, NRPT) still receive section-level routes. Section-level coverage does not guarantee exact setting focus.
+- GPMC extension metadata keys can no longer masquerade as registry paths. A clearly attributed Security Options KeyName is separate from confirmed Registry.pol data. Cached indexes receive the same safe display treatment.
+- **MMC Route Audit** now reports route coverage by indexed row and by unmapped extension. It never treats the common `Security Settings` parent as a successful route for unrelated policy types.
+- See [MMC routing and classification guide](docs/mmc-route-coverage.md). No change to optional Local/Remote AI and no GPO writes.
 
 ### Release 2.0.2 - GPMC Kerberos Account XML compatibility hotfix
 

@@ -84,7 +84,7 @@ public static class UnifiedSettingsCatalogService
                     : admx is not null && IsDirectAdmxSupported(admx)
                         ? "ADMX editor (guarded)"
                         : "View / supported editor",
-                RegistryTarget = JoinTarget(setting.RegistryKey, setting.RegistryValue),
+                RegistryTarget = GpoSettingSourceProvenance.RegistryTarget(setting),
                 Explanation = technical
                     ? "This is a nested GPMC XML description, not an independent policy row. " +
                       "Its full original value remains available in View details. " +
