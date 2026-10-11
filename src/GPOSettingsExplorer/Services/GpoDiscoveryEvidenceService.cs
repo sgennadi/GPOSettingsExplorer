@@ -90,6 +90,53 @@ public static class GpoDiscoveryEvidenceService
         }).ToArray();
     }
 
+    /// <summary>
+    /// A conservative source cross-check: only a unique same-GPO, same-scope,
+    /// exact Registry.pol target is compared. Other CSE source formats and
+    /// MMC display units require dedicated parsers and remain unverified.
+    /// </summary>
+    public static IReadOnlyList<Evidence> CorrelateRegistrySource(
+        IEnumerable<Evidence> evidence, IEnumerable<RealSettingRecord> sources)
+    {
+        ArgumentNullException.ThrowIfNull(evidence);
+        ArgumentNullException.ThrowIfNull(sources);
+        var records = sources.ToArray();
+        return evidence.Select(item =>
+        {
+            if (item.SourceStatus != "REGISTRY_METADATA" ||
+                string.IsNullOrWhiteSpace(item.RegistryTarget))
+                return item;
+
+            var matching = records.Where(record =>
+                record.GpoId == item.GpoId &&
+                record.Scope.Equals(item.Scope, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(
+                    string.IsNullOrWhiteSpace(record.RegistryValue)
+                        ? record.RegistryKey
+                        : record.RegistryKey + " / " + record.RegistryValue,
+                    item.RegistryTarget, StringComparison.OrdinalIgnoreCase) &&
+                record.SourceFile.EndsWith("Registry.pol", StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+
+            return matching.Length switch
+            {
+                1 => item with
+                {
+                    SourceStatus = "REGISTRY_SOURCE_LOCATED",
+                    ValueVerificationStatus = "SOURCE_RECORD_LOCATED_VALUE_NOT_COMPARED",
+                    Notes = item.Notes + " Unique Registry.pol target located; GPMC/MMC value and units not compared."
+                },
+                > 1 => item with
+                {
+                    SourceStatus = "AMBIGUOUS_REGISTRY_SOURCE",
+                    ValueVerificationStatus = "NOT_VERIFIED",
+                    Notes = item.Notes + " Duplicate Registry.pol source targets; manual review required."
+                },
+                _ => item
+            };
+        }).ToArray();
+    }
+
     public static string ExportTsv(IEnumerable<Evidence> evidence)
     {
         ArgumentNullException.ThrowIfNull(evidence);
