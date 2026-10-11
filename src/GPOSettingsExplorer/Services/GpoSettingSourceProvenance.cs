@@ -19,13 +19,10 @@ public static class GpoSettingSourceProvenance
             setting.Extension.Equals("Administrative Templates", StringComparison.OrdinalIgnoreCase))
             return true;
 
-        // Security Options may encode an actual registry-backed policy target
-        // via an explicit SecurityOptions/KeyName source. Other security
-        // extension rows (Account, Registry ACL, Rights) are NOT registry.pol.
-        return setting.Extension.Equals("SecuritySettings", StringComparison.OrdinalIgnoreCase) &&
-               setting.Category.Equals(
-                   "Security Settings > Local Policies > Security Options",
-                   StringComparison.OrdinalIgnoreCase);
+        // Security Options KeyName may be LSA/SecEdit metadata rather than
+        // a Registry.pol policy. Never claim it is a verified registry
+        // target from the generic GPMC model.
+        return false;
     }
 
     public static string RegistrySummary(PolicySettingInfo setting)
