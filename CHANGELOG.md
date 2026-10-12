@@ -7,7 +7,9 @@
 - Reject conflicting, unsupported, unreviewed or stale rules without falling back to a misleading numeric match. Report unit decision status and review provenance in TSV; extend regression coverage for changed hashes, duplicate rules and localized/ambiguous MMC text.
 - Add a dedicated read-only **Discovery & Verification** GUI with searchable evidence statuses, full MMC/source provenance and coverage reasons. Correlate a nested Administrative Templates row only when a unique same-scope ADMX decimal element has the exact registry target, category and native MMC path.
 - Add an opt-in, session-only operator review dialog for DWORD minutes-to-hours conversions. Require an independently checked native MMC unit, reviewed ADMX/ADML file SHA-256 fingerprints, a review checkbox and change-ticket reference; revalidate fingerprints before export. No GPO, AD or SYSVOL writes.
-- The existing plain export deliberately performs no unit inference/approval; a new local review TSV exposes signed-off in-session evidence (not effective client RSoP). Do not merge or release 2.1.0 solely from CI results; validate representative policies and ADMX variations on a nonproduction DC.
+- Re-read the selected Registry.pol from the connected/pinned DC both before and after manual unit review and immediately before exporting approved results. Validate full UNC path, same GPO, scope, file SHA-256, exact key/value target, registry type and bytes-derived value; reject partial/incomplete source snapshots and changed files.
+- Include source recheck status/timestamp in the reviewed TSV; a failed recheck blocks export and revokes the current in-memory match. Correctly reject MMC Not Configured rows as value matches.
+- The existing plain export deliberately performs no unit inference/approval; reviewed exports retain session approvals only while all source/definition checks pass. This is not effective client RSoP or a transactional GPMC/MMC snapshot. Do not merge or release 2.1.0 solely from CI results; validate representative policies and ADMX variations on a nonproduction DC.
 
 ## 2.0.3 - 2026-10-11
 

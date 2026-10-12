@@ -79,7 +79,8 @@ var tests = new (string Name, Action Body)[]
     ("GPO settings report provides bounded native GPMC hierarchy", TestGpoSettingsReportTree),
     ("Remote AI endpoints and prompts strictly exclude AD/GPO identities", TestRemoteAiBoundary),
     ("Discovery evidence is read-only, fail-closed and spreadsheet-safe", TestDiscoveryEvidence),
-    ("Discovery unit review requires unique ADMX/ADML, MMC row, hashes and operator approval", TestDiscoveryUnitReview)
+    ("Discovery unit review requires unique ADMX/ADML, MMC row, hashes and operator approval", TestDiscoveryUnitReview),
+    ("Discovery source re-read rejects stale, partial and wrong-DC Registry.pol evidence", TestDiscoverySourceFreshness)
 };
 
 var failures = new List<string>();
@@ -4359,4 +4360,123 @@ static void TestDiscoveryUnitReview()
     {
         Directory.Delete(root, recursive: true);
     }
+}
+
+
+static void TestDiscoverySourceFreshness()
+{
+    var id = Guid.NewGuid();
+    const string domain = "example.test";
+    const string dc = "dc01.example.test";
+    var key = @"Software\Policies\Example";
+    var fullPath = @"\\" + dc + @"\SYSVOL\" + domain + @"\Policies\" +
+        id.ToString("B") + @"\Machine\Registry.pol";
+    var source = new RealSettingRecord
+    {
+        GpoId = id, GpoName = "Source test", Scope = "Computer",
+        RegistryKey = key, RegistryValue = "Timeout",
+        SourceFile = fullPath, SourceSha256 = new string('A', 64),
+        Value = "600", ValueType = "REG_DWORD"
+    };
+    var input = new PolicySettingInfo
+    {
+        GpoId = id, GpoName = "Source test", Scope = "Computer",
+        Extension = "RegistrySettings", SettingName = "Example timeout",
+        RegistryKey = key, RegistryValue = "Timeout"
+    };
+    var located = GpoDiscoveryEvidenceService.CorrelateRegistrySource(
+        GpoDiscoveryEvidenceService.Build(new[] { input }), new[] { source })[0];
+    Assert(located.SourceStatus == "REGISTRY_SOURCE_LOCATED",
+        "The synthetic source should be found exactly once.");
+
+    var file = new RealSettingsFileEvidence(fullPath, "Read", 1,
+        new string('A', 64), "Snapshot verified");
+    var current = new RealSettingsScanResult(id, "Source test", domain, dc,
+        DateTimeOffset.UtcNow, new[] { source }, new[] { file });
+    var selected = GpoDiscoverySourceFreshnessService.SelectCompleteRegistryRecords(current);
+    Assert(selected.Count == 1 && selected[0] == source,
+        "Only records from the exact fully parsed, hashed Registry.pol path may be verified.");
+
+    var valid = GpoDiscoverySourceFreshnessService.Check(located, current, domain, dc);
+    Assert(valid.IsCurrent && valid.Status == "SOURCE_RECHECKED",
+        "Re-scanned same-DC/source/target/hash/type/value must validate.");
+    Assert(!GpoDiscoverySourceFreshnessService.Check(located, current, domain, "dc02.example.test").IsCurrent,
+        "Never accept another pinned domain controller.");
+    Assert(!GpoDiscoverySourceFreshnessService.Check(located,
+        current with { DomainController = "dc02.example.test" }, domain, dc).IsCurrent,
+        "Mismatch of actual scanned controller must invalidate the snapshot.");
+    Assert(!GpoDiscoverySourceFreshnessService.Check(located,
+        current with { GpoId = Guid.NewGuid() }, domain, dc).IsCurrent,
+        "GPO identity mismatch must fail closed.");
+    Assert(!GpoDiscoverySourceFreshnessService.Check(located,
+        current with { Domain = "other.test" }, domain, dc).IsCurrent,
+        "Domain mismatch must fail closed.");
+
+    var updated = current with { Files = new[]
+        { file with { Sha256 = new string('B', 64) } } };
+    Assert(GpoDiscoverySourceFreshnessService.Check(located, updated, domain, dc)
+        .Status == "SOURCE_FILE_CHANGED", "Changes to Registry.pol hash must block approval.");
+
+    var partial = current with { Files = new[]
+        { file with { Status = "Partial" } } };
+    Assert(GpoDiscoverySourceFreshnessService.SelectCompleteRegistryRecords(partial).Count == 0,
+        "Partial parse records must never enter the production GPMC/MMC literal comparison.");
+    Assert(GpoDiscoverySourceFreshnessService.Check(located, partial, domain, dc)
+        .Status == "SOURCE_FILE_INCOMPLETE", "Partial sources cannot be fresh evidence.");
+    var missing = current with { Files = Array.Empty<RealSettingsFileEvidence>() };
+    Assert(GpoDiscoverySourceFreshnessService.Check(located, missing, domain, dc)
+        .Status == "SOURCE_FILE_AMBIGUOUS", "Missing file-level evidence must fail closed.");
+    var duplicateFile = current with { Files = new[] { file, file } };
+    Assert(GpoDiscoverySourceFreshnessService.Check(located, duplicateFile, domain, dc)
+        .Status == "SOURCE_FILE_AMBIGUOUS", "Duplicate source-file identities must fail closed.");
+    Assert(GpoDiscoverySourceFreshnessService.SelectCompleteRegistryRecords(duplicateFile).Count == 0,
+        "Duplicate supposedly complete source files must not contribute verified values.");
+
+    var spoofedPath = @"\\attacker\SYSVOL\" + domain + @"\Policies\" +
+        id.ToString("B") + @"\Machine\Registry.pol";
+    var wrongPath = current with
+    {
+        Rows = new[] { source with { SourceFile = spoofedPath } },
+        Files = new[] { file with { SourceFile = spoofedPath } }
+    };
+    Assert(GpoDiscoverySourceFreshnessService.SelectCompleteRegistryRecords(wrongPath).Count == 0,
+        "A different UNC server with the same Registry.pol suffix must not be trusted.");
+    Assert(GpoDiscoverySourceFreshnessService.Check(located, wrongPath, domain, dc)
+        .Status == "SOURCE_FILE_AMBIGUOUS",
+        "A forged same-name file outside pinned-DC GPO path must never pass.");
+
+    var changedValue = current with { Rows = new[] { source with { Value = "601" } } };
+    Assert(GpoDiscoverySourceFreshnessService.Check(located, changedValue, domain, dc)
+        .Status == "SOURCE_VALUE_CHANGED", "Changed typed source value must block approval.");
+    var wrongType = current with { Rows = new[] {
+        source with { ValueType = "REG_SZ" } } };
+    Assert(GpoDiscoverySourceFreshnessService.Check(located, wrongType, domain, dc)
+        .Status == "SOURCE_VALUE_CHANGED", "Changed source DWORD type must block approval.");
+    var wrongTarget = current with { Rows = new[] {
+        source with { RegistryValue = "Else" } } };
+    Assert(GpoDiscoverySourceFreshnessService.Check(located, wrongTarget, domain, dc)
+        .Status == "SOURCE_TARGET_AMBIGUOUS",
+        "Source registry key/value target must match exactly.");
+    var ambiguous = current with { Rows = new[] { source, source } };
+    Assert(GpoDiscoverySourceFreshnessService.Check(located, ambiguous, domain, dc)
+        .Status == "SOURCE_TARGET_AMBIGUOUS", "Duplicated source targets are not verified.");
+
+    var notConfigured = located with
+    {
+        NavigationStatus = "MMC_ROW_OBSERVED",
+        MmcObservedState = "Not Configured (MMC)",
+        MmcObservedValue = "600"
+    };
+    Assert(GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(
+        new[] { notConfigured })[0].ValueVerificationStatus ==
+        "SOURCE_RECORD_LOCATED_VALUE_NOT_COMPARED",
+        "A Not Configured native MMC row must never be declared a literal source match.");
+
+    var exported = GpoDiscoveryEvidenceService.ExportTsv(new[] {
+        located with { SourceRecheckStatus = "SOURCE_RECHECKED",
+            SourceRecheckedAtUtc = current.CapturedAt.UtcDateTime } });
+    Assert(exported.Contains("SourceRecheckStatus", StringComparison.Ordinal) &&
+           exported.Contains("SourceRecheckedAtUtc", StringComparison.Ordinal) &&
+           exported.Contains("SOURCE_RECHECKED", StringComparison.Ordinal),
+        "TSV must disclose freshness status and recheck timestamp separately from MMC.");
 }

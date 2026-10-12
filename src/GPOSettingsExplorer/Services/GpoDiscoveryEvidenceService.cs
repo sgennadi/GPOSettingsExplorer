@@ -25,6 +25,8 @@ public static partial class GpoDiscoveryEvidenceService
         public string SourceStoredValue { get; init; } = string.Empty;
         public string SourceStoredType { get; init; } = string.Empty;
         public string SourceFileHash { get; init; } = string.Empty;
+        public string SourceRecheckStatus { get; init; } = "NOT_RECHECKED";
+        public DateTime? SourceRecheckedAtUtc { get; init; }
         public string SourceUnit { get; init; } = string.Empty;
         public string UnitMappingStatus { get; init; } = "NOT_EVALUATED";
         public VerifiedUnitMapping? UnitMappingEvidence { get; init; }
@@ -222,6 +224,7 @@ public static partial class GpoDiscoveryEvidenceService
             if (item.NavigationStatus != "MMC_ROW_OBSERVED" ||
                 item.SourceStatus != "REGISTRY_SOURCE_LOCATED" ||
                 string.IsNullOrWhiteSpace(item.MmcObservedValue) ||
+                item.MmcObservedState.Contains("Not Configured", StringComparison.OrdinalIgnoreCase) ||
                 string.IsNullOrWhiteSpace(item.SourceStoredType) ||
                 !IsSha256(item.SourceFileHash))
                 return item;
@@ -319,7 +322,7 @@ public static partial class GpoDiscoveryEvidenceService
         }
 
         var output = new StringBuilder();
-        output.AppendLine("GpoId\tScope\tExtension\tSettingName\tSourceType\tSourceStatus\tRegistryTarget\tMmcSection\tNavigationStatus\tIdentityHash\tNotes\tMmcObservedState\tMmcObservedValue\tMmcObservedSection\tMmcRowNavigation\tValueVerificationStatus\tSourceStoredValue\tSourceStoredType\tSourceFileHash\tSourceUnit\tUnitMappingStatus\tUnitMappingProvenance\tUnitMappingDefinitionSha256\tUnitMappingReviewReference");
+        output.AppendLine("GpoId\tScope\tExtension\tSettingName\tSourceType\tSourceStatus\tRegistryTarget\tMmcSection\tNavigationStatus\tIdentityHash\tNotes\tMmcObservedState\tMmcObservedValue\tMmcObservedSection\tMmcRowNavigation\tValueVerificationStatus\tSourceStoredValue\tSourceStoredType\tSourceFileHash\tSourceRecheckStatus\tSourceRecheckedAtUtc\tSourceUnit\tUnitMappingStatus\tUnitMappingProvenance\tUnitMappingDefinitionSha256\tUnitMappingReviewReference");
         foreach (var row in evidence)
             output.AppendLine(string.Join("\t", new[]
             {
@@ -328,7 +331,10 @@ public static partial class GpoDiscoveryEvidenceService
                 row.NavigationStatus, row.IdentityHash, row.Notes,
                 row.MmcObservedState, row.MmcObservedValue, row.MmcObservedSection,
                 row.MmcRowNavigation, row.ValueVerificationStatus,
-                row.SourceStoredValue, row.SourceStoredType, row.SourceFileHash, row.SourceUnit,
+                row.SourceStoredValue, row.SourceStoredType, row.SourceFileHash,
+                row.SourceRecheckStatus,
+                row.SourceRecheckedAtUtc?.ToString("O", CultureInfo.InvariantCulture) ?? string.Empty,
+                row.SourceUnit,
                 row.UnitMappingStatus, row.UnitMappingEvidence?.Provenance ?? string.Empty,
                 row.UnitMappingEvidence?.DefinitionEvidenceSha256 ?? string.Empty,
                 row.UnitMappingEvidence?.ReviewReference ?? string.Empty

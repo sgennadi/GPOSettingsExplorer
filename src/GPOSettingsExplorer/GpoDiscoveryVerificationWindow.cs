@@ -15,7 +15,8 @@ namespace GPOSettingsExplorer;
 
 /// <summary>
 /// Operator-controlled review of previously captured GPO evidence. This window
-/// cannot scan DCs, modify SYSVOL/GPO/AD or write an approval back to the domain.
+/// re-reads selected source files on the pinned DC (read only), but cannot
+/// modify SYSVOL/GPO/AD or write an approval back to the domain.
 /// Each unit approval lasts only for this dialog and its pinned source snapshot.
 /// </summary>
 public sealed class GpoDiscoveryVerificationWindow : Window
@@ -24,8 +25,18 @@ public sealed class GpoDiscoveryVerificationWindow : Window
     private readonly IReadOnlyList<AdmxPolicyDefinition>? _catalog;
     private readonly string _definitionsDirectory;
     private readonly string _language;
+    private readonly GpoInfo _gpo;
     private readonly string _gpoName;
+    private readonly string _domain;
+    private readonly string _domainController;
     private readonly string _domainAndDc;
+    private RealSettingsScanResult? _recheckedSource;
+    private bool _recheckBusy;
+    private readonly TextBlock _freshness = new()
+    {
+        TextWrapping = TextWrapping.Wrap,
+        Foreground = UiStyle.WarningBrush
+    };
     private readonly string _coverage;
     private readonly Dictionary<string, GpoDiscoveryEvidenceService.VerifiedUnitMapping> _approvals =
         new(StringComparer.Ordinal);
@@ -63,13 +74,17 @@ public sealed class GpoDiscoveryVerificationWindow : Window
     private ICollectionView? _view;
 
     public GpoDiscoveryVerificationWindow(
-        string gpoName, string domain, string domainController,
+        GpoInfo gpo, string domain, string domainController,
         IReadOnlyList<GpoDiscoveryEvidenceService.Evidence> evidence,
         IReadOnlyList<AdmxPolicyDefinition>? catalog,
         string definitionsDirectory, string language, string coverage)
     {
         ArgumentNullException.ThrowIfNull(evidence);
-        _gpoName = gpoName;
+        ArgumentNullException.ThrowIfNull(gpo);
+        _gpo = gpo;
+        _gpoName = gpo.DisplayName;
+        _domain = domain;
+        _domainController = domainController;
         _domainAndDc = domain + " / pinned DC: " +
             (string.IsNullOrWhiteSpace(domainController) ? "UNKNOWN" : domainController);
         _sourceRows = evidence.ToArray();
@@ -109,14 +124,17 @@ public sealed class GpoDiscoveryVerificationWindow : Window
         });
         header.Children.Add(new TextBlock
         {
-            Text = "Captured evidence only. No automatic unit inference, GPO writes, " +
-                "effective RSoP claims or cross-DC verification. " +
-                "Manual approvals are session-only and bound to SHA-256 fingerprints.",
+            Text = "GPMC/MMC observations are previously captured; only source files are re-read. " +
+                "No automatic unit inference, GPO writes, effective RSoP claims or independently " +
+                "attested MMC DC. Manual approvals expire at close and are SHA-256 bound.",
             Foreground = UiStyle.WarningBrush,
             TextWrapping = TextWrapping.Wrap,
             Margin = new Thickness(0, 5, 0, 0)
         });
         header.Children.Add(_summary);
+        _freshness.Text = "Source freshness: NOT RECHECKED against the pinned DC. " +
+            "Unit review and reviewed exports require a fresh read of Registry.pol.";
+        header.Children.Add(_freshness);
         DockPanel.SetDock(header, Dock.Top);
         root.Children.Add(header);
 
@@ -143,11 +161,13 @@ public sealed class GpoDiscoveryVerificationWindow : Window
         toolbar.Children.Add(export);
         toolbar.Children.Add(reset);
         toolbar.Children.Add(close);
-        _review.Click += (_, _) => ReviewSelected();
-        export.Click += (_, _) => ExportReview();
+        _review.Click += async (_, _) => await ReviewSelectedAsync();
+        export.Click += async (_, _) => await ExportReviewAsync();
         reset.Click += (_, _) =>
         {
             _approvals.Clear();
+            _recheckedSource = null;
+            _freshness.Text = "All temporary approvals cleared; no Registry.pol source recheck retained.";
             RefreshRows();
         };
         close.Click += (_, _) => Close();
@@ -227,6 +247,12 @@ public sealed class GpoDiscoveryVerificationWindow : Window
                 {
                     if (!candidate.CanReview)
                         throw new InvalidOperationException("Eligibility changed: " + candidate.Status);
+                    if (_recheckedSource is null)
+                        throw new InvalidOperationException("No fresh pinned-DC Registry.pol scan is available.");
+                    var current = GpoDiscoverySourceFreshnessService.Check(
+                        original, _recheckedSource, _domain, _domainController);
+                    if (!current.IsCurrent)
+                        throw new InvalidOperationException(current.Status + ": " + current.Explanation);
                     var live = GpoDiscoveryUnitReviewService.CaptureDefinition(candidate,
                         _definitionsDirectory, _language);
                     if (live.DefinitionSha256 != approved.DefinitionEvidenceSha256 ||
@@ -234,7 +260,11 @@ public sealed class GpoDiscoveryVerificationWindow : Window
                         live.SourceFileSha256 != approved.SourceFileSha256)
                         throw new InvalidOperationException("Review fingerprint or source changed.");
                     result = GpoDiscoveryEvidenceService.ApplyVerifiedUnitMappings(
-                        new[] { original }, new[] { approved })[0];
+                        new[] { original }, new[] { approved })[0] with
+                    {
+                        SourceRecheckStatus = current.Status,
+                        SourceRecheckedAtUtc = current.CheckedAt.UtcDateTime
+                    };
                     result = GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(
                         new[] { result })[0];
                     reviewStatus = result.UnitMappingStatus;
@@ -248,6 +278,7 @@ public sealed class GpoDiscoveryVerificationWindow : Window
                         SourceUnit = string.Empty,
                         UnitMappingEvidence = null,
                         ValueVerificationStatus = "SOURCE_RECORD_LOCATED_VALUE_NOT_COMPARED",
+                        SourceRecheckStatus = "SOURCE_RECHECK_FAILED",
                         Notes = original.Notes + " Reviewed unit mapping invalid: " + ex.Message
                     };
                 }
@@ -302,7 +333,8 @@ public sealed class GpoDiscoveryVerificationWindow : Window
             _review.IsEnabled = false;
             return;
         }
-        _review.IsEnabled = row.Candidate.CanReview && row.ReviewStatus != "VERIFIED_EXPLICIT";
+        _review.IsEnabled = !_recheckBusy &&
+            row.Candidate.CanReview && row.ReviewStatus != "VERIFIED_EXPLICIT";
         _selectedStatus.Text = row.ReviewStatus + " | " + row.Candidate.Reason;
         _selectedStatus.Foreground = _review.IsEnabled
             ? UiStyle.AccentBrush : UiStyle.WarningBrush;
@@ -323,6 +355,9 @@ public sealed class GpoDiscoveryVerificationWindow : Window
             "Navigation status: " + e.NavigationStatus,
             "Value verification: " + e.ValueVerificationStatus,
             "Unit review: " + row.ReviewStatus,
+            "Pinned-source recheck: " + e.SourceRecheckStatus,
+            "Pinned-source rechecked UTC: " + (e.SourceRecheckedAtUtc?.ToString("O",
+                CultureInfo.InvariantCulture) ?? "(not checked)"),
             "Review reference: " + (e.UnitMappingEvidence?.ReviewReference ?? "(none)"),
             "ADMX / ADML source: " + (row.Candidate.Policy?.AdmxFile ?? "(unmapped)"),
             "Decimal element: " + (row.Candidate.Element?.Id ?? "(unmapped)"),
@@ -333,47 +368,112 @@ public sealed class GpoDiscoveryVerificationWindow : Window
         });
     }
 
-    private void ReviewSelected()
+    private async Task<RealSettingsScanResult> ReadPinnedSourceAgainAsync()
     {
-        if (_grid.SelectedItem is not DisplayRow selected || !selected.Candidate.CanReview)
+        var context = DomainConnectionState.Context;
+        if (context is null ||
+            !_gpo.DomainName.Equals(_domain, StringComparison.OrdinalIgnoreCase) ||
+            _sourceRows.Count == 0 ||
+            _sourceRows.Any(row => row.GpoId != _gpo.Id) ||
+            !context.DomainName.Equals(_domain, StringComparison.OrdinalIgnoreCase) ||
+            !context.ConnectedServer.Equals(_domainController, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                "Domain, GPO, or connected DC changed. Close this window, reconnect, and capture new evidence.");
+
+        // No cached snapshot or DFS/domain alias fallback: re-read the chosen
+        // GPO from DomainConnectionState's explicitly connected controller.
+        var refreshed = await Task.Run(() => new RealSettingsSourceService().Scan(_gpo));
+        var after = DomainConnectionState.Context;
+        if (after is null ||
+            !after.DomainName.Equals(_domain, StringComparison.OrdinalIgnoreCase) ||
+            !after.ConnectedServer.Equals(_domainController, StringComparison.OrdinalIgnoreCase) ||
+            refreshed.GpoId != _gpo.Id ||
+            !refreshed.Matches(_domain, _domainController))
+            throw new InvalidOperationException(
+                "Connected DC or GPO identity changed during the source read. Verification aborted.");
+        return refreshed;
+    }
+
+    private void RequireFreshRow(
+        GpoDiscoveryEvidenceService.Evidence item, RealSettingsScanResult refreshed)
+    {
+        var test = GpoDiscoverySourceFreshnessService.Check(
+            item, refreshed, _domain, _domainController);
+        if (!test.IsCurrent)
+            throw new InvalidOperationException(test.Status + ": " + test.Explanation);
+    }
+
+    private async Task ReviewSelectedAsync()
+    {
+        if (_recheckBusy ||
+            _grid.SelectedItem is not DisplayRow selected ||
+            !selected.Candidate.CanReview)
             return;
 
+        _recheckBusy = true;
+        _review.IsEnabled = false;
+        _freshness.Text = "Re-reading Registry.pol on pinned DC before manual unit review...";
         try
         {
-            var fingerprint = GpoDiscoveryUnitReviewService.CaptureDefinition(
-                selected.Candidate, _definitionsDirectory, _language);
+            var sourceBefore = await ReadPinnedSourceAgainAsync();
+            RequireFreshRow(selected.Evidence, sourceBefore);
+            var fingerprint = await Task.Run(() =>
+                GpoDiscoveryUnitReviewService.CaptureDefinition(
+                    selected.Candidate, _definitionsDirectory, _language));
+
             var dialog = new GpoDiscoveryUnitReviewDialog(selected.Candidate, fingerprint)
             {
                 Owner = this
             };
             if (dialog.ShowDialog() != true || dialog.ApprovedReference is null)
+            {
+                _freshness.Text = "Review cancelled; no new unit mapping was approved.";
                 return;
+            }
 
-            // Re-read the pinned ADMX/ADML files after the operator's review.
-            var fresh = GpoDiscoveryUnitReviewService.CaptureDefinition(
-                selected.Candidate, _definitionsDirectory, _language);
-            if (fresh != fingerprint)
-                throw new InvalidOperationException("ADMX/ADML changed while the review was open.");
+            // Both the Registry.pol file AND the exact ADMX/ADML files are
+            // read again after the operator confirms the unit semantics.
+            var sourceAfter = await ReadPinnedSourceAgainAsync();
+            RequireFreshRow(selected.Evidence, sourceAfter);
+            var freshDefinition = await Task.Run(() =>
+                GpoDiscoveryUnitReviewService.CaptureDefinition(
+                    selected.Candidate, _definitionsDirectory, _language));
+            if (fingerprint != freshDefinition)
+                throw new InvalidOperationException(
+                    "ADMX/ADML changed while the review dialog was open.");
 
             var rule = GpoDiscoveryUnitReviewService.Approve(
-                selected.Candidate, fresh, dialog.ApprovedReference);
+                selected.Candidate, freshDefinition, dialog.ApprovedReference);
+            _recheckedSource = sourceAfter;
             _approvals[selected.Evidence.IdentityHash] = rule;
+            _freshness.Text = "Pinned Registry.pol re-read successful at " +
+                sourceAfter.CapturedAt.UtcDateTime.ToString("O", CultureInfo.InvariantCulture) +
+                "; approved review expires when this window closes. This is not effective RSoP.";
             RefreshRows();
         }
         catch (Exception ex)
         {
+            _recheckedSource = null;
+            _freshness.Text = "Verification blocked: " + ex.Message;
+            RefreshRows();
             MessageBox.Show(this, ex.Message, "Unit review blocked",
                 MessageBoxButton.OK, MessageBoxImage.Warning);
         }
+        finally
+        {
+            _recheckBusy = false;
+            UpdateSelection();
+        }
     }
 
-    private void ExportReview()
+    private async Task ExportReviewAsync()
     {
-        // Revalidate all session approvals immediately before writing the TSV.
-        RefreshRows();
+        if (_recheckBusy)
+            return;
         if (MessageBox.Show(this,
-            "The TSV includes unredacted registry paths and Group Policy values. " +
-            "Keep it local and confidential. This does not attest effective client RSoP.\n\nExport?",
+            "The TSV contains unredacted registry paths and Group Policy values. " +
+            "Approved conversions will be rechecked from the same DC just before export. " +
+            "Handle it as confidential. This is not effective client RSoP.\n\nContinue?",
             "Sensitive GPO evidence", MessageBoxButton.YesNo,
             MessageBoxImage.Warning) != MessageBoxResult.Yes)
             return;
@@ -390,8 +490,31 @@ public sealed class GpoDiscoveryVerificationWindow : Window
         if (save.ShowDialog(this) != true)
             return;
 
+        _recheckBusy = true;
+        _review.IsEnabled = false;
+        _freshness.Text = "Rechecking approved Registry.pol source records before local export...";
         try
         {
+            if (_approvals.Count != 0)
+            {
+                var latest = await ReadPinnedSourceAgainAsync();
+                // One failed approval blocks the reviewed export; never
+                // silently emit a prior MATCH after a freshness failure.
+                foreach (var row in _sourceRows.Where(row =>
+                             _approvals.ContainsKey(row.IdentityHash)))
+                    RequireFreshRow(row, latest);
+                _recheckedSource = latest;
+                _freshness.Text = "Source rechecked on pinned DC at " +
+                    latest.CapturedAt.UtcDateTime.ToString("O", CultureInfo.InvariantCulture);
+            }
+            RefreshRows();
+            if (_approvals.Count != 0 &&
+                _rows.Any(row => _approvals.ContainsKey(row.Evidence.IdentityHash) &&
+                                 row.ReviewStatus != "VERIFIED_EXPLICIT"))
+                throw new InvalidOperationException(
+                    "A unit approval is stale or was not verified against current ADMX/ADML. " +
+                    "Clear approvals and review again before exporting.");
+
             File.WriteAllText(save.FileName,
                 GpoDiscoveryEvidenceService.ExportTsv(_rows.Select(row => row.Evidence)),
                 new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
@@ -400,10 +523,19 @@ public sealed class GpoDiscoveryVerificationWindow : Window
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, ex.Message, "Export failed",
-                MessageBoxButton.OK, MessageBoxImage.Error);
+            _recheckedSource = null;
+            _freshness.Text = "Reviewed export blocked: " + ex.Message;
+            RefreshRows();
+            MessageBox.Show(this, ex.Message, "Reviewed export blocked",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+        finally
+        {
+            _recheckBusy = false;
+            UpdateSelection();
         }
     }
+
 }
 
 /// <summary>One deliberate operator approval, never a policy write.</summary>

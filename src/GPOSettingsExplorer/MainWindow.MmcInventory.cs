@@ -167,7 +167,8 @@ public partial class MainWindow
             _admxPolicies);
         if (sourceAvailable)
             evidence = GpoDiscoveryEvidenceService.CorrelateRegistrySource(
-                evidence, _realSourceSnapshot!.Rows);
+                evidence, GpoDiscoverySourceFreshnessService
+                    .SelectCompleteRegistryRecords(_realSourceSnapshot!));
         evidence = GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(evidence);
 
         var coverage = $"{configured.Length:N0} GPMC index rows; " +
@@ -175,7 +176,8 @@ public partial class MainWindow
                 ? $"{_mmcInventoryRows.Count:N0} MMC rows ({(_mmcInventoryResult!.IsComplete ? "complete" : "PARTIAL")})"
                 : "MMC not captured for this GPO") + "; " +
             (sourceAvailable
-                ? $"{_realSourceSnapshot!.Rows.Count:N0} source records " +
+                ? $"{GpoDiscoverySourceFreshnessService.SelectCompleteRegistryRecords(_realSourceSnapshot!).Count:N0} complete Registry.pol records / " +
+                  $"{_realSourceSnapshot.Rows.Count:N0} total source rows " +
                   (_realSourceSnapshot.IsPartial ? "(PARTIAL)" : "(available files scanned)")
                 : "Registry.pol source not captured for this GPO/pinned DC") + "; " +
             (_admxPolicies is null ? "ADMX missing" : "ADMX catalog loaded");
@@ -220,7 +222,7 @@ public partial class MainWindow
         {
             var snapshot = CreateDiscoverySnapshot(gpo);
             var window = new GpoDiscoveryVerificationWindow(
-                gpo.DisplayName, snapshot.Domain, snapshot.DomainController,
+                gpo, snapshot.Domain, snapshot.DomainController,
                 snapshot.Rows, _admxPolicies,
                 _admxCatalogService.LastSourcePath,
                 _admxCatalogService.LastLanguage, snapshot.Coverage)
