@@ -17,6 +17,7 @@ public partial class MainWindow
     private MmcInventoryScanResult? _mmcInventoryResult;
     private Guid? _mmcInventoryScannedGpoId;
     private string _mmcInventoryScannedDomain = string.Empty;
+    private string _mmcInventoryScannedDc = string.Empty;
     private CancellationTokenSource? _mmcInventoryCancellation;
     private readonly GpoEditorNavigatorService _mmcInventoryNavigator = new();
 
@@ -44,6 +45,8 @@ public partial class MainWindow
         }
 
         MmcInventoryGpoCombo.SelectedItem = gpo;
+        var scanDomain = _domainContext.DomainName;
+        var scanDc = DomainConnectionState.GetServerFor(scanDomain);
         var consent = MessageBox.Show(this,
             $"Scan MMC's real tree and right-hand native lists for:\n\n{gpo.DisplayName}\n\n" +
             "This read-only scan may take several minutes. It launches a separate GPO editor " +
@@ -90,7 +93,8 @@ public partial class MainWindow
 
             _mmcInventoryResult = result;
             _mmcInventoryScannedGpoId = gpo.Id;
-            _mmcInventoryScannedDomain = _domainContext.DomainName;
+            _mmcInventoryScannedDomain = scanDomain;
+            _mmcInventoryScannedDc = scanDc;
             // Replace the entire immutable scan snapshot rather than raising
             // tens of thousands of individual ObservableCollection events.
             _mmcInventoryRows = result.Rows;
@@ -150,6 +154,8 @@ public partial class MainWindow
         var mmcAvailable = _mmcInventoryResult is not null &&
             _mmcInventoryScannedGpoId == gpo.Id &&
             _mmcInventoryScannedDomain.Equals(domain, StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrWhiteSpace(dc) &&
+            _mmcInventoryScannedDc.Equals(dc, StringComparison.OrdinalIgnoreCase) &&
             _mmcInventoryRows.All(row => row.GpoId == gpo.Id);
         var sourceAvailable = _realSourceSnapshot is not null &&
             _realSourceSnapshot.GpoId == gpo.Id &&
