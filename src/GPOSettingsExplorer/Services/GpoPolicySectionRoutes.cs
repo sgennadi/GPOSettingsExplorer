@@ -46,6 +46,12 @@ public static class GpoPolicySectionRoutes
             extension.Equals("Administrative Templates", StringComparison.OrdinalIgnoreCase))
             return new[] { scope, "Policies", "Administrative Templates" };
 
+        // Microsoft documents Software Restriction Policies under the
+        // corresponding User/Computer Windows Settings > Security Settings.
+        // This is a section route, not proof of a uniquely editable rule.
+        if (SoftwareRestrictionMmcRouteService.IsSoftwareRestriction(setting))
+            return SoftwareRestrictionMmcRouteService.EditorSection(setting);
+
         if (extension.Equals("SoftwareInstallationSettings", StringComparison.OrdinalIgnoreCase))
             return new[] { scope, "Policies", "Software Settings", "Software installation" };
 

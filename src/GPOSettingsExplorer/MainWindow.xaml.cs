@@ -67,6 +67,13 @@ public partial class MainWindow : Window
 
         await RefreshAllAsync();
 
+        // Optional and per-user: refresh only new/modified GPMC XML records
+        // in the existing cache. Never launch MMC inventory for all GPOs
+        // during startup: it can open unsafe snap-ins on a production DC.
+        if (_autoGpmcIndexOnStartup && _domainContext is not null &&
+            _gpmService.IsAvailable && _gpos.Count > 0)
+            _ = EnsureSettingsIndexAsync(forceRebuild: false);
+
         StartDiagnosticQueueMonitor();
 
         _ =

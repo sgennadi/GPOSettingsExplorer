@@ -295,6 +295,13 @@
                                     <Button x:Name="MmcInventoryCancelButton"
                                             Content="Cancel scan" IsEnabled="False"
                                             Click="CancelMmcInventory_Click"/>
+                                    <CheckBox x:Name="AutoGpmcIndexCheckBox"
+                                              Content="Refresh cached GPMC index on startup"
+                                              VerticalAlignment="Center"
+                                              Margin="12,0,4,0"
+                                              Checked="AutoGpmcIndexCheckBox_Changed"
+                                              Unchecked="AutoGpmcIndexCheckBox_Changed"
+                                              ToolTip="Optional: index only changed/new GPO XML metadata in background. Never auto-opens all MMC editors and never verifies effective RSoP."/>
                                 </WrapPanel>
                                 <WrapPanel>
                                     <TextBlock Text="Search:" VerticalAlignment="Center"/>

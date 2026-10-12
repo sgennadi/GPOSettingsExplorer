@@ -1,4 +1,5 @@
 using GPOSettingsExplorer.Models;
+using GPOSettingsExplorer.Services;
 
 namespace GPOSettingsExplorer.Models;
 
@@ -81,21 +82,29 @@ public static class MmcInventoryReconciliation
         var matching = configured.Where(s =>
             s.GpoId == row.GpoId &&
             s.Scope.Equals(row.Scope, StringComparison.OrdinalIgnoreCase) &&
-            s.SettingName.Equals(row.SettingName, StringComparison.CurrentCultureIgnoreCase) &&
-            SectionMatches(row.SectionPath, s.Category)).ToArray();
+            (SoftwareRestrictionMmcRouteService.MatchesExactPathRule(
+                 s, row.SectionPath, row.SettingName) ||
+             (s.SettingName.Equals(row.SettingName, StringComparison.CurrentCultureIgnoreCase) &&
+              SectionMatches(row.SectionPath, s.Category)))).ToArray();
 
         var gpmcStatus = matching.Length switch
         {
             0 => "Not found in indexed GPMC XML (not proof of Not Configured)",
+            1 when SoftwareRestrictionMmcRouteService.IsPathRule(matching[0]) =>
+                "GPMC SRP Path Rule candidate: exact path in native MMC. " +
+                "Security level, stored source and effective RSoP NOT VERIFIED.",
             1 => $"Indexed: {matching[0].State}" +
                  (string.IsNullOrWhiteSpace(matching[0].Value)
                     ? "" : " = " + matching[0].Value),
             _ => $"Ambiguous: {matching.Length} indexed rows"
         };
 
-        var catalog = admx is null
-            ? "ADMX catalog not loaded"
-            : MatchAdmx(row, admx);
+        var catalog = SoftwareRestrictionMmcRouteService.IsExactAdditionalRulesSection(
+                row.Scope, row.SectionPath)
+            ? "Not an ADMX policy (Software Restriction Policies security CSE)"
+            : admx is null
+                ? "ADMX catalog not loaded"
+                : MatchAdmx(row, admx);
 
         return row with { GpmcMatch = gpmcStatus, AdmxMatch = catalog };
     }

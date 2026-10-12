@@ -1,4 +1,4 @@
-# GPMC source-to-MMC route verification (v2.0.3)
+# GPMC source-to-MMC route verification (v2.1 preview)
 
 ## Why this matters
 
@@ -14,6 +14,13 @@ The 2026-10-09 route audit of the user's domain indexed 185 GPOs and 12 distinct
 - Generic GPMC `Key`, `Name`, or `ValueName` fields are *not* proof of a registry backing. GPMC Security Options `KeyName` is source metadata, not an independently verified Registry.pol location.
 - No route for a source extension is **UNMAPPED** (not Missing / Not Configured). The operator can open the selected full GPO editor and navigate manually; no different policy is selected.
 - Verified MMC **section** does not imply verified exact policy row, effective RSoP, permission to edit, or AD/SYSVOL replication consistency.
+
+## Kerberos, Software Restriction and startup scan status (2.1 preview)
+
+- **Known Kerberos Policy:** Five explicitly typed GPMC Account settings can request an exact native MMC row through their documented display names. Example: `Account: MaxClockSkew` must map to `Maximum tolerance for computer clock synchronization`. The current editor list must expose **exactly one** such row. A section-only route is not verified row navigation; activating Properties is not a saved change or effective RSoP.
+- **SoftwareRestrictionSettings / Path Rule:** On both Computer and User scopes the route is **Windows Settings > Security Settings > Software Restriction Policies > Additional Rules**. A Path Rule can request an exact row only when its GPMC report includes one well-formed literal `Path=...` field and the native list contains one identical path. A generic Path Rule label is not a unique identity. Unknown SRP metadata may navigate only to the documented parent.
+- **MMC Not Verified:** means native MMC row/value corroboration has **not** been completed. It does not mean Not Configured. A successful GPMC XML index or ADMX catalog scan cannot turn every Windows policy into verified native MMC evidence.
+- **Refresh cached GPMC index on startup:** optional per-user checkbox in **MMC Full Settings Inventory**. Uses the existing on-disk index and refreshes only changed/new GPO XML in the background. Off by default for production DC safety. No automated MMC windows, no GPO edits, no client RSoP claims. For a selected GPO, run **Scan MMC (read-only)** and use **Discovery & Verification** to inspect which exact rows/source files are eligible for a stronger status.
 
 ## How to validate on a test DC
 

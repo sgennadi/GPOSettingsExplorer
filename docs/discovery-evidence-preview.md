@@ -1,6 +1,6 @@
 # Discovery evidence (2.1 development)
 
-This feature is read-only and does not change Group Policy or SYSVOL.
+This feature is read-only and does not change Group Policy or SYSVOL. Optional startup **GPMC indexing** uses a per-user preference and the incremental cache; it does not start the native MMC editor for all GPOs. MMC observations, source values and RSoP have distinct statuses; no bulk scanner can truthfully set every Windows policy to VERIFIED without type-specific evidence.
 
 ## Using the current preview
 

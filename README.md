@@ -16,7 +16,7 @@ Download the latest portable build from:
 
 Current stable release: **v2.0.3**.
 
-**Test preview 2.1.0:** [GPO Settings Explorer v2.1.0 Preview 1](https://github.com/sgennadi/GPOSettingsExplorer/releases/tag/v2.1.0-preview.1) contains the new Discovery & Verification interface. Download `GPOSettingsExplorer-win-x64-portable.zip` (Intel/AMD) or `GPOSettingsExplorer-win-arm64-portable.zip` (ARM64). Its EXE is version **2.1.0.0** and its product version is **2.1.0-preview.1**. This prerelease requires testing on a nonproduction DC and does not replace the stable 2.0.3 release. The main executable title explicitly shows **v2.1.0 Preview**.
+**Test preview 2.1.0:** [GPO Settings Explorer v2.1.0 Preview 2](https://github.com/sgennadi/GPOSettingsExplorer/releases/tag/v2.1.0-preview.2) contains the new Discovery & Verification interface. Download `GPOSettingsExplorer-win-x64-portable.zip` (Intel/AMD) or `GPOSettingsExplorer-win-arm64-portable.zip` (ARM64). Its EXE is version **2.1.0.0** and its product version is **2.1.0-preview.2**. This prerelease includes exact native row matching for known Kerberos policies and unique Software Restriction Path Rules, plus an optional per-user cached GPMC index refresh at startup. It still requires testing on a nonproduction DC and does not replace the stable 2.0.3 release. The main executable title explicitly shows **v2.1.0 Preview**.
 
 Available packages:
 

@@ -43,20 +43,23 @@ public sealed class GpoEditorNavigatorService
     private const uint MemRelease = 0x8000;
     private const uint PageReadWrite = 0x04;
 
-    public bool CanNavigateExactly(
-        PolicySettingInfo setting)
+    public bool CanNavigateExactly(PolicySettingInfo setting)
     {
-        // Only Security Options rows have a stable, matching name in MMC.
-        // Generic entries such as "Audit Setting" must never be opened as
-        // an unrelated Security Option because their extension name matches.
-        return setting.Extension.Equals("SecuritySettings", StringComparison.OrdinalIgnoreCase) &&
-               setting.Scope.Equals("Computer", StringComparison.OrdinalIgnoreCase) &&
-               setting.Category.Equals(
-                   "Security Settings > Local Policies > Security Options",
-                   StringComparison.OrdinalIgnoreCase) &&
-               HasVerifiedSection(setting) &&
-               !string.IsNullOrWhiteSpace(setting.SettingName) &&
-               !setting.SettingName.Equals("Security option", StringComparison.OrdinalIgnoreCase);
+        // Exact navigation is supported only by independently recognizable
+        // MMC families. Generic GPMC extension names are not edit targets.
+        var securityOptions =
+            setting.Extension.Equals("SecuritySettings", StringComparison.OrdinalIgnoreCase) &&
+            setting.Scope.Equals("Computer", StringComparison.OrdinalIgnoreCase) &&
+            setting.Category.Equals(
+                "Security Settings > Local Policies > Security Options",
+                StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrWhiteSpace(setting.SettingName) &&
+            !setting.SettingName.Equals("Security option", StringComparison.OrdinalIgnoreCase);
+        var kerberos = KerberosPolicyMetadataService.IsKnownKerberosSetting(setting);
+        var pathRule = SoftwareRestrictionMmcRouteService.TryGetPathRuleTarget(
+            setting, out _);
+        return HasVerifiedSection(setting) &&
+               (securityOptions || kerberos || pathRule);
     }
 
     // A GPMC extension name alone does not establish a valid MMC section.
@@ -389,6 +392,20 @@ public sealed class GpoEditorNavigatorService
 
         Thread.Sleep(450);
 
+        // Typed Kerberos settings and SRP Path Rules need an actual unique
+        // native MMC row, not just a matching GPMC category. SRP rules
+        // share the generic label "Path Rule" and must match their path.
+        var pathRule = SoftwareRestrictionMmcRouteService.IsPathRule(setting);
+        var strictFamily = KerberosPolicyMetadataService.IsKnownKerberosSetting(setting) ||
+            pathRule;
+        if (strictFamily &&
+            !TryConfirmUniqueNativeRow(process, NativeRowName(setting), pathRule,
+                cancellationToken, out var rowEvidence))
+        {
+            progress?.Report("Exact MMC row not verified: " + rowEvidence);
+            return false;
+        }
+
         progress?.Report("Trying an exact name match in the native MMC list view...");
 
         var candidates = BuildRowCandidates(setting);
@@ -399,8 +416,21 @@ public sealed class GpoEditorNavigatorService
                 cancellationToken,
                 out var nativeDiagnostics))
         {
-            progress?.Report("Exact setting opened through the native MMC list view.");
+            progress?.Report("Exact native MMC row selected; properties requested. Confirm its dialog in MMC.");
             return true;
+        }
+
+        // Do not downgrade a typed Kerberos policy or a literal SRP Path
+        // Rule to UI Automation's label-normalizing/fuzzy matching. Native
+        // selection failure must remain an explicit navigation failure.
+        if (strictFamily)
+        {
+            progress?.Report("Exact native MMC row was observed but property activation " +
+                "could not be confirmed. Inspect the editor manually; no substitute row opened.");
+            CrashLogService.Write(
+                $"MMC strict navigation incomplete: {setting.SettingName}",
+                nativeDiagnostics);
+            return false;
         }
 
         progress?.Report(
@@ -458,7 +488,7 @@ public sealed class GpoEditorNavigatorService
         }
 
         progress?.Report(
-            "Exact setting opened.");
+            "Exact setting selected; native properties requested. Confirm its dialog in MMC.");
 
         return true;
     }
@@ -753,6 +783,16 @@ public sealed class GpoEditorNavigatorService
     private static IReadOnlyList<string> BuildRowCandidates(
         PolicySettingInfo setting)
     {
+        // An SRP "Path Rule" label is repeated for different targets.
+        if (SoftwareRestrictionMmcRouteService.IsPathRule(setting))
+            return SoftwareRestrictionMmcRouteService.TryGetPathRuleTarget(
+                setting, out var exactPath)
+                ? new[] { exactPath } : Array.Empty<string>();
+
+        if (KerberosPolicyMetadataService.IsKnownKerberosSetting(setting) &&
+            KerberosPolicyMetadataService.TryGet(setting.SettingName, out var kerberos))
+            return new[] { kerberos.DisplayName };
+
         var result =
             new List<string>();
 
@@ -1377,6 +1417,67 @@ public sealed class GpoEditorNavigatorService
                 StringSplitOptions.RemoveEmptyEntries));
     }
 
+    private static string NativeRowName(PolicySettingInfo setting)
+    {
+        if (SoftwareRestrictionMmcRouteService.TryGetPathRuleTarget(
+                setting, out var path))
+            return path;
+        // The GPMC XML can carry "Account: MaxClockSkew" while MMC's
+        // first column displays the localized security policy name.
+        // Only known, typed Kerberos Account identities may use this mapping.
+        if (KerberosPolicyMetadataService.IsKnownKerberosSetting(setting) &&
+            KerberosPolicyMetadataService.TryGet(setting.SettingName, out var descriptor))
+            return descriptor.DisplayName;
+        return setting.SettingName;
+    }
+
+    /// <summary>
+    /// Inspect a newly opened MMC native list before selecting a known
+    /// Kerberos or software-restriction entry. The first native search hit
+    /// does not establish unique identity if duplicate names/paths exist.
+    /// </summary>
+    private static bool TryConfirmUniqueNativeRow(
+        Process process, string expectedName, bool literalPath, CancellationToken token,
+        out string diagnostics)
+    {
+        diagnostics = "No unique native policy row observed.";
+        if (string.IsNullOrWhiteSpace(expectedName))
+            return false;
+
+        var deadline = DateTime.UtcNow.AddSeconds(9);
+        while (DateTime.UtcNow < deadline)
+        {
+            token.ThrowIfCancellationRequested();
+            MmcInventoryDialogGuard.ThrowIfDialogOpen(process);
+            var snapshot = ReadInventoryList(process, 12000, token);
+            if (snapshot.HasList && !snapshot.Complete)
+            {
+                diagnostics = "MMC list is incomplete: " + snapshot.Error;
+                return false;
+            }
+            if (snapshot.HasList && snapshot.Rows.Count > 0)
+            {
+                var matches = snapshot.Rows.Count(row =>
+                    literalPath
+                        ? SoftwareRestrictionMmcRouteService.ExactPath(row.Name, expectedName)
+                        : MmcPolicyNameMatcher.Exact(row.Name, expectedName));
+                if (matches > 1)
+                {
+                    diagnostics = "Multiple native list rows share the same policy name/path.";
+                    return false;
+                }
+                if (matches == 1)
+                {
+                    diagnostics = "Exactly one native MMC row matched.";
+                    return true;
+                }
+            }
+            Thread.Sleep(220);
+        }
+        diagnostics = "The exact name/path was not found in the selected native MMC list.";
+        return false;
+    }
+
     private static bool TryOpenNativeListViewSetting(
         Process process,
         PolicySettingInfo setting,
@@ -1386,7 +1487,7 @@ public sealed class GpoEditorNavigatorService
     {
         var builder = new StringBuilder();
         builder.AppendLine("Native MMC list-view probe:");
-        builder.AppendLine($"  Policy: {setting.SettingName}");
+        builder.AppendLine($"  Policy: {NativeRowName(setting)}");
         builder.AppendLine($"  Process ID: {process.Id}");
         builder.AppendLine($"  Process architecture: {(Environment.Is64BitProcess ? "64-bit" : "32-bit")} explorer");
 
@@ -1443,7 +1544,7 @@ public sealed class GpoEditorNavigatorService
                     // item name, not the text clipped with an ellipsis in MMC.
                     // It avoids matching similarly named NTLM policies.
                     var index = FindNativeListViewExactIndex(
-                        processHandle, listView, setting.SettingName);
+                        processHandle, listView, NativeRowName(setting));
 
                     if (index < 0 || index >= count)
                         continue;
@@ -1577,7 +1678,20 @@ public sealed class GpoEditorNavigatorService
         var names = rows
             .Select(row => row.Text.Split(" | ", StringSplitOptions.None)[0])
             .ToArray();
-        var index = MmcPolicyNameMatcher.FindUniqueMatch(names, setting.SettingName);
+        int index;
+        if (SoftwareRestrictionMmcRouteService.IsPathRule(setting))
+        {
+            var expected = NativeRowName(setting);
+            var literalMatches = names
+                .Select((name, position) => (name, position))
+                .Where(item => SoftwareRestrictionMmcRouteService.ExactPath(
+                    item.name, expected)).ToArray();
+            index = literalMatches.Length == 1 ? literalMatches[0].position : -1;
+        }
+        else
+        {
+            index = MmcPolicyNameMatcher.FindUniqueMatch(names, NativeRowName(setting));
+        }
         return index >= 0 ? rows[index] : null;
     }
 

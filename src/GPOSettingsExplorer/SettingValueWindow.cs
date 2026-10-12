@@ -73,7 +73,8 @@ public sealed class SettingValueWindow : Window
             {
                 Text =
                     exactNavigationAvailable
-                        ? $"Exact MMC target: {verifiedSectionPath}"
+                        ? $"Known MMC section: {verifiedSectionPath}. " +
+                          "A unique native row must be observed when opening Properties."
                         : !hasVerifiedSection
                             ? "No verified MMC section is mapped for this GPMC source. " +
                               "The full GPO editor can be opened for manual inspection."
@@ -152,7 +153,8 @@ public sealed class SettingValueWindow : Window
                 {
                     navigationStatus.Foreground = UiStyle.SuccessBrush;
                     navigationStatus.Text =
-                        "Verified exact policy opened in MMC. This value window remains available.";
+                        "A unique MMC policy row was selected and its Properties were requested. " +
+                        "Check whether the native MMC dialog appeared; no GPO change was made.";
                     return;
                 }
 
@@ -176,7 +178,11 @@ public sealed class SettingValueWindow : Window
                         "RegistrySettings",
                         StringComparison.OrdinalIgnoreCase)
                         ? "A raw registry.pol entry cannot be opened as a Group Policy Preferences item. The corresponding ADMX definition may be missing. The value remains visible in this window."
-                        : "The GPO editor opened the correct Security Options category, but the requested policy name could not be verified in MMC. No unrelated policy was opened. If the list cannot be inspected, try launching this program and MMC at the same elevation. The diagnostic log is stored in %LOCALAPPDATA%\\GPOSettingsExplorer\\Logs.",
+                        : "The expected MMC section was opened, but a unique exact native row could not be confirmed or activated. " +
+                          "For Kerberos, the typed GPMC Account name must match the native policy label; " +
+                          "for an SRP Path Rule, the exact Path value must match exactly one Additional Rules row. " +
+                          "No substitute row was selected. Check permissions, snap-in availability and the navigation log in " +
+                          "%LOCALAPPDATA%\\GPOSettingsExplorer\\Logs.",
                     "GPO Editor Navigation",
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);

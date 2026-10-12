@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Preview 2: navigate five explicitly recognized Kerberos Account settings by their **native MMC display names** (e.g., GPMC Account: MaxClockSkew maps to Maximum tolerance for computer clock synchronization). Only a uniquely observed current MMC row can be selected; unknown/duplicate rows remain unverified.
+- Map GPMC SoftwareRestrictionSettings to the documented Computer/User Software Restriction Policies section. Path Rule metadata routes to Additional Rules; only the exact unexpanded, uniquely observed Path target can be selected. No guessing by repeated "Path Rule" titles, substring, environment expansion or lossy character normalization. The GPMC/MMC path match does **not** verify security level or effective RSoP.
+- Add an opt-in per-user **Refresh cached GPMC index on startup** setting. It refreshes only new/changed GPMC XML metadata using the existing incremental cache. It NEVER auto-runs full native MMC scans of every GPO on a domain controller; exact row, stored-value and client RSoP verification remain separate manual/reviewed operations.
+- Publish v2.1.0-preview.2 portable x64/ARM64 with verified EXE product version and regression coverage; retain stable 2.0.3 unchanged.
+
 - Fix 2.1 preview version metadata: FileVersion/AssemblyVersion 2.1.0.0 and product version 2.1.0-preview.1; the running app title identifies itself as v2.1.0 Preview. Produce a separate GitHub prerelease with x64/ARM64 ZIPs after build, tests and explicit EXE version checks; do not mislabel preview commits as stable releases.
 
 - **2.1 development preview (read-only):** introduce evidence-first discovery identities and strict native MMC-to-Registry.pol comparison without treating a route, displayed value or matching raw number as effective RSoP.

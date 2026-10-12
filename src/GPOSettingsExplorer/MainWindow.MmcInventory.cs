@@ -20,12 +20,45 @@ public partial class MainWindow
     private string _mmcInventoryScannedDc = string.Empty;
     private CancellationTokenSource? _mmcInventoryCancellation;
     private readonly GpoEditorNavigatorService _mmcInventoryNavigator = new();
+    private bool _autoGpmcIndexOnStartup;
 
     private void InitializeMmcInventoryUi()
     {
+        _autoGpmcIndexOnStartup = GpoStartupIndexPreferences.Load();
+        AutoGpmcIndexCheckBox.IsChecked = _autoGpmcIndexOnStartup;
         _mmcInventoryView = CollectionViewSource.GetDefaultView(_mmcInventoryRows);
         _mmcInventoryView.Filter = IsMmcInventoryMatch;
         MmcInventoryGrid.ItemsSource = _mmcInventoryView;
+    }
+
+    private async void AutoGpmcIndexCheckBox_Changed(object sender, RoutedEventArgs e)
+    {
+        if (!IsLoaded || AutoGpmcIndexCheckBox is null)
+            return;
+
+        var requested = AutoGpmcIndexCheckBox.IsChecked == true;
+        if (requested == _autoGpmcIndexOnStartup)
+            return;
+
+        try
+        {
+            GpoStartupIndexPreferences.Save(requested);
+            _autoGpmcIndexOnStartup = requested;
+            StatusText.Text = requested
+                ? "Cached GPMC XML indexing enabled for startup. This will NOT auto-open MMC or prove RSoP."
+                : "Automatic GPMC settings indexing disabled. Manual indexing remains available.";
+
+            if (requested && _domainContext is not null &&
+                _gpmService.IsAvailable && _gpos.Count > 0)
+                await EnsureSettingsIndexAsync(forceRebuild: false);
+        }
+        catch (Exception ex)
+        {
+            AutoGpmcIndexCheckBox.IsChecked = _autoGpmcIndexOnStartup;
+            MessageBox.Show(this, ex.Message,
+                "Could not save background GPMC indexing preference",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
     }
 
     private async void ScanMmcInventory_Click(object sender, RoutedEventArgs e)

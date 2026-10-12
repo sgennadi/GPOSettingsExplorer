@@ -76,6 +76,8 @@ var tests = new (string Name, Action Body)[]
     ("GPMC restore never disguises a failed or missing status as success", TestGpmRestoreStatus),
     ("Semantic XML diff ignores report timestamps and finds setting changes", TestSemanticXmlDiff),
     ("Kerberos GPMC names resolve to correct Security section, not Registry", TestKerberosGpmcRouting),
+    ("SRP Path Rule routes to uniquely identified native Additional Rules entry", TestSoftwareRestrictionNavigation),
+    ("Background GPMC indexing opt-in is persisted and fails closed", TestGpoStartupIndexPreferences),
     ("GPO settings report provides bounded native GPMC hierarchy", TestGpoSettingsReportTree),
     ("Remote AI endpoints and prompts strictly exclude AD/GPO identities", TestRemoteAiBoundary),
     ("Discovery evidence is read-only, fail-closed and spreadsheet-safe", TestDiscoveryEvidence),
@@ -1399,7 +1401,7 @@ static void TestUnmappedGpmcFailClosed()
         "PowerOptionsSettings", "WindowsFirewallSettings",
         "FoldersSettings", "FolderRedirectionSettings",
         "LugsSettings", "Policy", "ThirdPartyUnknown",
-        "SoftwareRestrictionSettings", "ServiceSettings"
+        "ServiceSettings"
     };
     foreach (var extension in unknown)
     {
@@ -1628,6 +1630,134 @@ static void TestMmcNavigationRouting()
            target.Contains("Administrative Templates", StringComparison.Ordinal) &&
            !target.Contains("Preferences", StringComparison.Ordinal),
         "registry.pol was incorrectly routed to GPP Preferences.");
+}
+
+static void TestSoftwareRestrictionNavigation()
+{
+    var navigator = new GpoEditorNavigatorService();
+    var rule = new PolicySettingInfo
+    {
+        GpoId = Guid.NewGuid(), Scope = "User",
+        Extension = "SoftwareRestrictionSettings",
+        Category = "SoftwareRestrictionSettings",
+        SettingName = "Path Rule",
+        State = "Configured",
+        Value = "SecurityLevel=Disallowed; ModificationTime=2021-10-27T16:47:31Z; " +
+                @"Path=%systemdrive%\Windows\system32\dsdbutil.exe"
+    };
+    const string section = "User Configuration > Policies > Windows Settings > " +
+        "Security Settings > Software Restriction Policies > Additional Rules";
+    Assert(GpoEditorNavigatorService.NavigationTarget(rule) == section &&
+           navigator.CanNavigateExactly(rule) &&
+           SoftwareRestrictionMmcRouteService.TryGetPathRuleTarget(rule, out var path) &&
+           path == @"%systemdrive%\Windows\system32\dsdbutil.exe",
+        "User SRP Path Rule must route to Additional Rules and identify its exact path.");
+    Assert(SoftwareRestrictionMmcRouteService.MatchesExactPathRule(
+        rule, section, @"%SYSTEMDRIVE%\Windows\system32\dsdbutil.exe"),
+        "Native row must agree on the literal path in the complete MMC section.");
+    Assert(!SoftwareRestrictionMmcRouteService.MatchesExactPathRule(
+        rule, section, @"%systemdrive%\Windows\system32\wrong.exe") &&
+           !SoftwareRestrictionMmcRouteService.MatchesExactPathRule(
+        rule, section.Replace("User Configuration", "Computer Configuration"),
+        @"%systemdrive%\Windows\system32\dsdbutil.exe"),
+        "A different path or policy scope must remain unverified.");
+
+    var row = new MmcInventoryEntry
+    {
+        GpoId = rule.GpoId, Scope = "User", SettingName = path,
+        SectionPath = section, TreeSegments = section.Split(" > "),
+        Navigation = "Exact MMC row candidate"
+    };
+    var linked = MmcInventoryReconciliation.Reconcile(row, new[] { rule }, null);
+    Assert(linked.GpmcMatch.Contains("SRP Path Rule candidate") &&
+           linked.GpmcMatch.Contains("NOT VERIFIED") &&
+           linked.AdmxMatch.Contains("Not an ADMX policy"),
+        "Native SRP path linkage is not a security-level or effective-RSoP verification.");
+
+    var parent = new PolicySettingInfo
+    {
+        Extension = "SoftwareRestrictionSettings", Scope = "Computer",
+        Category = "SoftwareRestrictionSettings", SettingName = "Unknown setting"
+    };
+    Assert(GpoEditorNavigatorService.NavigationTarget(parent) ==
+           "Computer Configuration > Policies > Windows Settings > " +
+           "Security Settings > Software Restriction Policies" &&
+           !navigator.CanNavigateExactly(parent),
+        "Unknown SRP content may only open the documented parent MMC section.");
+
+    var duplicate = new PolicySettingInfo
+    {
+        GpoId = rule.GpoId, Scope = rule.Scope, Extension = rule.Extension,
+        Category = rule.Category, SettingName = rule.SettingName,
+        Value = rule.Value
+    };
+    var ambiguous = MmcInventoryReconciliation.Reconcile(row, new[] { rule, duplicate }, null);
+    Assert(ambiguous.GpmcMatch.Contains("Ambiguous"),
+        "Identical Path Rules must never be marked uniquely verified.");
+
+    foreach (var value in new[]
+    {
+        "Path=one.exe; Path=two.exe",
+        "Path=one.exe; SecurityLevel=Disallowed",
+        "SecurityLevel=Disallowed",
+        "SecurityLevel=Disallowed; Path=",
+        "Path=some;file.exe",
+        "Path=\"quoted.exe\"",
+        "Path=hello\nworld.exe"
+    })
+    {
+        var malformed = new PolicySettingInfo
+        {
+            Extension = rule.Extension, Scope = rule.Scope,
+            SettingName = rule.SettingName, Value = value
+        };
+        Assert(!SoftwareRestrictionMmcRouteService.TryGetPathRuleTarget(malformed, out _) &&
+               !navigator.CanNavigateExactly(malformed),
+            "Ambiguous/untrusted SRP Path= metadata must not produce an exact target.");
+        Assert(GpoEditorNavigatorService.NavigationTarget(malformed) == section,
+            "Malformed SRP PathRule may still open its documented folder manually.");
+    }
+
+    const string pathWithAmpersand = @"C:\Test\A&B.exe";
+    Assert(!SoftwareRestrictionMmcRouteService.ExactPath(
+            @"C:\Test\AB.exe", pathWithAmpersand) &&
+           SoftwareRestrictionMmcRouteService.ExactPath(
+            @"c:\test\a&b.exe", pathWithAmpersand),
+        "Native SRP matching must preserve literal ampersands.");
+    var special = new PolicySettingInfo
+    {
+        Extension = rule.Extension, Scope = "Computer",
+        SettingName = "Path Rule",
+        Value = "SecurityLevel=Disallowed; Path=" + pathWithAmpersand
+    };
+    Assert(SoftwareRestrictionMmcRouteService.TryGetPathRuleTarget(special, out var target) &&
+           target == pathWithAmpersand && navigator.CanNavigateExactly(special),
+        "Literal Path Rule identity must survive native row selection.");
+}
+
+static void TestGpoStartupIndexPreferences()
+{
+    var dir = Path.Combine(Path.GetTempPath(),
+        "GPOSE-startup-index-" + Guid.NewGuid().ToString("N"));
+    try
+    {
+        Directory.CreateDirectory(dir);
+        Assert(!GpoStartupIndexPreferences.Load(dir),
+            "Bulk GPMC indexing must never run automatically before opt-in.");
+        GpoStartupIndexPreferences.Save(true, dir);
+        Assert(GpoStartupIndexPreferences.Load(dir),
+            "A user opt-in to background cached GPMC indexing must persist.");
+        GpoStartupIndexPreferences.Save(false, dir);
+        Assert(!GpoStartupIndexPreferences.Load(dir),
+            "Disabling the background index must persist.");
+        File.WriteAllText(Path.Combine(dir, "gpmc-index-startup.json"), "{corrupt");
+        Assert(!GpoStartupIndexPreferences.Load(dir),
+            "Corrupt preferences must fail closed without starting a domain scan.");
+    }
+    finally
+    {
+        Directory.Delete(dir, recursive: true);
+    }
 }
 
 static void TestBatchSyntaxDiagnostics()
@@ -3768,8 +3898,8 @@ static void TestKerberosGpmcRouting()
         "Security Settings > Account Policies > Kerberos Policy";
     Assert(KerberosPolicyMetadataService.IsKnownKerberosSetting(setting) &&
            GpoEditorNavigatorService.NavigationTarget(setting) == expected &&
-           !new GpoEditorNavigatorService().CanNavigateExactly(setting),
-        "Kerberos must open the correct MMC section without guessing a fake registry value or exact item.");
+           new GpoEditorNavigatorService().CanNavigateExactly(setting),
+        "Typed known Kerberos account records permit an exact native-row probe without guessing values.");
     Assert(SecurityXmlEntryClassifier.InferCategory(node) ==
            KerberosPolicyMetadataService.Category,
         "GPMC Account SecuritySettings XML must be classified as Kerberos Policy.");
