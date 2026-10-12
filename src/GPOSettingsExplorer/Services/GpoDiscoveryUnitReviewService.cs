@@ -85,6 +85,11 @@ public static class GpoDiscoveryUnitReviewService
                 matchingPolicies.Length.ToString(CultureInfo.InvariantCulture) + ".");
 
         var policyMatch = matchingPolicies[0];
+        // MMC displays a policy-level row; with multiple template fields the
+        // observed "N hours" string cannot be attributed to one field safely.
+        if (policyMatch.Elements.Count != 1)
+            return Deny("AMBIGUOUS_ELEMENT",
+                "Policies with multiple ADMX elements cannot be assigned one MMC display unit.");
         var matchedElements = policyMatch.Elements.Where(element =>
             element.Type == AdmxElementType.Decimal &&
             !string.IsNullOrWhiteSpace(element.Id) &&
@@ -152,11 +157,11 @@ public static class GpoDiscoveryUnitReviewService
         var elements = currentPolicy.Elements()
             .Where(x => x.Name.LocalName == "elements")
             .SelectMany(x => x.Elements())
-            .Where(x => x.Name.LocalName == "decimal" &&
-                (string?)x.Attribute("id") == element.Id)
             .ToArray();
 
         if (elements.Length != 1 ||
+            elements[0].Name.LocalName != "decimal" ||
+            (string?)elements[0].Attribute("id") != element.Id ||
             !((string?)elements[0].Attribute("valueName") ?? "")
                 .Equals(element.ValueName, StringComparison.OrdinalIgnoreCase) ||
             !((string?)elements[0].Attribute("key") ?? parentKey)

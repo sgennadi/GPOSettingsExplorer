@@ -4198,6 +4198,9 @@ static void TestDiscoveryUnitReview()
     var raw = GpoDiscoveryEvidenceService.Build(new[] { setting });
     Assert(raw.Count == 1 && raw[0].NavigationStatus == "SECTION_CANDIDATE",
         "A GPMC Administrative Templates route by itself must remain a section candidate.");
+    var duplicates = GpoDiscoveryEvidenceService.Build(new[] { setting, setting });
+    Assert(duplicates.Count == 2 && duplicates.All(e => e.NavigationStatus == "AMBIGUOUS"),
+        "Duplicate GPMC source identities must never independently verify the same MMC row.");
     var section = "Computer Configuration > Policies > Administrative Templates > Example Policies";
     var observed = new MmcInventoryEntry
     {
@@ -4223,6 +4226,21 @@ static void TestDiscoveryUnitReview()
         new[] { observed }, new[] { policy, policy })[0]
         .NavigationStatus == "SECTION_CANDIDATE",
         "Ambiguous same-name ADMX policies must never be selected by first match.");
+    var multipleElements = new AdmxPolicyDefinition
+    {
+        AdmxFile = policy.AdmxFile, Name = policy.Name, DisplayName = policy.DisplayName,
+        Scope = policy.Scope, Category = policy.Category,
+        Elements = new[] { policy.Elements[0],
+            new AdmxElementDefinition
+            {
+                Id = "Other", Type = AdmxElementType.Decimal,
+                Key = registryKey, ValueName = "Other"
+            } }
+    };
+    Assert(GpoDiscoveryEvidenceService.CorrelateMmc(raw,
+        new[] { observed }, new[] { multipleElements })[0]
+        .NavigationStatus == "SECTION_CANDIDATE",
+        "A policy with multiple decimal elements must not equate a policy-level MMC display with one field.");
     Assert(GpoDiscoveryEvidenceService.CorrelateMmc(raw,
         new[] { observed with { GpoId = Guid.NewGuid() } }, new[] { policy })[0]
         .NavigationStatus == "SECTION_CANDIDATE",

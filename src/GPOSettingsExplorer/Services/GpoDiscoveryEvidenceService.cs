@@ -34,7 +34,7 @@ public static partial class GpoDiscoveryEvidenceService
         IEnumerable<PolicySettingInfo> settings)
     {
         ArgumentNullException.ThrowIfNull(settings);
-        return settings.Select(setting =>
+        var candidates = settings.Select(setting =>
         {
             var route = GpoPolicySectionRoutes.Resolve(setting);
             var registry = GpoSettingSourceProvenance.RegistryTarget(setting);
@@ -53,6 +53,21 @@ public static partial class GpoDiscoveryEvidenceService
                 string.IsNullOrWhiteSpace(registry) ? "NON_REGISTRY_OR_UNVERIFIED" : "REGISTRY_METADATA",
                 registry, string.Join(" > ", route), status, hash, notes);
         }).ToArray();
+
+        // Two indexed GPMC records with an identical identity are not two
+        // independent proofs. Never give each the same MMC/source match.
+        var duplicated = candidates
+            .GroupBy(row => row.IdentityHash, StringComparer.Ordinal)
+            .Where(group => group.Count() > 1)
+            .Select(group => group.Key)
+            .ToHashSet(StringComparer.Ordinal);
+        return candidates.Select(row => duplicated.Contains(row.IdentityHash)
+            ? row with
+            {
+                NavigationStatus = "AMBIGUOUS",
+                Notes = row.Notes + " Duplicate GPMC setting identity; exact row/value verification blocked."
+            }
+            : row).ToArray();
     }
 
     /// <summary>
@@ -131,12 +146,15 @@ public static partial class GpoDiscoveryEvidenceService
              policy.Scope.Equals("Both", StringComparison.OrdinalIgnoreCase)) &&
             policy.DisplayName.Equals(item.SettingName, StringComparison.Ordinal) &&
             MmcInventoryReconciliation.SectionMatches(row.SectionPath, policy.Category) &&
-            policy.Elements.Count(element =>
-                element.Type == AdmxElementType.Decimal &&
-                !string.IsNullOrWhiteSpace(element.ValueName) &&
-                string.Equals(
-                    element.Key + " / " + element.ValueName,
-                    item.RegistryTarget, StringComparison.OrdinalIgnoreCase)) == 1).ToArray();
+            // A native MMC row displays a policy-level value, not the
+            // individual field name. Multiple ADMX elements make the
+            // field-to-display-unit association ambiguous.
+            policy.Elements.Count == 1 &&
+            policy.Elements[0].Type == AdmxElementType.Decimal &&
+            !string.IsNullOrWhiteSpace(policy.Elements[0].ValueName) &&
+            string.Equals(
+                policy.Elements[0].Key + " / " + policy.Elements[0].ValueName,
+                item.RegistryTarget, StringComparison.OrdinalIgnoreCase)).ToArray();
 
         return definitions.Length == 1;
     }
