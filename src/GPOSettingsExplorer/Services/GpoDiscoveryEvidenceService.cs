@@ -23,6 +23,7 @@ public static class GpoDiscoveryEvidenceService
         public string SourceStoredValue { get; init; } = string.Empty;
         public string SourceStoredType { get; init; } = string.Empty;
         public string SourceFileHash { get; init; } = string.Empty;
+        public string SourceUnit { get; init; } = string.Empty;
     }
 
     public static IReadOnlyList<Evidence> Build(
@@ -167,6 +168,22 @@ public static class GpoDiscoveryEvidenceService
             // Refuse comparisons where the source is a registry operation directive.
             if (item.RegistryTarget.Contains(" / **", StringComparison.Ordinal))
                 return item;
+            // Unit conversions require an explicitly verified source-unit mapping.
+            // Never infer source units from an ADMX name or a numeric registry value.
+            if (item.SourceUnit.Equals("minutes", StringComparison.Ordinal) &&
+                item.SourceStoredType.Equals("REG_DWORD", StringComparison.OrdinalIgnoreCase) &&
+                IsCanonicalDecimal(item.SourceStoredValue) &&
+                uint.TryParse(item.SourceStoredValue, NumberStyles.None,
+                    CultureInfo.InvariantCulture, out var sourceMinutes) &&
+                TryParseHoursDisplay(item.MmcObservedValue, out var displayHours))
+            {
+                return item with
+                {
+                    ValueVerificationStatus = (ulong)sourceMinutes == (ulong)displayHours * 60UL
+                        ? "MATCH_EXPLICIT_MINUTES_HOURS" : "MISMATCH_EXPLICIT_MINUTES_HOURS",
+                    Notes = item.Notes + " Explicit minutes-to-hours mapping only; effective RSoP not verified."
+                };
+            }
             if (item.SourceStoredType.Equals("REG_DWORD", StringComparison.OrdinalIgnoreCase) ||
                 item.SourceStoredType.Equals("REG_QWORD", StringComparison.OrdinalIgnoreCase))
             {
@@ -200,6 +217,17 @@ public static class GpoDiscoveryEvidenceService
         }).ToArray();
     }
 
+    private static bool TryParseHoursDisplay(string text, out uint hours)
+    {
+        hours = 0;
+        const string suffix = " hours";
+        if (!text.EndsWith(suffix, StringComparison.Ordinal))
+            return false;
+        var number = text[..^suffix.Length];
+        return IsCanonicalDecimal(number) &&
+            uint.TryParse(number, NumberStyles.None, CultureInfo.InvariantCulture, out hours);
+    }
+
     private static bool IsCanonicalDecimal(string value) =>
         value.Length > 0 && value.All(c => c >= '0' && c <= '9') &&
         (value.Length == 1 || value[0] != '0');
@@ -217,7 +245,7 @@ public static class GpoDiscoveryEvidenceService
         }
 
         var output = new StringBuilder();
-        output.AppendLine("GpoId\tScope\tExtension\tSettingName\tSourceType\tSourceStatus\tRegistryTarget\tMmcSection\tNavigationStatus\tIdentityHash\tNotes\tMmcObservedState\tMmcObservedValue\tValueVerificationStatus\tSourceStoredValue\tSourceStoredType\tSourceFileHash");
+        output.AppendLine("GpoId\tScope\tExtension\tSettingName\tSourceType\tSourceStatus\tRegistryTarget\tMmcSection\tNavigationStatus\tIdentityHash\tNotes\tMmcObservedState\tMmcObservedValue\tValueVerificationStatus\tSourceStoredValue\tSourceStoredType\tSourceFileHash\tSourceUnit");
         foreach (var row in evidence)
             output.AppendLine(string.Join("\t", new[]
             {
@@ -225,7 +253,7 @@ public static class GpoDiscoveryEvidenceService
                 row.SourceType, row.SourceStatus, row.RegistryTarget, row.MmcSection,
                 row.NavigationStatus, row.IdentityHash, row.Notes,
                 row.MmcObservedState, row.MmcObservedValue, row.ValueVerificationStatus,
-                row.SourceStoredValue, row.SourceStoredType, row.SourceFileHash
+                row.SourceStoredValue, row.SourceStoredType, row.SourceFileHash, row.SourceUnit
             }.Select(Safe)));
         return output.ToString();
     }
