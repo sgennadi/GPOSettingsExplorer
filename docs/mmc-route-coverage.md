@@ -6,6 +6,16 @@ GPMC XML includes both actual configured policies and *metadata* (permissions, c
 
 The 2026-10-09 route audit of the user's domain indexed 185 GPOs and 12 distinct section paths. The scan found 11 paths and missed the decorated Administrative Templates node (its central-store suffix later received exact alias matching). **883 Computer and 709 User entries shared a generic Security Settings parent**, despite coming from many different source families. These are *indexed entries affected by imprecise navigation*, NOT a validated count of individually wrong policies.
 
+## MMC snap-in error on a DC (Preview 6)
+
+A GPO Settings Explorer 2.1 Preview screenshot from a YOSH-DC03 session showed the native **"MMC has detected an error in a snap-in"** dialog while a per-setting discovery action was running a full native inventory and the progress text had reached **Local Policies > User Rights Assignment**. The progress location is the last attempted section, **not definitive evidence which snap-in failed**. It does not alone establish corrupted GPOs or AD.
+
+Preview 6 removes the hidden full scan from an individual Setting Value window. **Check captured MMC route** only uses an existing, non-aborted inventory for the same GPO and pinned DC; otherwise it directs the operator to select **MMC Full Settings Inventory** and explicitly run **Scan MMC (read-only)** for one reference GPO.
+
+The manual scanner skips Scripts and User Rights Assignment *before* expanding/selecting those nodes and records them as **Skipped - unsafe snap-in**. A separate native dialog watchdog cancels the scan if an MMC modal appears. Captured records from an interrupted scan remain diagnostic only: **STOPPED / PARTIAL** blocks exact-route verification. The program NEVER presses Ignore, Always ignore, OK, or closes an MMC error dialog. A blocked UI Automation call might need the operator to close the native MMC window manually.
+
+On a DC showing this error: cancel the application scan, close the failed MMC console manually without choosing to ignore the error, and inspect Event Viewer **Windows Logs > Application** for MMC/.NET/Application Error events. Avoid further unattended scans until the failing snap-in or OS component is isolated. Run the native editor in an isolated nonproduction environment for deeper diagnosis.
+
 ## Safe routing rules
 
 - Only an exact, known extension and expected GPMC category yields an automated MMC section path.

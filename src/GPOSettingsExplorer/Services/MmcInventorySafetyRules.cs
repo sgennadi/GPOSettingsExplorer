@@ -40,6 +40,29 @@ public static class MmcInventorySafetyRules
             return true;
         }
 
+        // An MMC snap-in error dialog was observed on a domain controller
+        // while inventory traversal reached this exact section. The snap-in
+        // that threw cannot be proved from a screenshot alone: conservatively
+        // exclude this node from automated Expand/Select until a separate
+        // native MMC investigation establishes it is safe. The whole
+        // Security Settings parent is NOT falsely marked as verified.
+        var isUserRights = name.Equals(
+            "User Rights Assignment", StringComparison.OrdinalIgnoreCase);
+        var inSecuritySettings = segments.Any(segment =>
+            segment.Equals("Security Settings", StringComparison.OrdinalIgnoreCase));
+        var inLocalPolicies = segments.Any(segment =>
+            segment.Equals("Local Policies", StringComparison.OrdinalIgnoreCase));
+        if (inGpoScope && inPolicies && inWindowsSettings &&
+            inSecuritySettings && inLocalPolicies && isUserRights)
+        {
+            explanation = "User Rights Assignment is excluded from unattended MMC " +
+                "inventory after a snap-in error was observed during DC scanning " +
+                "near this section. Root cause is not yet established. " +
+                "Use GPMC/security-template source and a manually operated editor " +
+                "for diagnosis. No automatic row or RSoP verification is claimed.";
+            return true;
+        }
+
         return false;
     }
 }

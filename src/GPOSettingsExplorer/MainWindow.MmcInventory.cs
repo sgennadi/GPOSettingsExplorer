@@ -70,7 +70,9 @@ public partial class MainWindow
             return false;
         var domain = _domainContext.DomainName;
         var dc = DomainConnectionState.GetServerFor(domain);
-        return _mmcInventoryResult is not null &&
+        // Aborted snapshots remain visible in Coverage but are NEVER
+        // permitted as exact-row evidence for follow-up navigation.
+        return _mmcInventoryResult is { HasReusableRowEvidence: true } &&
             _mmcInventoryScannedGpoId == gpo.Id &&
             _mmcInventoryScannedDomain.Equals(domain, StringComparison.OrdinalIgnoreCase) &&
             !string.IsNullOrWhiteSpace(dc) &&
@@ -183,8 +185,22 @@ public partial class MainWindow
                     ? " | GPMC configured index not available for this GPO."
                     : $" | GPMC configured rows for comparison: {configured.Length:N0}.") +
                 (admx is null ? " | ADMX catalog not loaded." : "");
-            MmcInventoryCoverageText.Foreground =
-                result.IsComplete ? UiStyle.SuccessBrush : UiStyle.WarningBrush;
+            MmcInventoryCoverageText.Foreground = result.Interrupted
+                ? UiStyle.ErrorBrush
+                : result.IsComplete ? UiStyle.SuccessBrush : UiStyle.WarningBrush;
+            if (result.Interrupted)
+            {
+                MmcInventoryCoverageText.Text =
+                    "STOPPED / PARTIAL: Native MMC could not be safely scanned. " +
+                    "Previously captured rows remain visible for troubleshooting but " +
+                    "CANNOT be used to verify or open exact settings. " +
+                    "Do not select 'always ignore errors' in MMC. " +
+                    result.Coverage;
+                StatusText.Text = "MMC scan STOPPED / PARTIAL - not eligible for exact navigation.";
+                externalProgress?.Report(MmcInventoryCoverageText.Text);
+                return false;
+            }
+
             StatusText.Text = "MMC inventory: " + result.Coverage;
             return true;
         }
@@ -228,7 +244,7 @@ public partial class MainWindow
         var configured = _settings.Where(row => row.GpoId == gpo.Id).ToArray();
         var domain = _domainContext?.DomainName ?? "";
         var dc = DomainConnectionState.GetServerFor(domain);
-        var mmcAvailable = _mmcInventoryResult is not null &&
+        var mmcAvailable = _mmcInventoryResult is { HasReusableRowEvidence: true } &&
             _mmcInventoryScannedGpoId == gpo.Id &&
             _mmcInventoryScannedDomain.Equals(domain, StringComparison.OrdinalIgnoreCase) &&
             !string.IsNullOrWhiteSpace(dc) &&

@@ -90,8 +90,7 @@ public partial class MainWindow
                         setting,
                         progress),
                     progress => DiscoverAndOpenExactMmcRouteAsync(
-                        gpo, setting, (Window?)valueWindow ?? this, progress),
-                    () => _mmcInventoryCancellation?.Cancel())
+                        gpo, setting, (Window?)valueWindow ?? this, progress))
                 {
                     Owner = this
                 };

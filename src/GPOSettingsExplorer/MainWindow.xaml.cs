@@ -37,10 +37,16 @@ public partial class MainWindow : Window
         var version = assembly.GetName().Version;
         var informational = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
             ?.InformationalVersion ?? string.Empty;
+        var previewMatch = System.Text.RegularExpressions.Regex.Match(
+            informational, @"-preview\.([0-9]+)",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase |
+            System.Text.RegularExpressions.RegexOptions.CultureInvariant);
         var isPreview = informational.Contains("-preview", StringComparison.OrdinalIgnoreCase);
         Title = "GPO Settings Explorer" +
                 (version is null ? "" : $" v{version.ToString(3)}") +
-                (isPreview ? " Preview" : string.Empty);
+                (isPreview ? " Preview" +
+                    (previewMatch.Success ? " " + previewMatch.Groups[1].Value : "") :
+                    string.Empty);
 
         GpoGrid.ItemsSource = _gpos;
         SettingsGrid.ItemsSource = _settings;

@@ -7,9 +7,10 @@ namespace GPOSettingsExplorer;
 public partial class MainWindow
 {
     /// <summary>
-    /// One GPMC entry -> one observed MMC route, with a one-time manual
-    /// review fallback. This runs only after user action: never at startup
-    /// and never all GPOs. No GPO/SYSVOL writes or blind MMC dialog clicks.
+    /// One GPMC entry -> one previously captured, non-aborted MMC route,
+    /// with a one-time manual review fallback. This NEVER initiates a
+    /// broad native MMC inventory from an individual setting's value dialog.
+    /// No GPO/SYSVOL writes or blind MMC dialog clicks.
     /// </summary>
     private async Task<bool> DiscoverAndOpenExactMmcRouteAsync(
         GpoInfo gpo, PolicySettingInfo setting, Window dialogOwner,

@@ -2,9 +2,13 @@
 
 This feature is read-only and does not change Group Policy or SYSVOL. Optional startup **GPMC indexing** uses a per-user preference and the incremental cache; it does not start the native MMC editor for all GPOs. MMC observations, source values and RSoP have distinct statuses; no bulk scanner can truthfully set every Windows policy to VERIFIED without type-specific evidence.
 
+## Preview 6 fail-closed MMC inventory
+
+A per-setting **Check captured MMC route...** action must never cause a hidden deep inventory of the entire native GPO editor. With no existing non-aborted same-GPO/DC snapshot, it reports **NO VERIFIED MMC SNAPSHOT** and gives the explicit manual inventory workflow. The operator may choose a bounded read-only scan for one GPO in **MMC Full Settings Inventory**; Scripts and User Rights Assignment nodes are conservatively skipped and marked incomplete. A detected native MMC modal error requests cancellation and marks the results **STOPPED / PARTIAL**; those rows are never eligible for exact-route verification, unit approval or effective RSoP assertions. The native dialog is left intact for manual investigation. UI Automation can remain blocked until the operator closes that MMC dialog.
+
 ## Exact MMC paths for the complete GPMC index
 
-The **Exact MMC Paths** window lists every indexed GPMC row, whether or not that GPO has been scanned. The candidate section and the exact observed native row have separate fields; a known parent section never means that a specific policy's properties or value is verified. The operator can request a bounded, cancellable read-only MMC scan of only the selected GPO. Exact GPO/scope/native paths are matched by source-aware types, and an unhandled source can receive a one-time, explicitly reviewed native route after revalidation in a newly opened editor. No automatic cross-GPO path inference, no blanket mass MMC scans, no persistent secret-bearing route cache, and no GPO writes.
+The **Exact MMC Paths** window lists every indexed GPMC row, whether or not that GPO has been scanned. The candidate section and the exact observed native row have separate fields; a known parent section never means that a specific policy's properties or value is verified. The operator can explicitly request a bounded, cancellable read-only MMC scan of only the selected GPO from **MMC Full Settings Inventory**, never implicitly from a single Setting Value window. Exact GPO/scope/native paths are matched by source-aware types, and an unhandled source can receive a one-time, explicitly reviewed native route after revalidation in a newly opened editor. No automatic cross-GPO path inference, no blanket mass MMC scans, no persistent secret-bearing route cache, and no GPO writes.
 
 ## Using the current preview
 

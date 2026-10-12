@@ -969,6 +969,23 @@ static void TestMmcInventorySnapinSafety()
     Assert(MmcInventorySafetyRules.ShouldSkipNode(logon, out _),
         "User logon/logoff Scripts snap-in must also be excluded.");
 
+    var userRights = new[]
+    {
+        "Example GPO", "Computer Configuration", "Policies",
+        "Windows Settings", "Security Settings", "Local Policies",
+        "User Rights Assignment"
+    };
+    Assert(MmcInventorySafetyRules.ShouldSkipNode(userRights, out var rightsReason) &&
+           rightsReason.Contains("snap-in error", StringComparison.OrdinalIgnoreCase),
+        "User Rights Assignment must be skipped BEFORE Expand/Select after the observed DC snap-in dialog.");
+    var unrelatedRights = new[]
+    {
+        "Example GPO", "Computer Configuration", "Policies",
+        "Administrative Templates", "User Rights Assignment"
+    };
+    Assert(!MmcInventorySafetyRules.ShouldSkipNode(unrelatedRights, out _),
+        "An identically named Administrative Templates node must not be excluded.");
+
     var unrelated = new[]
     {
         "Example GPO", "Computer Configuration", "Policies",
@@ -1004,8 +1021,35 @@ static void TestMmcInventorySnapinSafety()
         CompletionReason = "MMC modal dialog was detected"
     };
     Assert(modalAbort.Failures == 1 && !modalAbort.IsComplete &&
-           modalAbort.Coverage.Contains("modal", StringComparison.OrdinalIgnoreCase),
-        "A modal MMC error must never be reported as a complete scan.");
+           modalAbort.Coverage.Contains("modal", StringComparison.OrdinalIgnoreCase) &&
+           !modalAbort.HasReusableRowEvidence,
+        "A modal MMC error must never be reported as complete/reusable evidence.");
+
+    var validPartiallySkipped = result with
+    {
+        Rows = new[] { new MmcInventoryEntry
+        {
+            GpoId = Guid.NewGuid(), Scope = "Computer",
+            SectionPath = "Computer Configuration > Policies > Administrative Templates",
+            SettingName = "Known explicit MMC row",
+            Navigation = "Exact MMC row candidate"
+        } }
+    };
+    Assert(!validPartiallySkipped.IsComplete && validPartiallySkipped.HasReusableRowEvidence,
+        "An unrelated deliberately skipped snap-in does not invalidate separately observed exact rows.");
+    Assert(!(validPartiallySkipped with
+        {
+            Interrupted = true,
+            CompletionReason = "Canceled during MMC modal error"
+        }).HasReusableRowEvidence,
+        "A canceled native MMC scan must not authorize exact route discovery.");
+    Assert(!(validPartiallySkipped with
+        {
+            Sections = validPartiallySkipped.Sections.Append(
+                new MmcInventorySection("User Rights Assignment", "Scan aborted", 0,
+                    "MMC exception")).ToArray()
+        }).HasReusableRowEvidence,
+        "An aborted section invalidates the whole native scan even if Interrupted flag was incorrect.");
 }
 
 static void TestMmcFullInventoryReconciliation()

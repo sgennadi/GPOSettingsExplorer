@@ -44,6 +44,17 @@ public sealed record MmcInventoryScanResult(
         Sections.All(s =>
             s.Status is "Rows read" or "Empty list" or "Folder only");
 
+    /// <summary>
+    /// A scan may be PARTIAL because unrelated unsafe sections were skipped,
+    /// yet contain observed rows useful for a one-time exact route check.
+    /// An INTERRUPTED/ABORTED scan is different: never reuse those rows for
+    /// exact navigation or source/value verification.
+    /// </summary>
+    public bool HasReusableRowEvidence =>
+        !Interrupted && Rows.Count > 0 &&
+        !Sections.Any(section =>
+            section.Status.Equals("Scan aborted", StringComparison.OrdinalIgnoreCase));
+
     public int Failures => Sections.Count(s =>
         s.Status is "Read error" or "Selection failed" or "Truncated" or
                         "No list" or "Skipped - unsafe snap-in" or "Scan aborted");

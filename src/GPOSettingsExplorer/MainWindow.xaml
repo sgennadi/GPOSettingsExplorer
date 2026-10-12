@@ -322,7 +322,7 @@
                                                VerticalAlignment="Center"
                                                Foreground="{DynamicResource UiMutedBrush}"/>
                                 </WrapPanel>
-                                <TextBlock Text="MMC inventory scans native policy lists. Unsafe MMC Scripts snap-ins are deliberately SKIPPED (use GPO Scripts tab). A modal snap-in error stops the scan; it is never auto-dismissed. Rows are observations, NOT effective RSoP; PARTIAL coverage lists skipped/inaccessible sections."
+                                <TextBlock Text="MMC inventory is an explicitly requested, one-GPO read-only scan. Scripts and User Rights Assignment are SKIPPED to avoid unstable snap-in activation. A modal error stops the scan; the application never dismisses it or selects Ignore. Aborted snapshots cannot verify exact rows. PARTIAL coverage is expected and is NOT effective RSoP."
                                            TextWrapping="Wrap" Margin="4,3,4,4"
                                            Foreground="{DynamicResource UiWarningBrush}"/>
                                 <TextBlock x:Name="MmcInventoryCoverageText"

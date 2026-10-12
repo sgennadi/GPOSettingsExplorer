@@ -217,18 +217,19 @@ public sealed class SettingValueWindow : Window
 
         footer.Children.Add(open);
 
-        // Every genuine GPMC policy entry can ask for source-aware exact path
-        // discovery. The user must explicitly approve a single-GPO native MMC
-        // read-only scan, and a manual route must be explicitly reviewed.
+        // One GPMC policy may recheck existing, non-aborted MMC evidence.
+        // Never start a full native MMC traversal from this small value dialog:
+        // an unrelated snap-in can crash while looking for the selected item.
         if (discoverExactMmcRoute is not null &&
             !SecurityXmlEntryClassifier.IsTechnicalDetail(setting))
         {
             var discover = new Button
             {
-                Content = "Find exact MMC path...",
-                ToolTip = "Read-only scan of this GPO only, then open a unique exact " +
-                    "native MMC row or request explicit one-time route review. " +
-                    "No mass MMC scan at startup; this is not RSoP."
+                Content = "Check captured MMC route...",
+                ToolTip = "Uses only a previously captured, non-aborted MMC snapshot " +
+                    "for this same GPO/DC. To capture, close this value window and " +
+                    "run Scan MMC (read-only) from MMC Full Settings Inventory. " +
+                    "No hidden broad snap-in scan and no RSoP inference."
             };
             var cancelScan = new Button
             {
@@ -251,7 +252,8 @@ public sealed class SettingValueWindow : Window
                 try
                 {
                     navigationStatus.Foreground = UiStyle.WarningBrush;
-                    navigationStatus.Text = "Checking exact path evidence for the selected GPO...";
+                    navigationStatus.Text = "Checking existing safe MMC evidence for this GPO. " +
+                        "No background native inventory will be started.";
                     var progress = new Progress<string>(message =>
                     {
                         navigationStatus.Text = message;
