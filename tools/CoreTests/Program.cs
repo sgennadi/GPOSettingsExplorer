@@ -4052,9 +4052,10 @@ static void TestDiscoveryEvidence()
     Assert(rows.Count == 2, "Discovery must retain both input records.");
     Assert(rows[0].NavigationStatus == "SECTION_CANDIDATE",
         "Known section is a candidate, not exact row verified.");
-    Assert(rows[1].NavigationStatus == "UNMAPPED" &&
+    Assert(rows[1].NavigationStatus == "SECTION_CANDIDATE" &&
+           rows[1].MmcSection.EndsWith("Preferences > Control Panel Settings > Scheduled Tasks") &&
            string.IsNullOrEmpty(rows[1].RegistryTarget),
-        "Unknown GPP source must not fabricate MMC/registry paths.");
+        "Known GPP extension may expose a DOCUMENTED MMC section hint but must not invent Registry.pol metadata or claim a native row.");
     Assert(rows[0].IdentityHash.Length == 64 &&
            rows[0].IdentityHash == GpoDiscoveryEvidenceService.Build(settings)[0].IdentityHash,
         "Identity hashes must be stable SHA-256.");
@@ -4086,8 +4087,8 @@ static void TestDiscoveryEvidence()
         "Observed MMC value must be included in evidence TSV.");
     Assert(verified[0].NavigationStatus == "MMC_ROW_OBSERVED",
         "A single exact MMC row may be marked observed, not value-verified.");
-    Assert(verified[1].NavigationStatus == "UNMAPPED",
-        "Unknown sources must remain unmapped even with other MMC evidence.");
+    Assert(verified[1].NavigationStatus == "SECTION_CANDIDATE",
+        "A known GPP SECTION hint must not be promoted to native row evidence by unrelated MMC entries.");
     var ambiguous = GpoDiscoveryEvidenceService.CorrelateMmc(rows,
         new[] { observed[0], observed[0] });
     Assert(ambiguous[0].NavigationStatus == "AMBIGUOUS",
