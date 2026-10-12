@@ -489,39 +489,77 @@
 
                     <DataGrid x:Name="GpoScriptSearchResultsGrid"
                               Grid.Row="3"
-                              MouseDoubleClick="GpoScriptSearchResultsGrid_MouseDoubleClick">
+                              VirtualizingPanel.IsVirtualizingWhenGrouping="True"
+                              ScrollViewer.CanContentScroll="True"
+                              MouseDoubleClick="GpoScriptSearchResultsGrid_MouseDoubleClick"
+                              ToolTip="Grouped by GPO and physical file. Double-click to open the indicated matching line.">
+                        <DataGrid.GroupStyle>
+                            <GroupStyle>
+                                <GroupStyle.ContainerStyle>
+                                    <Style TargetType="{x:Type GroupItem}">
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="{x:Type GroupItem}">
+                                                    <Expander IsExpanded="True" Margin="2,2,2,4"
+                                                              Background="{DynamicResource UiSurfaceBrush}">
+                                                        <Expander.Header>
+                                                            <StackPanel Orientation="Horizontal">
+                                                                <TextBlock Text="{Binding Name}"
+                                                                           FontWeight="SemiBold"
+                                                                           Foreground="{DynamicResource UiAccentBrush}"
+                                                                           TextWrapping="Wrap"/>
+                                                                <TextBlock Text="{Binding ItemCount, StringFormat={}  ({0:N0})}"
+                                                                           Margin="8,0,0,0"
+                                                                           Foreground="{DynamicResource UiMutedBrush}"/>
+                                                            </StackPanel>
+                                                        </Expander.Header>
+                                                        <ItemsPresenter/>
+                                                    </Expander>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </GroupStyle.ContainerStyle>
+                            </GroupStyle>
+                        </DataGrid.GroupStyle>
                         <DataGrid.Columns>
+                            <DataGridTextColumn Header="GPO"
+                                                Binding="{Binding GpoName}"
+                                                Width="1.25*"/>
                             <DataGridTextColumn Header="File"
                                                 Binding="{Binding FileName}"
-                                                Width="1.2*"/>
+                                                Width="1.25*"/>
+                            <DataGridTextColumn Header="Scope"
+                                                Binding="{Binding Scope}"
+                                                Width="95"/>
                             <DataGridTextColumn Header="Type"
                                                 Binding="{Binding Type}"
                                                 ElementStyle="{StaticResource UiScriptTypeTextStyle}"
                                                 Width="90"/>
                             <DataGridTextColumn Header="Line"
-                                                Binding="{Binding LineNumber}"
-                                                Width="65"/>
-                            <DataGridTextColumn Header="Match type"
-                                                Binding="{Binding MatchType}"
-                                                ElementStyle="{StaticResource UiScriptMatchTextStyle}"
-                                                Width="140"/>
-                            <DataGridTextColumn Header="Match"
-                                                Binding="{Binding LineText}"
-                                                Width="3*"/>
-                            <DataGridTemplateColumn Header="Copies" Width="110">
+                                                Binding="{Binding LineDisplay}"
+                                                Width="90"/>
+                            <DataGridTemplateColumn Header="Matches / lines" Width="150">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
-                                        <Button Content="{Binding CopiesLabel}"
-                                                Style="{StaticResource UiScriptCopiesButton}"
-                                                IsEnabled="{Binding HasMultipleCopies}"
-                                                PreviewMouseDoubleClick="ScriptCopies_PreviewMouseDoubleClick"
-                                                Click="ScriptCopies_Click"/>
+                                        <Button Content="{Binding MatchesLabel}"
+                                                Style="{StaticResource UiScriptMatchesButton}"
+                                                IsEnabled="{Binding HasMatches}"
+                                                PreviewMouseDoubleClick="ScriptMatches_PreviewMouseDoubleClick"
+                                                Click="ScriptMatches_Click"/>
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
-                            <DataGridTextColumn Header="GPO refs"
-                                                Binding="{Binding GpoReferenceCount}"
-                                                Width="80"/>
+                            <DataGridTextColumn Header="Match type"
+                                                Binding="{Binding MatchType}"
+                                                ElementStyle="{StaticResource UiScriptMatchTextStyle}"
+                                                Width="155"/>
+                            <DataGridTextColumn Header="Matching text"
+                                                Binding="{Binding Preview}"
+                                                Width="2.2*"/>
+                            <DataGridTextColumn Header="Physical SYSVOL path"
+                                                Binding="{Binding FilePath}"
+                                                Width="2*"/>
                         </DataGrid.Columns>
                     </DataGrid>
                 </Grid>

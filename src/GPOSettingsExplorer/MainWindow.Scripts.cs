@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
 using System.Windows.Input;
+using System.Windows.Media;
 using GPOSettingsExplorer.Models;
 using GPOSettingsExplorer.Services;
 
@@ -13,7 +14,12 @@ public partial class MainWindow
 {
     private readonly GpoScriptService _gpoScriptService = new();
     private readonly ObservableCollection<GpoScriptInfo> _gpoScripts = new();
-    private readonly ObservableCollection<GpoScriptSearchResult> _gpoScriptSearchResults = new();
+    // Raw content-hash matches stay cached after Find. Only their on-screen
+    // presentation changes when switching line/file mode (no SYSVOL re-read).
+    private IReadOnlyList<GpoScriptSearchResult> _gpoScriptRawSearchMatches =
+        Array.Empty<GpoScriptSearchResult>();
+    private GpoScriptSearchPresentation? _gpoScriptSearchPresentation;
+    private string _lastGpoScriptSearchScope = string.Empty;
     private readonly HashSet<Guid> _selectedGpoScriptGpoIds = new();
 
     private ICollectionView? _gpoScriptsView;
@@ -22,6 +28,7 @@ public partial class MainWindow
     private CancellationTokenSource? _gpoScriptSearchCancellation;
     private TextBlock? _gpoScriptSearchScopeText;
     private ComboBox? _gpoScriptSearchModeCombo;
+    private ComboBox? _gpoScriptResultLayoutCombo;
 
     private async Task EnsureGpoScriptsLoadedAsync()
     {
@@ -48,8 +55,9 @@ public partial class MainWindow
             GpoScriptsGrid.SelectionChanged +=
                 GpoScriptsGrid_SelectionChanged;
 
-            GpoScriptSearchResultsGrid.ItemsSource =
-                _gpoScriptSearchResults;
+            // The GPO+file grouped results view is assigned after each
+            // search or layout change; do not bind raw SHA-grouped hits.
+            GpoScriptSearchResultsGrid.ItemsSource = null;
 
             // Search scope is now driven directly by selected GPOs and files.
             GpoScriptSearchScopeCombo.Visibility =
@@ -100,6 +108,37 @@ public partial class MainWindow
         panel.Children.Insert(
             panel.Children.IndexOf(GpoScriptSearchScopeCombo) + 1,
             _gpoScriptSearchModeCombo);
+
+        var layoutLabel = new TextBlock
+        {
+            Text = "Results:",
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(8, 0, 0, 0),
+            Foreground = UiStyle.MutedBrush
+        };
+        _gpoScriptResultLayoutCombo = new ComboBox
+        {
+            MinWidth = 190,
+            ToolTip = "One file per GPO shows each physical SYSVOL script once. " +
+                "All matched lines groups results by GPO and file. " +
+                "Switching layouts does NOT re-search SYSVOL."
+        };
+        _gpoScriptResultLayoutCombo.Items.Add(new ComboBoxItem
+        {
+            Content = "Unique file per GPO",
+            Tag = GpoScriptSearchViewMode.UniqueFilesPerGpo
+        });
+        _gpoScriptResultLayoutCombo.Items.Add(new ComboBoxItem
+        {
+            Content = "All matching lines",
+            Tag = GpoScriptSearchViewMode.EveryMatchingLine
+        });
+        _gpoScriptResultLayoutCombo.SelectedIndex = 0;
+        _gpoScriptResultLayoutCombo.SelectionChanged += (_, _) =>
+            RefreshGpoScriptSearchPresentation();
+        var layoutPosition = panel.Children.IndexOf(_gpoScriptSearchModeCombo) + 1;
+        panel.Children.Insert(layoutPosition, layoutLabel);
+        panel.Children.Insert(layoutPosition + 1, _gpoScriptResultLayoutCombo);
 
         var selectGpos =
             new Button
@@ -464,85 +503,65 @@ public partial class MainWindow
     }
 
     private async void GpoScriptSearchResultsGrid_MouseDoubleClick(
-        object sender,
-        MouseButtonEventArgs e)
+        object sender, MouseButtonEventArgs e)
     {
-        if (GpoScriptSearchResultsGrid.SelectedItem is not GpoScriptSearchResult result)
+        // Ignore double-clicks on GPO group headers, file groups, column
+        // headers and the Match-lines button. Only a real row opens a script.
+        if (e.OriginalSource is not DependencyObject origin ||
+            !IsGpoScriptResultRowHit(origin) ||
+            GpoScriptSearchResultsGrid.SelectedItem is not GpoScriptSearchDisplayRow result)
             return;
 
-        // Browsing copies is explicit, via the count. A normal double-click
-        // opens a single physical GPO file without an intermediate picker.
-        var selected = GetPreferredGpoScriptCopy(result);
-        if (selected is null)
-            return;
-
-        StatusText.Text = result.HasMultipleCopies
-            ? $"Opening {selected.FileName} in '{selected.GpoName}' only. Click Copies to choose a different GPO."
-            : $"Opening {selected.FileName} in '{selected.GpoName}'.";
-
-        await EditGpoScriptAsync(selected, result.LineNumber);
+        await OpenGpoScriptSearchResultAsync(result, result.LineNumber);
     }
 
-    private void ScriptCopies_PreviewMouseDoubleClick(
-        object sender,
-        MouseButtonEventArgs e)
+    private static bool IsGpoScriptResultRowHit(DependencyObject source)
     {
-        // Prevent DataGrid's row-double-click from opening a script when
-        // the operator is intentionally clicking the copies counter.
+        for (DependencyObject? node = source; node is not null;)
+        {
+            if (node is DataGridRow)
+                return true;
+            if (node is GroupItem or Expander or DataGrid)
+                return false;
+
+            node = node is Visual
+                ? VisualTreeHelper.GetParent(node)
+                : LogicalTreeHelper.GetParent(node);
+        }
+        return false;
+    }
+
+    private void ScriptMatches_PreviewMouseDoubleClick(
+        object sender, MouseButtonEventArgs e)
+    {
+        // Prevent the row handler from also opening the first match when the
+        // operator double-clicks the per-file line-match counter.
         e.Handled = true;
     }
 
-    private async void ScriptCopies_Click(
-        object sender,
-        RoutedEventArgs e)
+    private async void ScriptMatches_Click(object sender, RoutedEventArgs e)
     {
         e.Handled = true;
-        if (sender is not Button { DataContext: GpoScriptSearchResult result })
+        if (sender is not Button { DataContext: GpoScriptSearchDisplayRow result })
             return;
 
-        var copies = GpoScriptCopyResolver.PhysicalCopies(result);
-        if (copies.Count < 2)
-            return;
-
-        var picker = new GpoScriptCopyPickerWindow(copies)
+        var dialog = new GpoScriptSearchMatchesWindow(result)
         {
             Owner = this
         };
-
-        if (picker.ShowDialog() == true && picker.SelectedScript is { } selected)
-            await EditGpoScriptAsync(selected, result.LineNumber);
+        if (dialog.ShowDialog() == true &&
+            dialog.SelectedLineNumber is int line)
+            await OpenGpoScriptSearchResultAsync(result, line);
     }
 
-    private GpoScriptInfo? GetPreferredGpoScriptCopy(GpoScriptSearchResult result)
+    private async Task OpenGpoScriptSearchResultAsync(
+        GpoScriptSearchDisplayRow result, int lineNumber)
     {
-        var selected = GpoScriptsGrid.SelectedItem as GpoScriptInfo;
-        if (selected is not null &&
-            result.Scripts.Any(item =>
-                item.FullPath.Equals(selected.FullPath, StringComparison.OrdinalIgnoreCase)))
-        {
-            return GpoScriptCopyResolver.PreferredCopy(
-                result, selected.GpoId, selected.FullPath);
-        }
-
-        if (_selectedGpoScriptGpoIds.Count == 1)
-        {
-            var requestedGpo = _selectedGpoScriptGpoIds.First();
-            var scoped = GpoScriptCopyResolver.PreferredCopy(result, requestedGpo);
-            if (scoped is not null && scoped.GpoId == requestedGpo)
-                return scoped;
-        }
-
-        if (GpoGrid.SelectedItem is GpoInfo activeGpo)
-        {
-            var scoped = GpoScriptCopyResolver.PreferredCopy(result, activeGpo.Id);
-            if (scoped is not null && scoped.GpoId == activeGpo.Id)
-                return scoped;
-        }
-
-        // Search results are ordered predictably, never changed in bulk.
-        // The GPO name and physical path remain visible in the editor;
-        // saving remains subject to backup and change preview.
-        return GpoScriptCopyResolver.PreferredCopy(result);
+        var script = result.Script;
+        StatusText.Text = $"Opening '{script.FileName}' in GPO '{script.GpoName}'" +
+            (lineNumber > 0 ? $" at line {lineNumber:N0}." : ".") +
+            " Only this physical SYSVOL file is selected.";
+        await EditGpoScriptAsync(script, lineNumber);
     }
 
     private async Task EditGpoScriptAsync(
@@ -698,7 +717,7 @@ public partial class MainWindow
                     : $"No byte changes committed for {script.FileName}.";
                 StatusText.Text = matches is null
                     ? $"{resultDescription}{note} Backup: {backupPath}"
-                    : $"{resultDescription}{note} Search refreshed: {matches.Value:N0} unique match(es) remain. Backup: {backupPath}";
+                    : $"{resultDescription}{note} Search refreshed: {matches.Value:N0} matching GPO file(s) remain. Backup: {backupPath}";
             }
             catch (Exception refreshError)
             {
@@ -735,103 +754,118 @@ public partial class MainWindow
     private async Task<int?> RecalculateCurrentGpoScriptSearchAsync(
         bool showValidationMessages)
     {
-        var query =
-            GpoScriptContentSearchBox
-                .Text
-                .Trim();
-
-        if (string.IsNullOrWhiteSpace(
-                query))
+        var query = GpoScriptContentSearchBox.Text.Trim();
+        if (string.IsNullOrWhiteSpace(query))
         {
             if (showValidationMessages)
-            {
-                MessageBox.Show(
-                    this,
+                MessageBox.Show(this,
                     "Enter text to find, for example: wmic, .vbs, powershell.exe, cscript or net use.",
-                    "Search GPO Scripts",
-                    MessageBoxButton.OK,
+                    "Search GPO Scripts", MessageBoxButton.OK,
                     MessageBoxImage.Information);
-            }
-
             return null;
         }
 
-        var source =
-            ResolveGpoScriptSearchSource(
-                out var scopeDescription);
-
+        var source = ResolveGpoScriptSearchSource(out var scopeDescription);
         var searchMode =
             (_gpoScriptSearchModeCombo?.SelectedItem as ComboBoxItem)?.Tag
-            is GpoScriptSearchMode selectedMode
-                ? selectedMode
-                : GpoScriptSearchMode.ContentOnly;
+                is GpoScriptSearchMode selectedMode
+                ? selectedMode : GpoScriptSearchMode.ContentOnly;
 
+        // Capture this search's CTS locally: newer Find requests may cancel
+        // it and replace the field while Task.Run is still reading SYSVOL.
         _gpoScriptSearchCancellation?.Cancel();
-
-        _gpoScriptSearchCancellation =
-            new CancellationTokenSource();
-
-        SetBusy(
-            true,
-            $"Searching {scopeDescription} for '{query}'...");
+        var search = new CancellationTokenSource();
+        _gpoScriptSearchCancellation = search;
+        SetBusy(true, $"Searching {scopeDescription} for '{query}'...");
 
         try
         {
-            var results =
-                await Task.Run(() =>
-                    _gpoScriptService.SearchContent(
-                        source,
-                        query,
-                        _gpoScriptSearchCancellation.Token,
-                        searchMode));
+            var results = await Task.Run(() =>
+                _gpoScriptService.SearchContent(
+                    source, query, search.Token, searchMode), search.Token);
 
-            ReplaceCollection(
-                _gpoScriptSearchResults,
-                results);
+            search.Token.ThrowIfCancellationRequested();
+            if (!ReferenceEquals(_gpoScriptSearchCancellation, search))
+                return null;
 
-            var physicalCopies =
-                results
-                    .SelectMany(item =>
-                        item.Scripts)
-                    .Select(item =>
-                        item.FullPath)
-                    .Distinct(
-                        StringComparer.OrdinalIgnoreCase)
-                    .Count();
+            // Keep SHA-deduplicated raw results in memory. The projector
+            // will expand each hit back to its real GPO + physical file;
+            // changing the results layout NEVER touches remote SYSVOL.
+            _gpoScriptRawSearchMatches = results;
+            _lastGpoScriptSearchScope = scopeDescription;
+            RefreshGpoScriptSearchPresentation();
 
-            GpoScriptSearchCountText.Text =
-                $"{results.Count:N0} unique matches | {physicalCopies:N0} copies | {scopeDescription} | {searchMode}";
-
-            StatusText.Text =
-                results.Count == 0
-                    ? $"No script matches remain for '{query}' in {scopeDescription}"
-                    : $"Found {results.Count:N0} unique script matches for '{query}' in {scopeDescription}";
-
-            return results.Count;
+            var uniqueFiles = _gpoScriptSearchPresentation?.UniqueFileCount ?? 0;
+            StatusText.Text = uniqueFiles == 0
+                ? $"No script files matched '{query}' in {scopeDescription}."
+                : $"Found {uniqueFiles:N0} unique GPO script file(s) for '{query}' " +
+                  $"in {scopeDescription}. Select a file or choose a matching line.";
+            return uniqueFiles;
         }
         catch (OperationCanceledException)
         {
-            StatusText.Text =
-                "Script search canceled";
-
+            if (ReferenceEquals(_gpoScriptSearchCancellation, search))
+                StatusText.Text = "Script search canceled; previous results preserved.";
             return null;
         }
         catch (Exception ex)
         {
-            MessageBox.Show(
-                this,
-                ex.Message,
-                "Search GPO Scripts",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
-
+            if (ReferenceEquals(_gpoScriptSearchCancellation, search))
+                MessageBox.Show(this, ex.Message, "Search GPO Scripts",
+                    MessageBoxButton.OK, MessageBoxImage.Error);
             return null;
         }
         finally
         {
-            SetBusy(
-                false);
+            if (ReferenceEquals(_gpoScriptSearchCancellation, search))
+            {
+                _gpoScriptSearchCancellation = null;
+                SetBusy(false);
+            }
+            search.Dispose();
         }
+    }
+
+    private void RefreshGpoScriptSearchPresentation()
+    {
+        if (!_gpoScriptsInitialized)
+            return;
+
+        var viewMode =
+            (_gpoScriptResultLayoutCombo?.SelectedItem as ComboBoxItem)?.Tag
+                is GpoScriptSearchViewMode selectedViewMode
+                ? selectedViewMode
+                : GpoScriptSearchViewMode.UniqueFilesPerGpo;
+
+        var presentation = GpoScriptSearchPresentationService.Project(
+            _gpoScriptRawSearchMatches, viewMode);
+        _gpoScriptSearchPresentation = presentation;
+
+        // An item is always anchored to a physical path AND GPO ID. Separate
+        // file headers are shown in line mode so dozens of matched lines
+        // cannot visually merge with the next file's results.
+        var view = new ListCollectionView(presentation.Rows.ToList());
+        view.GroupDescriptions.Add(new PropertyGroupDescription(
+            nameof(GpoScriptSearchDisplayRow.GpoHeader)));
+        if (viewMode == GpoScriptSearchViewMode.EveryMatchingLine)
+            view.GroupDescriptions.Add(new PropertyGroupDescription(
+                nameof(GpoScriptSearchDisplayRow.FileHeader)));
+
+        GpoScriptSearchResultsGrid.ItemsSource = view;
+
+        var label = viewMode == GpoScriptSearchViewMode.UniqueFilesPerGpo
+            ? "unique file per GPO" : "matching lines grouped by GPO / file";
+        var scope = string.IsNullOrWhiteSpace(_lastGpoScriptSearchScope)
+            ? "Search not run" : _lastGpoScriptSearchScope;
+        GpoScriptSearchCountText.Text =
+            $"{presentation.Rows.Count:N0} rows ({label}) | " +
+            $"{presentation.UniqueFileCount:N0} physical GPO file(s) | " +
+            $"{presentation.GpoCount:N0} GPO(s) | " +
+            $"{presentation.ContentLineCount:N0} matching line(s)" +
+            (presentation.MetadataMatchCount > 0
+                ? $" + {presentation.MetadataMatchCount:N0} filename/path match(es)"
+                : string.Empty) +
+            $" | {scope}";
     }
 
     private IReadOnlyList<GpoScriptInfo> ResolveGpoScriptSearchSource(

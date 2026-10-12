@@ -8,6 +8,7 @@ var tests = new (string Name, Action Body)[]
     ("AvalonEdit BAT and PowerShell syntax definitions load", TestScriptHighlighting),
     ("PowerShell syntax parser reports malformed code without running it", TestPowerShellSyntaxDiagnostics),
     ("Script searches distinguish content and file metadata", TestScriptSearchModes),
+    ("Script search results separate unique files by GPO and preserve every hit", TestGpoScriptSearchPresentation),
     ("Identical GPO script copies resolve without implicit mass edit", TestGpoScriptCopyResolution),
     ("Public Key, NRPT and MSI metadata route to the right MMC sections", TestExtendedMmcSectionRouting),
     ("Security XML registry and restricted-group details remain read-only", TestSecurityXmlClassificationAndRoutes),
@@ -1201,11 +1202,191 @@ static void TestScriptSearchModes()
             collidingContent, "bat", mode: GpoScriptSearchMode.FileNamesAndPaths);
         Assert(fileMatches.Count == 1 && fileMatches[0].FileName == "sample.bat",
             "Metadata search showed a different filename with identical script contents.");
+
+        // Live search groups identical contents by hash to avoid repeated
+        // SYSVOL decoding. The presentation MUST expand those raw rows to
+        // separate GPO/file identities, and projection must do no file I/O.
+        var identicalBody = service.SearchContent(
+            collidingContent, "hello", mode: GpoScriptSearchMode.ContentOnly);
+        var liveProjection = GpoScriptSearchPresentationService.Project(
+            identicalBody, GpoScriptSearchViewMode.UniqueFilesPerGpo);
+        Assert(liveProjection.UniqueFileCount == 2 &&
+               liveProjection.GpoCount == 2 &&
+               liveProjection.Rows.Any(row =>
+                   row.FilePath.Equals(nameMatch, StringComparison.OrdinalIgnoreCase)) &&
+               liveProjection.Rows.Any(row =>
+                   row.FilePath.Equals(otherNameSameBody, StringComparison.OrdinalIgnoreCase)),
+            "Identical bytes in separate GPO scripts must display as independent files.");
+
+        File.Delete(otherNameSameBody);
+        var cachedProjection = GpoScriptSearchPresentationService.Project(
+            identicalBody, GpoScriptSearchViewMode.EveryMatchingLine);
+        Assert(cachedProjection.UniqueFileCount == liveProjection.UniqueFileCount,
+            "Changing results layout must never reread a removed/stale SYSVOL file.");
     }
     finally
     {
         Directory.Delete(root, recursive: true);
     }
+}
+
+
+static void TestGpoScriptSearchPresentation()
+{
+    var gpoA = Guid.NewGuid();
+    var gpoB = Guid.NewGuid();
+    var pathA = @"\\dc\SYSVOL\domain\Policies\A\Machine\Scripts\startup.cmd";
+    var pathA2 = @"\\dc\SYSVOL\domain\Policies\A\User\Scripts\logon.cmd";
+    var pathB = @"\\dc\SYSVOL\domain\Policies\B\Machine\Scripts\startup.cmd";
+
+    var first = new GpoScriptInfo
+    {
+        GpoId = gpoA, GpoName = "Same visible GPO name",
+        Scope = "Computer", FileName = "startup.cmd",
+        FullPath = pathA, Exists = true, Referenced = true,
+        EventName = "Startup"
+    };
+    var repeatedAssignment = new GpoScriptInfo
+    {
+        GpoId = gpoA, GpoName = first.GpoName,
+        Scope = "Computer", FileName = "startup.cmd",
+        FullPath = pathA.ToUpperInvariant(), Exists = true,
+        Referenced = true, EventName = "Shutdown"
+    };
+    var secondFileSameGpo = new GpoScriptInfo
+    {
+        GpoId = gpoA, GpoName = first.GpoName,
+        Scope = "User", FileName = "logon.cmd",
+        FullPath = pathA2, Exists = true, Referenced = true
+    };
+    var otherGpo = new GpoScriptInfo
+    {
+        GpoId = gpoB, GpoName = first.GpoName, // identical display NAME, separate GPO ID
+        Scope = "Computer", FileName = "startup.cmd",
+        FullPath = pathB, Exists = true, Referenced = true
+    };
+    var copies = new[]
+    {
+        first, repeatedAssignment, secondFileSameGpo, otherGpo
+    };
+    // SearchContent intentionally emits ONE row per content hash/line with
+    // several physical copies. The projector must ungroup these per GPO.
+    var raw = new[]
+    {
+        new GpoScriptSearchResult
+        {
+            Scripts = copies, Identity = "same-content-sha",
+            LineNumber = 2, LineText = "echo hello",
+            MatchType = "Content"
+        },
+        new GpoScriptSearchResult
+        {
+            Scripts = copies, Identity = "same-content-sha",
+            LineNumber = 9, LineText = "echo hello again",
+            MatchType = "Content"
+        },
+        new GpoScriptSearchResult
+        {
+            Scripts = new[] { first, repeatedAssignment },
+            Identity = "metadata-first", LineNumber = 0,
+            LineText = "File name: startup.cmd", MatchType = "File name"
+        }
+    };
+
+    var unique = GpoScriptSearchPresentationService.Project(
+        raw, GpoScriptSearchViewMode.UniqueFilesPerGpo);
+    Assert(unique.UniqueFileCount == 3 && unique.GpoCount == 2 &&
+           unique.Rows.Count == 3 && unique.ContentLineCount == 6 &&
+           unique.MetadataMatchCount == 1,
+        "Unique files must be grouped by (GPO ID, physical path), not the SHA, " +
+        "file name or one of several script assignments.");
+
+    var gpoAStartups = unique.Rows.Where(item =>
+        item.GpoId == gpoA &&
+        item.FilePath.Equals(pathA, StringComparison.OrdinalIgnoreCase)).ToArray();
+    Assert(gpoAStartups.Length == 1 &&
+           gpoAStartups[0].LineNumber == 2 &&
+           gpoAStartups[0].ContentLineCount == 2 &&
+           gpoAStartups[0].MetadataMatchCount == 1 &&
+           gpoAStartups[0].Occurrences.Select(match => match.LineNumber)
+               .SequenceEqual(new[] { 2, 9, 0 }),
+        "Several matching lines and a metadata hit in one GPO file " +
+        "must produce ONE row with a full drill-down to every original line.");
+
+    Assert(unique.Rows.Count(item => item.FileName == "startup.cmd") == 2 &&
+           unique.Rows.Select(item => item.GpoHeader).Distinct().Count() == 2 &&
+           unique.Rows.Where(item => item.FileName == "startup.cmd")
+               .Select(item => item.GpoId).Distinct().Count() == 2,
+        "An identically named/content script in another GPO must remain distinct.");
+
+    var lines = GpoScriptSearchPresentationService.Project(
+        raw, GpoScriptSearchViewMode.EveryMatchingLine);
+    Assert(lines.Rows.Count == 7 &&
+           lines.UniqueFileCount == unique.UniqueFileCount &&
+           lines.ContentLineCount == unique.ContentLineCount &&
+           lines.Rows.Count(row => row.GpoId == gpoA &&
+               row.FilePath.Equals(pathA, StringComparison.OrdinalIgnoreCase)) == 3 &&
+           lines.Rows.Count(row => row.GpoId == gpoB) == 2,
+        "All-lines view must repeat each match for each physical GPO file and " +
+        "retain its own file/group identity.");
+    Assert(lines.Rows.Count(row => row.LineNumber == 0) == 1 &&
+           lines.Rows.Where(row => row.LineNumber == 9).All(row =>
+               row.Preview == "echo hello again"),
+        "Metadata and exact content line numbers must survive layout switching.");
+    Assert(lines.Rows.All(row => row.HasMatches &&
+           row.Occurrences.Count >= 2),
+        "Any displayed hit must retain the file's complete drill-down list.");
+
+    var metadataOnly = GpoScriptSearchPresentationService.Project(
+        new[]
+        {
+            new GpoScriptSearchResult
+            {
+                Scripts = new[] { first }, LineNumber = 0,
+                MatchType = "File name", LineText = "startup.cmd"
+            }
+        }, GpoScriptSearchViewMode.UniqueFilesPerGpo);
+    Assert(metadataOnly.Rows.Count == 1 &&
+           metadataOnly.Rows[0].LineNumber == 0 &&
+           metadataOnly.Rows[0].MatchesLabel == "File / path",
+        "Metadata-only search must open the actual file, without inventing a line hit.");
+
+    var noHits = GpoScriptSearchPresentationService.Project(
+        Array.Empty<GpoScriptSearchResult>(),
+        GpoScriptSearchViewMode.UniqueFilesPerGpo);
+    Assert(noHits.Rows.Count == 0 && noHits.UniqueFileCount == 0 &&
+           noHits.TotalMatches == 0,
+        "No matches must not produce stale GPO file results.");
+
+    // Even when the same physical path is reported from separate GPO IDs,
+    // the identity tuple must not silently erase an independent GPO.
+    var aliasedAcrossGpos = GpoScriptSearchPresentationService.Project(
+        new[]
+        {
+            new GpoScriptSearchResult
+            {
+                Scripts = new[]
+                {
+                    first,
+                    new GpoScriptInfo
+                    {
+                        GpoId = gpoB, GpoName = "Another GPO",
+                        FullPath = pathA, FileName = first.FileName,
+                        Exists = true
+                    }
+                },
+                LineNumber = 4,
+                MatchType = "Content",
+                LineText = "matching"
+            }
+        }, GpoScriptSearchViewMode.UniqueFilesPerGpo);
+    Assert(aliasedAcrossGpos.Rows.Count == 2 &&
+           aliasedAcrossGpos.GpoCount == 2,
+        "GPO IDs must remain part of result identity, even across alias paths.");
+
+    Assert(raw[0].Scripts.Count == 4 &&
+           raw[0].Identity == "same-content-sha",
+        "Projection must not rewrite the raw content-hash search cache.");
 }
 
 static void TestGpoScriptCopyResolution()
