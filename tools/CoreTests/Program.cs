@@ -1398,9 +1398,8 @@ static void TestUnmappedGpmcFailClosed()
 {
     var unknown = new[]
     {
-        "ScheduledTasksSettings", "Scripts", "DriveMapSettings",
-        "PowerOptionsSettings", "WindowsFirewallSettings",
-        "FoldersSettings", "FolderRedirectionSettings",
+        "Scripts", "WindowsFirewallSettings",
+        "FolderRedirectionSettings",
         "LugsSettings", "Policy", "ThirdPartyUnknown",
         "ServiceSettings"
     };
@@ -1417,6 +1416,24 @@ static void TestUnmappedGpmcFailClosed()
         Assert(!GpoEditorNavigatorService.HasVerifiedSection(setting) &&
                GpoEditorNavigatorService.NavigationTarget(setting).Length == 0,
             "An unhandled source must not open an unrelated Security Settings node: " +
+            extension);
+    }
+
+    // Known GPP CSEs now have documented section hints; a section hint
+    // alone must never enable exact automatic row activation.
+    foreach (var extension in new[]
+    {
+        "ScheduledTasksSettings", "PowerOptionsSettings", "FoldersSettings"
+    })
+    {
+        var gpp = new PolicySettingInfo
+        {
+            GpoId = Guid.NewGuid(), Scope = "Computer",
+            Extension = extension, SettingName = "Metadata with generic label"
+        };
+        Assert(GpoPolicySectionRoutes.Resolve(gpp).Count > 0 &&
+               !new GpoEditorNavigatorService().CanNavigateExactly(gpp),
+            "GPP folder route does not prove a unique editable native MMC item: " +
             extension);
     }
 
