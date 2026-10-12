@@ -24,7 +24,10 @@ public sealed class RealSettingsSourceService
 
         var pinnedDc = context.ConnectedServer;
         var domain = context.DomainName;
-        var root = Path.Combine(DomainConnectionState.BuildSysvolRoot(domain),
+        // Build the UNC from the DC captured at the start of this scan.
+        // Never ask the mutable global connection state a second time and
+        // accidentally read a different SYSVOL server mid-scan.
+        var root = Path.Combine($@"\\{pinnedDc}\SYSVOL\{domain}",
             "Policies", gpo.Id.ToString("B"));
         var sources = new (string RelativePath, string Scope, string Kind)[]
         {
@@ -144,6 +147,15 @@ public sealed class RealSettingsSourceService
         // This is a read-only, curated item projection, not a GPP CSE emulator.
         GppXmlSourceScanService.Scan(root, gpo, rows, files, cancellation);
 
+        // Discard the entire collection if the session was repointed while
+        // individual source files were being read.
+        var current = DomainConnectionState.Context;
+        if (current is null ||
+            !current.DomainName.Equals(domain, StringComparison.OrdinalIgnoreCase) ||
+            !current.ConnectedServer.Equals(pinnedDc, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                "Domain/DC connection changed during the pinned SYSVOL scan. " +
+                "Evidence cannot be combined across controllers.");
         return new RealSettingsScanResult(gpo.Id, gpo.DisplayName,
             domain, pinnedDc, DateTimeOffset.Now, rows, files);
     }

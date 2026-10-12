@@ -47,6 +47,14 @@ public partial class MainWindow
         MmcInventoryGpoCombo.SelectedItem = gpo;
         var scanDomain = _domainContext.DomainName;
         var scanDc = DomainConnectionState.GetServerFor(scanDomain);
+        if (string.IsNullOrWhiteSpace(scanDc) ||
+            !gpo.DomainName.Equals(scanDomain, StringComparison.OrdinalIgnoreCase))
+        {
+            MessageBox.Show(this,
+                "A connected and pinned DC matching the chosen GPO is required.",
+                "MMC inventory", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
         var consent = MessageBox.Show(this,
             $"Scan MMC's real tree and right-hand native lists for:\n\n{gpo.DisplayName}\n\n" +
             "This read-only scan may take several minutes. It launches a separate GPO editor " +
@@ -90,6 +98,14 @@ public partial class MainWindow
             var result = await MmcFullSettingsInventoryService.ScanAsync(
                 gpo, _domainContext.DomainDistinguishedName,
                 configured, admx, progress, cancellation.Token);
+
+            var current = DomainConnectionState.Context;
+            if (current is null ||
+                !current.DomainName.Equals(scanDomain, StringComparison.OrdinalIgnoreCase) ||
+                !current.ConnectedServer.Equals(scanDc, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException(
+                    "The domain/DC session changed during the MMC scan. " +
+                    "This observation cannot be combined with the old source snapshot.");
 
             _mmcInventoryResult = result;
             _mmcInventoryScannedGpoId = gpo.Id;

@@ -9,6 +9,7 @@
 - Add an opt-in, session-only operator review dialog for DWORD minutes-to-hours conversions. Require an independently checked native MMC unit, reviewed ADMX/ADML file SHA-256 fingerprints, a review checkbox and change-ticket reference; revalidate fingerprints before export. No GPO, AD or SYSVOL writes.
 - Re-read the selected Registry.pol from the connected/pinned DC both before and after manual unit review and immediately before exporting approved results. Validate full UNC path, same GPO, scope, file SHA-256, exact key/value target, registry type and bytes-derived value; reject partial/incomplete source snapshots and changed files.
 - Include source recheck status/timestamp in the reviewed TSV; a failed recheck blocks export and revokes the current in-memory match. Correctly reject MMC Not Configured rows as value matches.
+- Pin SYSVOL's UNC root to the captured DC for the entire read-only scan, and reject both source and MMC snapshots if the application connection changes mid-scan; no silent cross-DC mixing.
 - The existing plain export deliberately performs no unit inference/approval; reviewed exports retain session approvals only while all source/definition checks pass. This is not effective client RSoP or a transactional GPMC/MMC snapshot. Do not merge or release 2.1.0 solely from CI results; validate representative policies and ADMX variations on a nonproduction DC.
 
 ## 2.0.3 - 2026-10-11
