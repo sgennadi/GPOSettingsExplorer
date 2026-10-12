@@ -6,6 +6,12 @@ GPMC XML includes both actual configured policies and *metadata* (permissions, c
 
 The 2026-10-09 route audit of the user's domain indexed 185 GPOs and 12 distinct section paths. The scan found 11 paths and missed the decorated Administrative Templates node (its central-store suffix later received exact alias matching). **883 Computer and 709 User entries shared a generic Security Settings parent**, despite coming from many different source families. These are *indexed entries affected by imprecise navigation*, NOT a validated count of individually wrong policies.
 
+## Typed Kerberos saved-source comparison (Preview 7)
+
+**Exact MMC Paths** now has an operator-triggered **Check Kerberos GptTmpl.inf...** action. It reads only **one selected GPO** from the **pinned DC** and checks the complete `Machine/Microsoft/Windows NT/SecEdit/GptTmpl.inf` source. Comparison to the typed GPMC `[Kerberos Policy]` Account record requires one matching GPO/scope/Name/Type entry, canonical number/boolean, unique exact INF key and a complete SHA-256 source-file snapshot. `STORED_SNAPSHOTS_MATCH` and `STORED_SNAPSHOTS_DIFFER` compare **captured saved values only**. They never change the independent MMC route status or imply native MMC editing succeeded, replication consistency, live current DC state, effective client RSoP or compliance.
+
+The new action does not invoke MMC or touch unrelated GPP/security families. Missing/partial/duplicate/mismatched source is reported as explicit `GPTTMPL_*` or `KERBEROS_SOURCE_*` blockers, not `Not Configured`. `SoftwareRestrictionSettings` remains `SOURCE_READER_NOT_IMPLEMENTED` until a uniquely typed, stored security level/path rule source reader is available. Full native MMC traversal remains manual for one selected GPO because fragile snap-ins have been observed on a DC.
+
 ## MMC snap-in error on a DC (Preview 6)
 
 A GPO Settings Explorer 2.1 Preview screenshot from a YOSH-DC03 session showed the native **"MMC has detected an error in a snap-in"** dialog while a per-setting discovery action was running a full native inventory and the progress text had reached **Local Policies > User Rights Assignment**. The progress location is the last attempted section, **not definitive evidence which snap-in failed**. It does not alone establish corrupted GPOs or AD.

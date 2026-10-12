@@ -11,9 +11,12 @@ public sealed class RealSettingsSourceService
 {
     public RealSettingsScanResult Scan(
         GpoInfo gpo, CancellationToken cancellation = default,
-        bool registryOnly = false)
+        bool registryOnly = false, bool securityOnly = false)
     {
         ArgumentNullException.ThrowIfNull(gpo);
+        if (registryOnly && securityOnly)
+            throw new ArgumentException("Select one source family; registryOnly and securityOnly are mutually exclusive.");
+
         var context = DomainConnectionState.Context;
         if (context is null || string.IsNullOrWhiteSpace(context.ConnectedServer) ||
             !context.DomainName.Equals(gpo.DomainName, StringComparison.OrdinalIgnoreCase))
@@ -44,6 +47,8 @@ public sealed class RealSettingsSourceService
         // SecEdit, audit.csv or unrelated potentially sensitive GPP XML.
         if (registryOnly)
             sources = sources.Where(source => source.Kind == "Registry").ToArray();
+        else if (securityOnly)
+            sources = sources.Where(source => source.Kind == "Security").ToArray();
 
         var rows = new List<RealSettingRecord>();
         var files = new List<RealSettingsFileEvidence>();
@@ -151,7 +156,7 @@ public sealed class RealSettingsSourceService
 
         // Extend the verified source snapshot with standard GPP XML files.
         // This is a read-only, curated item projection, not a GPP CSE emulator.
-        if (!registryOnly)
+        if (!registryOnly && !securityOnly)
             GppXmlSourceScanService.Scan(root, gpo, rows, files, cancellation);
 
         // Discard the entire collection if the session was repointed while

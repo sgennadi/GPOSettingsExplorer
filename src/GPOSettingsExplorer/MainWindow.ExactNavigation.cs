@@ -135,6 +135,60 @@ public partial class MainWindow
     }
 
     private GpoExactPathsWindow? _exactPathsWindow;
+    private RealSettingsScanResult? _kerberosSourceSnapshot;
+    private bool _kerberosSourceBusy;
+
+    /// <summary>
+    /// Explicit one-GPO, one-source read only. This never walks the domain or
+    /// launches MMC and is distinct from the GPMC index / exact-row status.
+    /// </summary>
+    private async Task<bool> CheckKerberosSourceAsync(
+        PolicySettingInfo setting, Window dialogOwner, IProgress<string>? progress)
+    {
+        if (_kerberosSourceBusy || _domainContext is null ||
+            !KerberosPolicyMetadataService.IsKnownKerberosSetting(setting))
+            return false;
+        var gpo = _gpos.FirstOrDefault(item => item.Id == setting.GpoId);
+        var domain = _domainContext.DomainName;
+        var dc = DomainConnectionState.GetServerFor(domain);
+        if (gpo is null || string.IsNullOrWhiteSpace(dc) ||
+            !gpo.DomainName.Equals(domain, StringComparison.OrdinalIgnoreCase))
+        {
+            progress?.Report("A same-GPO connected domain and pinned DC are required.");
+            return false;
+        }
+
+        _kerberosSourceBusy = true;
+        try
+        {
+            progress?.Report("Reading only GptTmpl.inf of " + gpo.DisplayName +
+                " from pinned DC " + dc + " (read-only, no MMC and no GPO writes)...");
+            var captured = await Task.Run(() =>
+                new RealSettingsSourceService().Scan(gpo, securityOnly: true));
+            if (_domainContext is null ||
+                !captured.Matches(_domainContext.DomainName,
+                    DomainConnectionState.GetServerFor(_domainContext.DomainName)) ||
+                captured.GpoId != gpo.Id || !captured.Matches(domain, dc))
+                throw new InvalidOperationException(
+                    "Connection changed during the source check. Snapshot discarded.");
+
+            _kerberosSourceSnapshot = captured;
+            progress?.Report("GptTmpl.inf capture finished. " +
+                "The exact Kerberos keys and SHA-256 will be compared against typed " +
+                "GPMC records in the coverage grid. Stored snapshots are NOT live client RSoP.");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            CrashLogService.Write("Kerberos pinned security source", ex);
+            progress?.Report("Kerberos source read failed: " + ex.Message);
+            return false;
+        }
+        finally
+        {
+            _kerberosSourceBusy = false;
+        }
+    }
 
     private async void OpenExactPaths_Click(object sender, RoutedEventArgs e)
     {
@@ -178,7 +232,9 @@ public partial class MainWindow
                 }
                 return await DiscoverAndOpenExactMmcRouteAsync(
                     gpo, setting, window, progress);
-            })
+            },
+            (setting, window, progress) =>
+                CheckKerberosSourceAsync(setting, window, progress))
         {
             Owner = this
         };
@@ -197,6 +253,14 @@ public partial class MainWindow
                           HasCurrentMmcInventoryFor(observed)
             ? id : Guid.Empty;
 
+        var domain = _domainContext?.DomainName ?? string.Empty;
+        var dc = DomainConnectionState.GetServerFor(domain);
+        var validSources = new[] { _kerberosSourceSnapshot, _realSourceSnapshot }
+            .Where(snapshot => snapshot is not null &&
+                snapshot.Matches(domain, dc))
+            .OrderByDescending(snapshot => snapshot!.CapturedAt)
+            .ToArray();
+
         var result = new List<GpoExactPathsWindow.RouteRow>(indexed.Length);
         foreach (var setting in indexed)
         {
@@ -213,10 +277,23 @@ public partial class MainWindow
                 : string.Join(" > ", decision.Entry.TreeSegments) +
                     " > " + decision.Entry.SettingName;
 
+            var storedSource = validSources
+                .FirstOrDefault(snapshot => snapshot!.GpoId == setting.GpoId);
+            var kerberosEvidence = GpoKerberosStoredSourceEvidenceService.Compare(
+                setting, byGpo[setting.GpoId], storedSource, domain, dc);
+            // No irrelevant NOT_KERBEROS marker on unrelated entries. SRP
+            // shows the deliberately unsupported source-reader status.
+            var sourceStatus = kerberosEvidence.Status ==
+                GpoKerberosStoredSourceEvidenceService.NotApplicable
+                ? string.Empty : kerberosEvidence.Status;
+            var sourceExplanation = sourceStatus.Length == 0
+                ? string.Empty : kerberosEvidence.Explanation;
+
             result.Add(new GpoExactPathsWindow.RouteRow(setting,
                 setting.GpoName, setting.Scope, setting.Extension,
                 setting.SettingName, hint, decision.Status,
-                observedPath, decision.Explanation));
+                observedPath, decision.Explanation,
+                sourceStatus, sourceExplanation));
         }
         return result;
     }

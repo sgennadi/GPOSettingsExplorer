@@ -41,6 +41,7 @@ var tests = new (string Name, Action Body)[]
     ("Registry.pol binary parser preserves exact source values and flags malformed data", TestRealSettingsRegistryPol),
     ("Registry.pol known security namespaces are labeled without claiming applied CSE", TestRegistrySourceClassification),
     ("Security-template parser reports source values and invalid encodings safely", TestRealSettingsSecurityTemplate),
+    ("Typed Kerberos GPMC and pinned SecEdit snapshots fail closed on identity, hashes and duplicates", TestKerberosStoredSourceEvidence),
     ("Unified catalog never interprets source-file values as effective RSoP", TestRealSettingsUnifiedEvidence),
     ("Cross-DC GPO version evidence refuses aliases and incomplete comparisons", TestCrossDcVersionEvidence),
     ("GPP XML evidence is bounded, redacted and never interpreted as effective policy", TestGppXmlEvidence),
@@ -5251,4 +5252,176 @@ static void TestUniversalExactMmcRoutes()
            GpoExactMmcRouteResolver.ReviewCandidates(
                unknown, new[] { observedUnknown }).Count == 1,
         "Unknown CSE may offer explicit manual route review but never automatic first-match.");
+}
+
+
+static void TestKerberosStoredSourceEvidence()
+{
+    var gpo = Guid.NewGuid();
+    const string domain = "example.local";
+    const string dc = "dc01.example.local";
+    var path = Path.Combine($@"\\{dc}\SYSVOL\{domain}", "Policies",
+        gpo.ToString("B"), "Machine", "Microsoft",
+        "Windows NT", "SecEdit", "GptTmpl.inf");
+    var inf = "[Unicode]\r\nUnicode=yes\r\n[Kerberos Policy]\r\n" +
+              "MaxClockSkew = 5\r\nTicketValidateClient = 1\r\n";
+    var bytes = System.Text.Encoding.Unicode.GetPreamble()
+        .Concat(System.Text.Encoding.Unicode.GetBytes(inf)).ToArray();
+    var sha = Convert.ToHexString(
+        System.Security.Cryptography.SHA256.HashData(bytes));
+    var parsed = SecurityTemplateSourceReader.Parse(
+        bytes, gpo, "Kerberos test", path, sha);
+    Assert(parsed.IsComplete && parsed.Rows.Count >= 2,
+        "Test must parse real SecEdit UTF-16 Kerberos keys.");
+    var files = new[]
+    {
+        new RealSettingsFileEvidence(path, "Read", parsed.Rows.Count, sha,
+            "Test snapshot with exact bytes and hash")
+    };
+    var snapshot = new RealSettingsScanResult(gpo, "Kerberos test", domain, dc,
+        DateTimeOffset.UtcNow, parsed.Rows, files);
+    var policy = new PolicySettingInfo
+    {
+        GpoId = gpo, GpoName = "Kerberos test",
+        Scope = "Computer", Extension = "SecuritySettings",
+        Category = KerberosPolicyMetadataService.Category,
+        SettingName = "Maximum tolerance for computer clock synchronization",
+        Value = "Name=MaxClockSkew; SettingNumber=5; Type=Kerberos"
+    };
+    GpoKerberosStoredSourceEvidenceService.Result Compare(
+        PolicySettingInfo setting, RealSettingsScanResult? source,
+        IReadOnlyList<PolicySettingInfo>? indexed = null,
+        string? domainOverride = null, string? dcOverride = null) =>
+        GpoKerberosStoredSourceEvidenceService.Compare(
+            setting, indexed ?? new[] { setting }, source,
+            domainOverride ?? domain, dcOverride ?? dc);
+    var agree = Compare(policy, snapshot);
+    Assert(agree.Status == GpoKerberosStoredSourceEvidenceService.Match &&
+           agree.GpmcLiteral == "5" && agree.InfLiteral == "5" &&
+           agree.SourceSha256 == sha &&
+           agree.Explanation.Contains("NOT MMC", StringComparison.Ordinal),
+        "One SHA-256-backed Kerberos source snapshot should agree without claiming client RSoP.");
+    var differs = Compare(new PolicySettingInfo
+    {
+        GpoId = gpo, Scope = "Computer", Extension = "SecuritySettings",
+        Category = KerberosPolicyMetadataService.Category,
+        SettingName = "Account: MaxClockSkew",
+        Value = "Name=MaxClockSkew; SettingNumber=6; Type=Kerberos"
+    }, snapshot);
+    Assert(differs.Status == GpoKerberosStoredSourceEvidenceService.Mismatch &&
+           differs.GpmcLiteral == "6" && differs.InfLiteral == "5",
+        "Different stored values must be reported as captured-snapshot difference.");
+
+    var boolean = new PolicySettingInfo
+    {
+        GpoId = gpo, Scope = "Computer", Extension = "SecuritySettings",
+        Category = KerberosPolicyMetadataService.Category,
+        SettingName = "Enforce user logon restrictions",
+        Value = "Name=TicketValidateClient; SettingBoolean=true; Type=Kerberos"
+    };
+    Assert(Compare(boolean, snapshot).Status ==
+           GpoKerberosStoredSourceEvidenceService.Match,
+        "Explicit GPMC true must agree only with saved SecEdit boolean 1.");
+    var falseBoolean = new PolicySettingInfo
+    {
+        GpoId = gpo, Scope = "Computer", Extension = "SecuritySettings",
+        Category = KerberosPolicyMetadataService.Category,
+        SettingName = boolean.SettingName,
+        Value = "Name=TicketValidateClient; SettingBoolean=false; Type=Kerberos"
+    };
+    Assert(Compare(falseBoolean, snapshot).Status ==
+           GpoKerberosStoredSourceEvidenceService.Mismatch,
+        "Stored Boolean true and GPMC Boolean false differ.");
+    Assert(Compare(policy, null).Status ==
+           GpoKerberosStoredSourceEvidenceService.NoSnapshot,
+        "Absent source scan cannot be called Not Configured.");
+    Assert(Compare(policy, snapshot, dcOverride: "other-dc.example.local").Status ==
+           GpoKerberosStoredSourceEvidenceService.WrongSnapshot,
+        "A source captured from a different pinned DC must be rejected.");
+    Assert(Compare(policy, snapshot, domainOverride: "other.example.local").Status ==
+           GpoKerberosStoredSourceEvidenceService.WrongSnapshot,
+        "Cross-domain source snapshots must not compare.");
+    Assert(Compare(policy, snapshot with { GpoId = Guid.NewGuid() }).Status ==
+           GpoKerberosStoredSourceEvidenceService.WrongSnapshot,
+        "A same-looking SecEdit file from another GPO cannot be compared.");
+    Assert(Compare(policy, snapshot, new[] { policy, policy }).Status ==
+           GpoKerberosStoredSourceEvidenceService.GpmcAmbiguous,
+        "Duplicate GPMC policy identities must not be selected by first record.");
+    Assert(Compare(policy, snapshot with { Files = Array.Empty<RealSettingsFileEvidence>() })
+        .Status == GpoKerberosStoredSourceEvidenceService.FileAbsent,
+        "Absent GptTmpl INF file is unknown, not Not Configured.");
+    Assert(Compare(policy, snapshot with { Files = new[]
+    {
+        files[0] with { SourceFile = path.Replace("dc01", "dc02",
+            StringComparison.OrdinalIgnoreCase) }
+    } }).Status == GpoKerberosStoredSourceEvidenceService.FileAbsent,
+        "A same-suffix source file on another DC must not be accepted.");
+    Assert(Compare(policy, snapshot with { Files = new[] { files[0], files[0] } })
+        .Status == GpoKerberosStoredSourceEvidenceService.FileAmbiguous,
+        "Duplicate file records cannot establish one source identity.");
+    Assert(Compare(policy, snapshot with { Files = new[]
+    {
+        files[0] with { Status = "Partial" }
+    } }).Status == GpoKerberosStoredSourceEvidenceService.FileIncomplete,
+        "A partial SecEdit parser must block comparisons even for a valid first row.");
+    Assert(Compare(policy, snapshot with { Files = new[]
+    {
+        files[0] with { Sha256 = "" }
+    } }).Status == GpoKerberosStoredSourceEvidenceService.FileIncomplete,
+        "Missing source-file SHA-256 must block stored-value agreement.");
+    Assert(Compare(policy, snapshot with
+    {
+        Rows = parsed.Rows.Where(x => x.SettingName != "MaxClockSkew").ToArray()
+    }).Status == GpoKerberosStoredSourceEvidenceService.SourceMissing,
+        "An absent exact source key is not proof that Kerberos is Not Configured.");
+    Assert(Compare(policy, snapshot with
+    {
+        Rows = parsed.Rows.Concat(new[] { parsed.Rows.Single(x =>
+            x.SettingName == "MaxClockSkew") }).ToArray()
+    }).Status == GpoKerberosStoredSourceEvidenceService.SourceAmbiguous,
+        "Duplicate exact template key entries must fail closed.");
+    Assert(Compare(policy, snapshot with
+    {
+        Rows = parsed.Rows.Select(x => x.SettingName == "MaxClockSkew"
+            ? x with { SourceSha256 = new string('C', 64) } : x).ToArray()
+    }).Status == GpoKerberosStoredSourceEvidenceService.SourceUntrusted,
+        "Stored row must have same hash as the complete source file.");
+    foreach (var malformed in new[]
+    {
+        "Type=Kerberos; Name=MaxClockSkew; SettingNumber=05",
+        "Type=Kerberos; Name=MaxClockSkew; SettingNumber=-1",
+        "Type=Kerberos; Name=MaxClockSkew; SettingNumber=4294967296",
+        "Type=Kerberos; Name=MaxClockSkew; SettingNumber=5; SettingNumber=5",
+        "Name=MaxClockSkew; SettingNumber=5; Type=Kerberos; Type=Kerberos",
+        "Type=Kerberos; Name=MaxClockSkew; SettingBoolean=true",
+        "Type=Kerberos; Name=MaxRenewAge; SettingNumber=5",
+        "Name=MaxClockSkew; SettingNumber=5",
+        "Type=Kerberos; Name=MaxClockSkew; SettingNumber=5; SettingBoolean=true"
+    })
+    {
+        var unsupported = new PolicySettingInfo
+        {
+            GpoId = policy.GpoId, Scope = policy.Scope, Extension = policy.Extension,
+            Category = policy.Category, SettingName = policy.SettingName,
+            Value = malformed
+        };
+        Assert(Compare(unsupported, snapshot).Status ==
+               GpoKerberosStoredSourceEvidenceService.GpmcUntyped,
+            "Malformed/duplicate/conflicting Kerberos GPMC fields cannot verify stored data.");
+    }
+    var srp = new PolicySettingInfo
+    {
+        GpoId = gpo, Scope = "User",
+        Extension = "SoftwareRestrictionSettings", SettingName = "Path Rule",
+        Value = @"Path=C:\Windows\System32\example.exe"
+    };
+    Assert(Compare(srp, snapshot).Status ==
+           GpoKerberosStoredSourceEvidenceService.NotSupported,
+        "A Kerberos source checker must never claim stored SRP rule coverage.");
+
+    var onlyOneFamily = new RealSettingsSourceService();
+    ExpectFailure(() => onlyOneFamily.Scan(
+        new GpoInfo { Id = gpo, DomainName = domain },
+        registryOnly: true, securityOnly: true),
+        "GptTmpl-only and Registry.pol-only selection must be mutually exclusive.");
 }

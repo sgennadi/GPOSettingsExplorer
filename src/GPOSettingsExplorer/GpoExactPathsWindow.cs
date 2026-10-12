@@ -18,17 +18,18 @@ public sealed class GpoExactPathsWindow : Window
         PolicySettingInfo Source,
         string Gpo, string Scope, string Extension, string Setting,
         string SectionHint, string Status, string ObservedExactPath,
-        string Reason)
+        string Reason, string SourceStatus = "", string SourceExplanation = "")
     {
         public string SearchText => string.Join(" ", new[]
         {
             Gpo, Scope, Extension, Setting, SectionHint,
-            Status, ObservedExactPath, Reason
+            Status, ObservedExactPath, Reason, SourceStatus, SourceExplanation
         });
     }
 
     private readonly Func<IReadOnlyList<RouteRow>> _refresh;
     private readonly Func<PolicySettingInfo, Window, IProgress<string>, Task<bool>> _open;
+    private readonly Func<PolicySettingInfo, Window, IProgress<string>, Task<bool>> _checkSource;
     private readonly DataGrid _grid = new()
     {
         AutoGenerateColumns = false,
@@ -56,6 +57,15 @@ public sealed class GpoExactPathsWindow : Window
         MinWidth = 220,
         Padding = new Thickness(12, 7, 12, 7)
     };
+    private readonly Button _securitySource = new()
+    {
+        Content = "Check Kerberos GptTmpl.inf...",
+        IsEnabled = false,
+        MinWidth = 205,
+        Padding = new Thickness(12, 7, 12, 7),
+        ToolTip = "Read only the selected GPO's GptTmpl.inf from the pinned DC. " +
+                  "Compare typed GPMC values with a SHA-256-bound stored source snapshot; NOT MMC or RSoP."
+    };
     private readonly Button _refreshButton = new()
     {
         Content = "Refresh statuses",
@@ -65,10 +75,12 @@ public sealed class GpoExactPathsWindow : Window
     private IReadOnlyList<RouteRow> _rows = Array.Empty<RouteRow>();
 
     public GpoExactPathsWindow(Func<IReadOnlyList<RouteRow>> refresh,
-        Func<PolicySettingInfo, Window, IProgress<string>, Task<bool>> open)
+        Func<PolicySettingInfo, Window, IProgress<string>, Task<bool>> open,
+        Func<PolicySettingInfo, Window, IProgress<string>, Task<bool>> checkSource)
     {
         _refresh = refresh ?? throw new ArgumentNullException(nameof(refresh));
         _open = open ?? throw new ArgumentNullException(nameof(open));
+        _checkSource = checkSource ?? throw new ArgumentNullException(nameof(checkSource));
 
         Title = "Exact MMC Paths - indexed GPMC policy coverage";
         Width = 1400;
@@ -103,7 +115,9 @@ public sealed class GpoExactPathsWindow : Window
                 "An EXACT_ROW_OBSERVED result requires an explicit, unique same-GPO " +
                 "MMC row from a read-only scan. Unsupported snap-ins, descriptive " +
                 "XML children, custom views and unscanned GPOs are not silently " +
-                "marked verified. Native paths are not proof of stored values or client RSoP.",
+                "marked verified. A separate selected-GPO Kerberos source check can compare " +
+                "typed GPMC metadata with a complete GptTmpl.inf snapshot from the pinned DC. " +
+                "Neither an MMC path nor stored-value agreement proves live DC state or client RSoP.",
             Foreground = UiStyle.WarningBrush,
             TextWrapping = TextWrapping.Wrap
         });
@@ -118,6 +132,7 @@ public sealed class GpoExactPathsWindow : Window
         controls.Children.Add(_search);
         controls.Children.Add(_refreshButton);
         controls.Children.Add(_openSelected);
+        controls.Children.Add(_securitySource);
         _search.TextChanged += (_, _) =>
         {
             _view?.Refresh();
@@ -127,6 +142,7 @@ public sealed class GpoExactPathsWindow : Window
         _grid.SelectionChanged += (_, _) => UpdateSelection();
         _grid.MouseDoubleClick += async (_, _) => await OpenSelectedAsync();
         _openSelected.Click += async (_, _) => await OpenSelectedAsync();
+        _securitySource.Click += async (_, _) => await CheckSourceAsync();
         header.Children.Add(_summary);
 
         var footer = new StackPanel { Margin = new Thickness(0, 6, 0, 0) };
@@ -149,6 +165,7 @@ public sealed class GpoExactPathsWindow : Window
         Column("Configured setting", nameof(RouteRow.Setting), 2);
         Column("Candidate section", nameof(RouteRow.SectionHint), 2.1);
         Column("Route status", nameof(RouteRow.Status), 1.1);
+        Column("Kerberos stored source", nameof(RouteRow.SourceStatus), 1.3);
         Column("Observed exact MMC path", nameof(RouteRow.ObservedExactPath), 2.7);
         UiStyle.ApplyDataGridDefaults(_grid);
         root.Children.Add(_grid);
@@ -179,26 +196,73 @@ public sealed class GpoExactPathsWindow : Window
             return;
         var all = _rows;
         var observed = all.Count(row => row.Status == GpoExactMmcRouteResolver.Ready);
+        var sourceMatches = all.Count(row =>
+            row.SourceStatus == GpoKerberosStoredSourceEvidenceService.Match);
+        var sourceDifferences = all.Count(row =>
+            row.SourceStatus == GpoKerberosStoredSourceEvidenceService.Mismatch);
         var ambiguous = all.Count(row =>
             row.Status is GpoExactMmcRouteResolver.Ambiguous or
                 GpoExactMmcRouteResolver.SourceAmbiguous);
         _summary.Text = $"{_view.Cast<object>().Count():N0} shown / " +
             $"{all.Count:N0} indexed GPMC entries | " +
             $"{observed:N0} uniquely observed native rows | " +
-            $"{ambiguous:N0} ambiguous source/row identities. " +
-            "This is navigation coverage, not verified source values or applied policy.";
+            $"{ambiguous:N0} ambiguous source/row identities | " +
+            $"{sourceMatches:N0} Kerberos stored-source agreements, " +
+            $"{sourceDifferences:N0} stored-source differences. " +
+            "Stored agreement does NOT verify MMC display, DC freshness or applied client policy.";
     }
 
     private void UpdateSelection()
     {
         var row = _grid.SelectedItem as RouteRow;
         _openSelected.IsEnabled = row is not null;
+        _securitySource.IsEnabled = row is not null &&
+            KerberosPolicyMetadataService.IsKnownKerberosSetting(row.Source);
         _detail.Text = row is null
             ? "Select a setting, then find its exact native MMC location " +
               "with an optional SINGLE-GPO scan (requires confirmation)."
             : row.Status + " — " + row.Reason +
               (string.IsNullOrWhiteSpace(row.ObservedExactPath)
-                  ? "" : "\nObserved: " + row.ObservedExactPath);
+                  ? "" : "\nObserved: " + row.ObservedExactPath) +
+              (string.IsNullOrEmpty(row.SourceStatus)
+                  ? "" : "\nStored Kerberos source: " + row.SourceStatus +
+                    " — " + row.SourceExplanation);
+    }
+
+    private async Task CheckSourceAsync()
+    {
+        if (_grid.SelectedItem is not RouteRow selected ||
+            !KerberosPolicyMetadataService.IsKnownKerberosSetting(selected.Source))
+            return;
+
+        _securitySource.IsEnabled = false;
+        _openSelected.IsEnabled = false;
+        _refreshButton.IsEnabled = false;
+        _detail.Text = "Reading only this selected GPO's GptTmpl.inf (read-only) on the pinned DC...";
+        try
+        {
+            var progress = new Progress<string>(text => _detail.Text = text);
+            var read = await _checkSource(selected.Source, this, progress);
+            RefreshRows();
+            if (!read)
+                _detail.Text = "Pinned-DC Kerberos security source could not be captured. " +
+                    "No stored-value verification was claimed. Reconnect and retry.";
+            // On success RefreshRows displays the distinct stored-value and
+            // MMC navigation statuses without claiming live or client RSoP.
+        }
+        catch (Exception ex)
+        {
+            _detail.Text = "Kerberos security source check failed: " + ex.Message;
+            CrashLogService.Write("Kerberos stored source check", ex);
+        }
+        finally
+        {
+            if (IsLoaded)
+            {
+                _refreshButton.IsEnabled = true;
+                UpdateSelection();
+            }
+        }
     }
 
     private async Task OpenSelectedAsync()
@@ -207,6 +271,7 @@ public sealed class GpoExactPathsWindow : Window
             return;
         _openSelected.IsEnabled = false;
         _refreshButton.IsEnabled = false;
+        _securitySource.IsEnabled = false;
         _detail.Text = "Checking source, selected GPO and MMC snapshot...";
         try
         {
@@ -229,6 +294,8 @@ public sealed class GpoExactPathsWindow : Window
             if (IsLoaded)
             {
                 _openSelected.IsEnabled = _grid.SelectedItem is RouteRow;
+                _securitySource.IsEnabled = _grid.SelectedItem is RouteRow row &&
+                    KerberosPolicyMetadataService.IsKnownKerberosSetting(row.Source);
                 _refreshButton.IsEnabled = true;
             }
         }

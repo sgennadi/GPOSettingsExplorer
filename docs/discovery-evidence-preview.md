@@ -2,6 +2,10 @@
 
 This feature is read-only and does not change Group Policy or SYSVOL. Optional startup **GPMC indexing** uses a per-user preference and the incremental cache; it does not start the native MMC editor for all GPOs. MMC observations, source values and RSoP have distinct statuses; no bulk scanner can truthfully set every Windows policy to VERIFIED without type-specific evidence.
 
+## Preview 7: Kerberos stored-source snapshot evidence
+
+Open **Exact MMC Paths** (separate from the Registry.pol-only **Discovery & Verification** unit review), select a typed Kerberos Account setting, then choose **Check Kerberos GptTmpl.inf...**. The program reads only that GPO's SecEdit `GptTmpl.inf` on the pinned DC, hashes the captured file and compares one canonical `SettingNumber` or `SettingBoolean` with the exact `[Kerberos Policy]` entry. Results appear in the **Kerberos stored source** column independently of MMC navigation. Missing or incomplete files, wrong GPO/DC, duplicate source/GPMC identities and unsupported value representations are blockers. Values still represent captured GPMC/SYSVOL snapshots, not atomic live DC equality, effective client RSoP, or signed-off units. This action is opt-in per GPO and **never launches native MMC**.
+
 ## Preview 6 fail-closed MMC inventory
 
 A per-setting **Check captured MMC route...** action must never cause a hidden deep inventory of the entire native GPO editor. With no existing non-aborted same-GPO/DC snapshot, it reports **NO VERIFIED MMC SNAPSHOT** and gives the explicit manual inventory workflow. The operator may choose a bounded read-only scan for one GPO in **MMC Full Settings Inventory**; Scripts and User Rights Assignment nodes are conservatively skipped and marked incomplete. A detected native MMC modal error requests cancellation and marks the results **STOPPED / PARTIAL**; those rows are never eligible for exact-route verification, unit approval or effective RSoP assertions. The native dialog is left intact for manual investigation. UI Automation can remain blocked until the operator closes that MMC dialog.
