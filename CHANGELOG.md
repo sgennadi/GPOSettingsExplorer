@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix 2.1 preview version metadata: FileVersion/AssemblyVersion 2.1.0.0 and product version 2.1.0-preview.1; the running app title identifies itself as v2.1.0 Preview. Produce a separate GitHub prerelease with x64/ARM64 ZIPs after build, tests and explicit EXE version checks; do not mislabel preview commits as stable releases.
+
 - **2.1 development preview (read-only):** introduce evidence-first discovery identities and strict native MMC-to-Registry.pol comparison without treating a route, displayed value or matching raw number as effective RSoP.
 - Gate minutes-to-hours conversion behind an explicit, independently reviewed per-policy rule tied to GPO, scope, exact registry target, policy identity SHA-256, pinned Registry.pol SHA-256 and a reviewed ADMX/ADML evidence digest. A name, decimal range or provenance string by itself is never unit proof.
 - Reject conflicting, unsupported, unreviewed or stale rules without falling back to a misleading numeric match. Report unit decision status and review provenance in TSV; extend regression coverage for changed hashes, duplicate rules and localized/ambiguous MMC text.

@@ -2,6 +2,7 @@ using GPOSettingsExplorer.Models;
 using GPOSettingsExplorer.Services;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Reflection;
 using System.Windows;
 using System.Windows.Data;
 using System.Windows.Input;
@@ -30,10 +31,16 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
-        // Take the version from the running assembly, never from a hard-coded caption.
-        var version = typeof(MainWindow).Assembly.GetName().Version;
+        // Show the actual running assembly's version and explicit prerelease
+        // marker. Never label a development build as a stable release.
+        var assembly = typeof(MainWindow).Assembly;
+        var version = assembly.GetName().Version;
+        var informational = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion ?? string.Empty;
+        var isPreview = informational.Contains("-preview", StringComparison.OrdinalIgnoreCase);
         Title = "GPO Settings Explorer" +
-                (version is null ? "" : $" v{version.ToString(3)}");
+                (version is null ? "" : $" v{version.ToString(3)}") +
+                (isPreview ? " Preview" : string.Empty);
 
         GpoGrid.ItemsSource = _gpos;
         SettingsGrid.ItemsSource = _settings;
