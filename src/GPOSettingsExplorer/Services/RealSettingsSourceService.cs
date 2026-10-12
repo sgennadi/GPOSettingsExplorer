@@ -10,7 +10,8 @@ namespace GPOSettingsExplorer.Services;
 public sealed class RealSettingsSourceService
 {
     public RealSettingsScanResult Scan(
-        GpoInfo gpo, CancellationToken cancellation = default)
+        GpoInfo gpo, CancellationToken cancellation = default,
+        bool registryOnly = false)
     {
         ArgumentNullException.ThrowIfNull(gpo);
         var context = DomainConnectionState.Context;
@@ -38,6 +39,11 @@ public sealed class RealSettingsSourceService
             (Path.Combine("Machine", "Microsoft", "Windows NT",
                 "Audit", "audit.csv"), "Computer", "AdvancedAudit")
         };
+
+        // Unit rechecks need only Machine/User Registry.pol: do not read
+        // SecEdit, audit.csv or unrelated potentially sensitive GPP XML.
+        if (registryOnly)
+            sources = sources.Where(source => source.Kind == "Registry").ToArray();
 
         var rows = new List<RealSettingRecord>();
         var files = new List<RealSettingsFileEvidence>();
@@ -145,7 +151,8 @@ public sealed class RealSettingsSourceService
 
         // Extend the verified source snapshot with standard GPP XML files.
         // This is a read-only, curated item projection, not a GPP CSE emulator.
-        GppXmlSourceScanService.Scan(root, gpo, rows, files, cancellation);
+        if (!registryOnly)
+            GppXmlSourceScanService.Scan(root, gpo, rows, files, cancellation);
 
         // Discard the entire collection if the session was repointed while
         // individual source files were being read.

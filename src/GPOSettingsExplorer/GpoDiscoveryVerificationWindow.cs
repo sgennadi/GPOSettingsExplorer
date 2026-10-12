@@ -382,7 +382,8 @@ public sealed class GpoDiscoveryVerificationWindow : Window
 
         // No cached snapshot or DFS/domain alias fallback: re-read the chosen
         // GPO from DomainConnectionState's explicitly connected controller.
-        var refreshed = await Task.Run(() => new RealSettingsSourceService().Scan(_gpo));
+        var refreshed = await Task.Run(() =>
+            new RealSettingsSourceService().Scan(_gpo, registryOnly: true));
         var after = DomainConnectionState.Context;
         if (after is null ||
             !after.DomainName.Equals(_domain, StringComparison.OrdinalIgnoreCase) ||
