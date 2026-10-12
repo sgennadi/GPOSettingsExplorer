@@ -4215,6 +4215,18 @@ static void TestDiscoveryUnitReview()
         Navigation = "Exact MMC row candidate", MmcState = "Enabled",
         MmcValue = "10 hours"
     };
+    Assert(GpoDiscoveryAdmxIdentityService.MatchesExactFolder(
+        "Computer", section, policy.Category),
+        "Only the complete ADMX category tree identifies an exact MMC folder.");
+    var sameSuffixDifferentFolder =
+        "Computer Configuration > Policies > Administrative Templates > Other > Example Policies";
+    Assert(!GpoDiscoveryAdmxIdentityService.MatchesExactFolder(
+        "Computer", sameSuffixDifferentFolder, policy.Category),
+        "A matching category suffix in another folder must not count as the correct ADMX path.");
+    Assert(!GpoDiscoveryAdmxIdentityService.MatchesExactFolder(
+        "User", section, policy.Category),
+        "A path under the wrong MMC policy scope cannot be an exact folder.");
+
     Assert(GpoDiscoveryEvidenceService.CorrelateMmc(raw, new[] { observed })[0]
         .NavigationStatus == "SECTION_CANDIDATE",
         "A nested Administrative Templates row must not match without an exact ADMX definition.");
@@ -4256,6 +4268,11 @@ static void TestDiscoveryUnitReview()
             TreeSegments = (section + " > Wrong").Split(" > ") } },
         new[] { policy })[0].NavigationStatus == "SECTION_CANDIDATE",
         "A row in another MMC folder is not the same configured policy.");
+    Assert(GpoDiscoveryEvidenceService.CorrelateMmc(raw,
+        new[] { observed with { SectionPath = sameSuffixDifferentFolder,
+            TreeSegments = sameSuffixDifferentFolder.Split(" > ") } },
+        new[] { policy })[0].NavigationStatus == "SECTION_CANDIDATE",
+        "A different MMC folder with an identical category suffix must not match the ADMX policy.");
 
     var source = new RealSettingRecord
     {
@@ -4272,6 +4289,10 @@ static void TestDiscoveryUnitReview()
     var candidate = GpoDiscoveryUnitReviewService.Inspect(row, new[] { policy });
     Assert(candidate.CanReview && candidate.Status == "READY_FOR_MANUAL_REVIEW",
         "Exact MMC and Registry.pol evidence permits manual review, not automatic conversion.");
+    Assert(GpoDiscoveryUnitReviewService.Inspect(row with {
+        MmcObservedSection = sameSuffixDifferentFolder }, new[] { policy }).Status ==
+        "ADMX_NOT_MAPPED",
+        "Manual unit review requires the complete MMC path, not a category suffix.");
     Assert(GpoDiscoveryUnitReviewService.Inspect(row, new[] { policy, policy }).Status ==
            "AMBIGUOUS_ADMX", "Ambiguous templates must block review.");
     Assert(GpoDiscoveryUnitReviewService.Inspect(row with { SourceStoredType = "REG_SZ" },

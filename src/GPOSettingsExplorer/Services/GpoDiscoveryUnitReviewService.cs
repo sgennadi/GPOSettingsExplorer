@@ -75,8 +75,8 @@ public static class GpoDiscoveryUnitReviewService
                 policy.DisplayName.Equals(item.SettingName, StringComparison.Ordinal) &&
                 !string.IsNullOrWhiteSpace(policy.Name) &&
                 !string.IsNullOrWhiteSpace(policy.AdmxFile) &&
-                MmcInventoryReconciliation.SectionMatches(
-                    item.MmcObservedSection, policy.Category))
+                GpoDiscoveryAdmxIdentityService.MatchesExactFolder(
+                    item.Scope, item.MmcObservedSection, policy.Category))
             .ToArray();
 
         if (matchingPolicies.Length != 1)

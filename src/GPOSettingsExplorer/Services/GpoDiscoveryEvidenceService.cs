@@ -108,7 +108,7 @@ public static partial class GpoDiscoveryEvidenceService
                     NavigationStatus = "MMC_ROW_OBSERVED",
                     MmcObservedState = matches[0].MmcState,
                     MmcObservedValue = matches[0].MmcValue,
-                    MmcObservedSection = matches[0].SectionPath,
+                    MmcObservedSection = string.Join(" > ", matches[0].TreeSegments),
                     MmcRowNavigation = matches[0].Navigation,
                     ValueVerificationStatus = "MMC_OBSERVED_SOURCE_NOT_COMPARED",
                     Notes = "One matching native MMC row observed. Value and effective RSoP are not verified."
@@ -150,7 +150,8 @@ public static partial class GpoDiscoveryEvidenceService
             (policy.Scope.Equals(item.Scope, StringComparison.OrdinalIgnoreCase) ||
              policy.Scope.Equals("Both", StringComparison.OrdinalIgnoreCase)) &&
             policy.DisplayName.Equals(item.SettingName, StringComparison.Ordinal) &&
-            MmcInventoryReconciliation.SectionMatches(row.SectionPath, policy.Category) &&
+            GpoDiscoveryAdmxIdentityService.MatchesExactFolder(
+                row.Scope, string.Join(" > ", row.TreeSegments), policy.Category) &&
             // A native MMC row displays a policy-level value, not the
             // individual field name. Multiple ADMX elements make the
             // field-to-display-unit association ambiguous.
