@@ -10,7 +10,7 @@ This feature is read-only and does not change Group Policy or SYSVOL.
 4. In **All Settings**, select the same GPO and load its stored source files if Registry.pol source correlation is needed.
 5. Select **Export discovery evidence...** and save the TSV locally.
 
-The export uses only a previously captured source snapshot for the exact selected GPO, domain, and pinned domain controller. It does not trigger a fresh SYSVOL scan. Exported rows may contain confidential policy values; do not publish them.
+The export uses only a previously captured source snapshot for the exact selected GPO, domain, and pinned domain controller. It does not trigger a fresh SYSVOL scan. Exported rows may contain confidential policy values; the GUI requires explicit confirmation before saving. Do not publish or upload the TSV.
 
 ## Interpretation
 
@@ -22,7 +22,7 @@ The export uses only a previously captured source snapshot for the exact selecte
 - SOURCE_RECORD_LOCATED_VALUE_NOT_COMPARED: source value/type/hash are available, but MMC and source values have **not** been compared.
 - MMC_OBSERVED_SOURCE_NOT_COMPARED: the MMC state/value was observed but has **not** been compared to the stored source.
 
-The TSV includes raw source value, registry type and source-file SHA-256 when uniquely available. It is **not** an effective RSoP report. No status indicates verified value equality. Values shown in MMC can be formatted in different units or localized; naive string equality would be unsafe.
+The TSV includes raw source value, registry type and source-file SHA-256 when uniquely available. It is **not** an effective RSoP report. Limited `MATCH_LITERAL_REG_SZ` / `MISMATCH_LITERAL_REG_SZ` and `MATCH_LITERAL_INTEGER` / `MISMATCH_LITERAL_INTEGER` statuses compare only unambiguous literal source and MMC text under strict conditions. `MATCH_EXPLICIT_MINUTES_HOURS` / `MISMATCH_EXPLICIT_MINUTES_HOURS` require an explicitly proven `SourceUnit=minutes`; the current production export does **not** populate that field, so this conversion is test-only for now. These statuses do **not** verify effective RSoP. MMC text can be formatted in different units or localized; never infer a source unit from a policy name.
 
 ## Remaining release blockers
 
