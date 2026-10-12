@@ -42,6 +42,7 @@ var tests = new (string Name, Action Body)[]
     ("Registry.pol known security namespaces are labeled without claiming applied CSE", TestRegistrySourceClassification),
     ("Security-template parser reports source values and invalid encodings safely", TestRealSettingsSecurityTemplate),
     ("Typed Kerberos GPMC and pinned SecEdit snapshots fail closed on identity, hashes and duplicates", TestKerberosStoredSourceEvidence),
+    ("Typed SRP Path Rules require unique SHA-256-bound ItemData and security-level identity", TestSrpStoredSourceEvidence),
     ("Unified catalog never interprets source-file values as effective RSoP", TestRealSettingsUnifiedEvidence),
     ("Cross-DC GPO version evidence refuses aliases and incomplete comparisons", TestCrossDcVersionEvidence),
     ("GPP XML evidence is bounded, redacted and never interpreted as effective policy", TestGppXmlEvidence),
@@ -5424,4 +5425,182 @@ static void TestKerberosStoredSourceEvidence()
         new GpoInfo { Id = gpo, DomainName = domain },
         registryOnly: true, securityOnly: true),
         "GptTmpl-only and Registry.pol-only selection must be mutually exclusive.");
+}
+
+
+static void TestSrpStoredSourceEvidence()
+{
+    var gpo = Guid.NewGuid();
+    const string domain = "example.test";
+    const string dc = "dc01.example.test";
+    const string rawPath = @"%systemdrive%\Windows\system32\dsdbutil.exe";
+    var guid = Guid.NewGuid().ToString("B");
+    var registryKey =
+        @"Software\Policies\Microsoft\Windows\Safer\CodeIdentifiers\0\Paths\" + guid;
+    var file = Path.Combine($@"\\{dc}\SYSVOL\{domain}",
+        "Policies", gpo.ToString("B"), "User", "Registry.pol");
+
+    // Build and parse a real PReg stream. ItemData is REG_EXPAND_SZ and
+    // must remain unexpanded, case-preserved and bound to a specific GUID.
+    var bytes = new List<byte>();
+    void Raw(byte[] data) => bytes.AddRange(data);
+    void Text(string text) => Raw(System.Text.Encoding.Unicode.GetBytes(text));
+    void Dword(uint value)
+    {
+        var data = new byte[4];
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(data, value);
+        Raw(data);
+    }
+    Dword(0x67655250);
+    Dword(1);
+    Text("[");
+    Text(registryKey + "\0"); Text(";");
+    Text("ItemData\0"); Text(";");
+    Dword(2); Text(";");
+    var payload = System.Text.Encoding.Unicode.GetBytes(rawPath + "\0");
+    Dword((uint)payload.Length); Text(";");
+    Raw(payload); Text("]");
+    var raw = bytes.ToArray();
+    var sha = Convert.ToHexString(
+        System.Security.Cryptography.SHA256.HashData(raw));
+    var parsed = RegistryPolReader.Parse(raw, gpo, "SRP test",
+        "User", file, sha);
+    Assert(parsed.IsComplete && parsed.Rows.Count == 1 &&
+           parsed.Rows[0].ValueType == "REG_EXPAND_SZ" &&
+           parsed.Rows[0].Value == rawPath &&
+           parsed.Rows[0].RegistryKey == registryKey,
+        "Typed PReg source must preserve the literal SRP path and Safer key.");
+
+    var snapshot = new RealSettingsScanResult(gpo, "SRP test", domain, dc,
+        DateTimeOffset.UtcNow, parsed.Rows,
+        new[] { new RealSettingsFileEvidence(file, "Read", 1, sha, "read") });
+    PolicySettingInfo NewPolicy(string value) => new()
+    {
+        GpoId = gpo, GpoName = "SRP test",
+        Scope = "User", Extension = "SoftwareRestrictionSettings",
+        Category = "SoftwareRestrictionSettings",
+        SettingName = "Path Rule", Value = value
+    };
+    var setting = NewPolicy("SecurityLevel=Disallowed; " +
+        "ModificationTime=2021-10-27T16:47:31Z; Path=" + rawPath);
+
+    GpoSoftwareRestrictionStoredSourceEvidenceService.Result Compare(
+        PolicySettingInfo candidate, RealSettingsScanResult? source,
+        IReadOnlyList<PolicySettingInfo>? indexed = null,
+        string? domainOverride = null, string? dcOverride = null) =>
+        GpoSoftwareRestrictionStoredSourceEvidenceService.Compare(
+            candidate, indexed ?? new[] { candidate }, source,
+            domainOverride ?? domain, dcOverride ?? dc);
+
+    var agree = Compare(setting, snapshot);
+    Assert(agree.Status == GpoSoftwareRestrictionStoredSourceEvidenceService.Match &&
+           agree.Path == rawPath && agree.SourceSha256 == sha &&
+           agree.GpmcSecurityLevel == "Disallowed" &&
+           agree.SourceSecurityLevel == "Disallowed" &&
+           agree.Explanation.Contains("NOT verified", StringComparison.Ordinal),
+        "Exact stored SRP Path+Level match must NOT claim effective RSoP.");
+
+    var higherLevel = NewPolicy("SecurityLevel=Unrestricted; Path=" + rawPath);
+    var differs = Compare(higherLevel, snapshot);
+    Assert(differs.Status == GpoSoftwareRestrictionStoredSourceEvidenceService.Mismatch &&
+           differs.SourceSecurityLevel == "Disallowed" &&
+           differs.GpmcSecurityLevel == "Unrestricted",
+        "A matching path in a different Safer security level must be reported as a difference.");
+
+    Assert(Compare(setting, null).Status ==
+           GpoSoftwareRestrictionStoredSourceEvidenceService.NoSnapshot,
+        "Never call an unscanned scope not configured.");
+    Assert(Compare(setting, snapshot, dcOverride: "dc02.example.test").Status ==
+           GpoSoftwareRestrictionStoredSourceEvidenceService.WrongSnapshot,
+        "Another pinned DC's Registry.pol cannot verify this GPMC rule.");
+    Assert(Compare(setting, snapshot, domainOverride: "another.test").Status ==
+           GpoSoftwareRestrictionStoredSourceEvidenceService.WrongSnapshot,
+        "Cross-domain Registry.pol evidence must be rejected.");
+    Assert(Compare(setting, snapshot with { GpoId = Guid.NewGuid() }).Status ==
+           GpoSoftwareRestrictionStoredSourceEvidenceService.WrongSnapshot,
+        "Wrong GPO ID cannot use the same-looking source records.");
+    Assert(Compare(setting, snapshot, new[] { setting, higherLevel }).Status ==
+           GpoSoftwareRestrictionStoredSourceEvidenceService.GpmcAmbiguous,
+        "Multiple GPMC rules for one path are ambiguous even when their levels differ.");
+
+    Assert(Compare(setting, snapshot with
+    {
+        Files = Array.Empty<RealSettingsFileEvidence>()
+    }).Status == GpoSoftwareRestrictionStoredSourceEvidenceService.FileAbsent,
+        "Missing Registry.pol source file must remain unknown.");
+    Assert(Compare(setting, snapshot with
+    {
+        Files = new[] { snapshot.Files[0], snapshot.Files[0] }
+    }).Status == GpoSoftwareRestrictionStoredSourceEvidenceService.FileAmbiguous,
+        "Duplicate exact source file entries cannot establish a unique snapshot.");
+    Assert(Compare(setting, snapshot with
+    {
+        Files = new[] { snapshot.Files[0] with { Status = "Partial" } }
+    }).Status == GpoSoftwareRestrictionStoredSourceEvidenceService.FileIncomplete,
+        "A partially parsed Registry.pol must never verify a saved rule.");
+    Assert(Compare(setting, snapshot with
+    {
+        Files = new[] { snapshot.Files[0] with { Sha256 = "" } }
+    }).Status == GpoSoftwareRestrictionStoredSourceEvidenceService.FileIncomplete,
+        "A source missing its SHA-256 is not trusted.");
+
+    Assert(Compare(setting, snapshot with
+    {
+        Rows = parsed.Rows.Concat(parsed.Rows).ToArray()
+    }).Status == GpoSoftwareRestrictionStoredSourceEvidenceService.SourceAmbiguous,
+        "Two ItemData records for the same literal path must not select a first record.");
+    Assert(Compare(setting, snapshot with
+    {
+        Rows = new[] { parsed.Rows[0] with { ValueType = "REG_BINARY" } }
+    }).Status == GpoSoftwareRestrictionStoredSourceEvidenceService.SourceNotExact,
+        "Only typed REG_SZ/REG_EXPAND_SZ ItemData can be compared.");
+    Assert(Compare(setting, snapshot with
+    {
+        Rows = new[] { parsed.Rows[0] with { RegistryKey =
+            registryKey.Replace(@"\0\Paths\", @"\131072\Paths\") } }
+    }).Status == GpoSoftwareRestrictionStoredSourceEvidenceService.SourceNotExact,
+        "Unsupported security levels must never be given an invented meaning.");
+    Assert(Compare(setting, snapshot with
+    {
+        Rows = new[] { parsed.Rows[0] with { RegistryKey =
+            registryKey + @"\Unexpected" } }
+    }).Status == GpoSoftwareRestrictionStoredSourceEvidenceService.SourceNotExact,
+        "Unexpected descendants below the GUID key must fail closed.");
+    Assert(Compare(setting, snapshot with
+    {
+        Rows = new[] { parsed.Rows[0] with { SourceSha256 = new string('F', 64) } }
+    }).Status == GpoSoftwareRestrictionStoredSourceEvidenceService.SourceNotExact,
+        "Registry record and file SHA-256 must agree.");
+    Assert(Compare(setting, snapshot with
+    {
+        Rows = new[] { parsed.Rows[0] with { State = "Stored operation" } }
+    }).Status == GpoSoftwareRestrictionStoredSourceEvidenceService.SourceNotExact,
+        "Special Registry.pol operations are not current configured SRP values.");
+    Assert(Compare(setting, snapshot with
+    {
+        Rows = parsed.Rows.Select(row => row with { Value = "another.exe" }).ToArray()
+    }).Status == GpoSoftwareRestrictionStoredSourceEvidenceService.SourceMissing,
+        "An unmatched source path is unknown, not a false numeric/unit mismatch.");
+
+    foreach (var invalid in new[]
+    {
+        "SecurityLevel=Disallowed; SecurityLevel=Unrestricted; Path=" + rawPath,
+        "SecurityLevel=Basic User; Path=" + rawPath,
+        "SecurityLevel=Disallowed; Path=some;thing",
+        "SecurityLevel=Disallowed; Path=",
+        "Path=" + rawPath
+    })
+        Assert(Compare(NewPolicy(invalid), snapshot).Status ==
+               GpoSoftwareRestrictionStoredSourceEvidenceService.GpmcInvalid,
+            "Malformed/unrecognized SRP GPMC source metadata must be rejected.");
+
+    var unsupported = NewPolicy("SecurityLevel=Disallowed; Path=" + rawPath);
+    Assert(GpoSoftwareRestrictionStoredSourceEvidenceService.Compare(
+        new PolicySettingInfo
+        {
+            GpoId = gpo, Scope = "User", Extension = "SoftwareRestrictionSettings",
+            SettingName = "Hash Rule", Value = unsupported.Value
+        }, new[] { unsupported }, snapshot, domain, dc).Status ==
+        GpoSoftwareRestrictionStoredSourceEvidenceService.NotApplicable,
+        "A Path Rule source checker must not claim support for other SRP rule families.");
 }

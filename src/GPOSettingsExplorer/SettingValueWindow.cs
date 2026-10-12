@@ -519,9 +519,11 @@ public sealed class SettingValueWindow : Window
             panel.Children.Add(new TextBlock
             {
                 Text = "Software Restriction Policies: an exact Additional Rules " +
-                    "path confirms only native MMC row identity. The stored " +
-                    "security level, enforcement and effective client application " +
-                    "are NOT VERIFIED. A separate typed SRP source reader is required.",
+                    "path confirms only native MMC row identity. To compare the " +
+                    "saved rule path and security level, open Exact MMC Paths and " +
+                    "choose Check SRP Registry.pol (read-only) for this GPO. " +
+                    "That comparison does NOT verify other SRP flags, rule precedence " +
+                    "or effective client application.",
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = UiStyle.WarningBrush,
                 Margin = new Thickness(4, 6, 4, 6)

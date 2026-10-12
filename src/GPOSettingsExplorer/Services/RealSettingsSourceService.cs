@@ -11,11 +11,19 @@ public sealed class RealSettingsSourceService
 {
     public RealSettingsScanResult Scan(
         GpoInfo gpo, CancellationToken cancellation = default,
-        bool registryOnly = false, bool securityOnly = false)
+        bool registryOnly = false, bool securityOnly = false,
+        string? registryScope = null)
     {
         ArgumentNullException.ThrowIfNull(gpo);
         if (registryOnly && securityOnly)
             throw new ArgumentException("Select one source family; registryOnly and securityOnly are mutually exclusive.");
+        if (registryScope is not null &&
+            (!registryOnly ||
+             (!registryScope.Equals("User", StringComparison.OrdinalIgnoreCase) &&
+              !registryScope.Equals("Computer", StringComparison.OrdinalIgnoreCase))))
+            throw new ArgumentException(
+                "A scope filter is supported only for registryOnly User/Computer reads.",
+                nameof(registryScope));
 
         var context = DomainConnectionState.Context;
         if (context is null || string.IsNullOrWhiteSpace(context.ConnectedServer) ||
@@ -46,7 +54,9 @@ public sealed class RealSettingsSourceService
         // Unit rechecks need only Machine/User Registry.pol: do not read
         // SecEdit, audit.csv or unrelated potentially sensitive GPP XML.
         if (registryOnly)
-            sources = sources.Where(source => source.Kind == "Registry").ToArray();
+            sources = sources.Where(source => source.Kind == "Registry" &&
+                (registryScope is null || source.Scope.Equals(
+                    registryScope, StringComparison.OrdinalIgnoreCase))).ToArray();
         else if (securityOnly)
             sources = sources.Where(source => source.Kind == "Security").ToArray();
 

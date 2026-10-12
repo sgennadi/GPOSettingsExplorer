@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Preview 9: typed saved SRP Path Rule comparison.** Read only one selected GPO's User/Computer Registry.pol on the pinned DC when the operator clicks **Check SRP Registry.pol...** in Exact MMC Paths. Compare the cached GPMC SecurityLevel (Disallowed/Unrestricted) and literal Path against exactly one typed REG_SZ/REG_EXPAND_SZ Safer\\CodeIdentifiers\\0|262144\\Paths\\{GUID} ItemData record. Require one GPMC path, exact GPO/domain/DC/scope/file path, full parse, SHA-256 bound file/record and a unique source path. Different saved levels return a distinct stored-value difference; missing, duplicate, unsupported or partial evidence blocks, never upgrades to verified.
+- Add a scope-restricted `registryOnly` source reader mode, preserve all existing Kerberos checks, and show separate SRP and Kerberos stored-evidence counts. Saved path+level agreement is not full SRP rule agreement, cross-GPO precedence, live native MMC value or effective client RSoP. No source writes or bulk MMC scans. Extend binary Registry.pol, ambiguity, missing/wrong DC, wrong level, wrong type and malformed metadata tests.
+
 - **Preview 8: per-setting typed Kerberos source verification.** Bring the read-only, SHA-256-bound GPMC-to-GptTmpl.inf comparison into the Kerberos Setting Value window. Explicit, cancelable one-GPO/one-DC source reads display stored snapshot match, difference or fail-closed reason, distinct from MMC native-row verification and client RSoP. Refresh the Exact MMC Paths snapshot when it is open. No automatic MMC scan, policy write or unverified-to-verified shortcut.
 - Clarify within the Software Restriction Policies value window that native Path Rule row identity cannot prove the stored security level or client enforcement. Typed SRP stored-source verification remains blocked until an independent trusted reader is added.
 

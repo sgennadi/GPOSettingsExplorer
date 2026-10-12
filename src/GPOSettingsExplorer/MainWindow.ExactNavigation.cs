@@ -137,6 +137,8 @@ public partial class MainWindow
     private GpoExactPathsWindow? _exactPathsWindow;
     private RealSettingsScanResult? _kerberosSourceSnapshot;
     private bool _kerberosSourceBusy;
+    private RealSettingsScanResult? _srpSourceSnapshot;
+    private bool _srpSourceBusy;
 
     /// <summary>
     /// Explicit one-GPO, one-source read only. This never walks the domain or
@@ -190,6 +192,70 @@ public partial class MainWindow
         }
     }
 
+    /// <summary>
+    /// One explicit GPO/scope-specific SRP Registry.pol read, never the
+    /// user's actual HKCU/HKLM or another GPO. A parsed source may confirm
+    /// only path and rule security level, not full client precedence/RSoP.
+    /// </summary>
+    private async Task<bool> CheckSrpSourceAsync(
+        PolicySettingInfo setting, Window dialogOwner, IProgress<string>? progress)
+    {
+        if (_srpSourceBusy || _domainContext is null ||
+            !SoftwareRestrictionMmcRouteService.IsPathRule(setting))
+            return false;
+
+        var gpo = _gpos.FirstOrDefault(g => g.Id == setting.GpoId);
+        var domain = _domainContext.DomainName;
+        var dc = DomainConnectionState.GetServerFor(domain);
+        if (gpo is null || string.IsNullOrWhiteSpace(dc) ||
+            !gpo.DomainName.Equals(domain, StringComparison.OrdinalIgnoreCase))
+        {
+            progress?.Report("A selected same-domain GPO and pinned DC are required.");
+            return false;
+        }
+
+        _srpSourceBusy = true;
+        try
+        {
+            progress?.Report("Reading only " + setting.Scope + " Registry.pol for " +
+                gpo.DisplayName + " on pinned DC " + dc +
+                " (read-only; no local registry, MMC, or policy writes)...");
+            var captured = await Task.Run(() =>
+                new RealSettingsSourceService().Scan(
+                    gpo, registryOnly: true, registryScope: setting.Scope));
+            if (_domainContext is null ||
+                !captured.Matches(domain, dc) ||
+                !captured.Matches(_domainContext.DomainName,
+                    DomainConnectionState.GetServerFor(_domainContext.DomainName)) ||
+                captured.GpoId != gpo.Id)
+                throw new InvalidOperationException(
+                    "GPO/domain/pinned DC changed during the SRP source read. " +
+                    "The snapshot was discarded.");
+
+            _srpSourceSnapshot = captured;
+            progress?.Report("SRP source capture completed. Exactly one saved " +
+                "ItemData PATH and Safer rule security level will be compared; " +
+                "other SRP flags, MMC values, other GPOs and client RSoP are NOT verified.");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            CrashLogService.Write("SRP pinned Registry.pol read", ex);
+            progress?.Report("SRP Registry.pol read failed: " + ex.Message);
+            return false;
+        }
+        finally
+        {
+            _srpSourceBusy = false;
+        }
+    }
+
+    private Task<bool> CheckSupportedStoredSourceAsync(
+        PolicySettingInfo setting, Window dialogOwner, IProgress<string> progress) =>
+        SoftwareRestrictionMmcRouteService.IsPathRule(setting)
+            ? CheckSrpSourceAsync(setting, dialogOwner, progress)
+            : CheckKerberosSourceAsync(setting, dialogOwner, progress);
+
     private async void OpenExactPaths_Click(object sender, RoutedEventArgs e)
     {
         if (_domainContext is null || !_gpmService.IsAvailable)
@@ -234,7 +300,7 @@ public partial class MainWindow
                     gpo, setting, window, progress);
             },
             (setting, window, progress) =>
-                CheckKerberosSourceAsync(setting, window, progress))
+                CheckSupportedStoredSourceAsync(setting, window, progress))
         {
             Owner = this
         };
@@ -255,7 +321,9 @@ public partial class MainWindow
 
         var domain = _domainContext?.DomainName ?? string.Empty;
         var dc = DomainConnectionState.GetServerFor(domain);
-        var validSources = new[] { _kerberosSourceSnapshot, _realSourceSnapshot }
+        var validSources = new[] {
+                _kerberosSourceSnapshot, _srpSourceSnapshot, _realSourceSnapshot
+            }
             .Where(snapshot => snapshot is not null &&
                 snapshot.Matches(domain, dc))
             .OrderByDescending(snapshot => snapshot!.CapturedAt)
@@ -277,17 +345,41 @@ public partial class MainWindow
                 : string.Join(" > ", decision.Entry.TreeSegments) +
                     " > " + decision.Entry.SettingName;
 
-            var storedSource = validSources
-                .FirstOrDefault(snapshot => snapshot!.GpoId == setting.GpoId);
-            var kerberosEvidence = GpoKerberosStoredSourceEvidenceService.Compare(
-                setting, byGpo[setting.GpoId], storedSource, domain, dc);
-            // No irrelevant NOT_KERBEROS marker on unrelated entries. SRP
-            // shows the deliberately unsupported source-reader status.
-            var sourceStatus = kerberosEvidence.Status ==
-                GpoKerberosStoredSourceEvidenceService.NotApplicable
-                ? string.Empty : kerberosEvidence.Status;
-            var sourceExplanation = sourceStatus.Length == 0
-                ? string.Empty : kerberosEvidence.Explanation;
+            var isSrp = SoftwareRestrictionMmcRouteService.IsPathRule(setting);
+            var isKerberos = KerberosPolicyMetadataService.IsKnownKerberosSetting(setting);
+            var scopeFolder = setting.Scope.Equals("User", StringComparison.OrdinalIgnoreCase)
+                ? "User" : "Machine";
+
+            // A newer Kerberos-only source capture must not hide an older
+            // scope-specific Registry.pol capture (or the reverse). Choose
+            // only snapshots that actually include the required source path.
+            var storedSource = validSources.FirstOrDefault(source =>
+                source!.GpoId == setting.GpoId &&
+                source.Files.Any(file => isSrp
+                    ? file.SourceFile.Replace('/', '\\').EndsWith(
+                        "\\" + scopeFolder + "\\Registry.pol",
+                        StringComparison.OrdinalIgnoreCase)
+                    : isKerberos &&
+                      file.SourceFile.Replace('/', '\\').EndsWith(
+                          "\\SecEdit\\GptTmpl.inf",
+                          StringComparison.OrdinalIgnoreCase)));
+
+            var sourceStatus = string.Empty;
+            var sourceExplanation = string.Empty;
+            if (isSrp)
+            {
+                var srp = GpoSoftwareRestrictionStoredSourceEvidenceService.Compare(
+                    setting, byGpo[setting.GpoId], storedSource, domain, dc);
+                sourceStatus = srp.Status;
+                sourceExplanation = srp.Explanation;
+            }
+            else if (isKerberos)
+            {
+                var kerberos = GpoKerberosStoredSourceEvidenceService.Compare(
+                    setting, byGpo[setting.GpoId], storedSource, domain, dc);
+                sourceStatus = kerberos.Status;
+                sourceExplanation = kerberos.Explanation;
+            }
 
             result.Add(new GpoExactPathsWindow.RouteRow(setting,
                 setting.GpoName, setting.Scope, setting.Extension,
