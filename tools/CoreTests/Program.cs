@@ -4016,6 +4016,25 @@ static void TestDiscoveryEvidence()
             SourceStoredValue = "4294967296", MmcObservedValue = "4294967296" } })[0]
         .ValueVerificationStatus == "MATCH_LITERAL_INTEGER",
         "QWORD values may exceed the DWORD range.");
+    var mappedMinutes = GpoDiscoveryEvidenceService.ApplyVerifiedUnitMappings(
+        new[] { integerCandidate },
+        new[] { new GpoDiscoveryEvidenceService.VerifiedUnitMapping(
+            integerCandidate.GpoId, integerCandidate.Scope, integerCandidate.RegistryTarget,
+            "minutes", "Verified ADMX/ADML source mapping") })[0];
+    Assert(mappedMinutes.SourceUnit == "minutes",
+        "Unique, proven same-target mapping must propagate to evidence.");
+    Assert(GpoDiscoveryEvidenceService.ApplyVerifiedUnitMappings(
+        new[] { integerCandidate },
+        new[] { new GpoDiscoveryEvidenceService.VerifiedUnitMapping(
+            Guid.NewGuid(), integerCandidate.Scope, integerCandidate.RegistryTarget,
+            "minutes", "Verified ADMX/ADML source mapping") })[0].SourceUnit == "",
+        "Mappings from a different GPO must not apply.");
+    Assert(GpoDiscoveryEvidenceService.ApplyVerifiedUnitMappings(
+        new[] { integerCandidate },
+        new[] { new GpoDiscoveryEvidenceService.VerifiedUnitMapping(
+            integerCandidate.GpoId, integerCandidate.Scope, integerCandidate.RegistryTarget,
+            "minutes", "") })[0].SourceUnit == "",
+        "Unproven mappings must fail closed.");
     var explicitMinutes = integerCandidate with
     {
         SourceStoredValue = "600", MmcObservedValue = "10 hours",
