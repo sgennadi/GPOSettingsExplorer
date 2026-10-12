@@ -4531,7 +4531,8 @@ static void TestDiscoveryCoverageReport()
             ValueVerificationStatus = "MATCH_LITERAL_INTEGER",
             UnitMappingStatus = "NOT_EVALUATED",
             SourceStoredValue = secret, Notes = "PRIVATE_NOTES_DO_NOT_EXPORT",
-            SourceFileHash = new string('A', 64)
+            SourceFileHash = new string('A', 64),
+            SourceRecheckStatus = "SOURCE_RECHECKED"
         },
         root with
         {
@@ -4544,14 +4545,16 @@ static void TestDiscoveryCoverageReport()
             NavigationStatus = "AMBIGUOUS",
             SourceStatus = "NON_REGISTRY_OR_UNVERIFIED",
             ValueVerificationStatus = "MISMATCH_EXPLICIT_MINUTES_HOURS",
-            UnitMappingStatus = "VERIFIED_EXPLICIT"
+            UnitMappingStatus = "VERIFIED_EXPLICIT",
+            SourceRecheckStatus = "SOURCE_RECHECK_FAILED"
         },
         root with
         {
             NavigationStatus = secret,
             SourceStatus = secret,
             ValueVerificationStatus = secret,
-            UnitMappingStatus = secret
+            UnitMappingStatus = secret,
+            SourceRecheckStatus = secret
         }
     };
     var report = GpoDiscoveryCoverageService.Build(rows,
@@ -4565,8 +4568,9 @@ static void TestDiscoveryCoverageReport()
            report.ReviewedUnitRows == 1,
         "Coverage must count exact categories but not invent effective RSoP statistics.");
     Assert(report.Findings.Any(f => f.Status == "AMBIGUOUS" && f.Area == "MMC navigation") &&
-           report.Findings.Any(f => f.Status == "MMC_NOT_EXACT" && f.Area == "Review eligibility"),
-        "Coverage must group known navigation and review blockers.");
+           report.Findings.Any(f => f.Status == "MMC_NOT_EXACT" && f.Area == "Review eligibility") &&
+           report.Findings.Any(f => f.Status == "SOURCE_RECHECK_FAILED" && f.Area == "Source recheck"),
+        "Coverage must group known navigation, source freshness and review blockers.");
     Assert(report.Findings.Any(f => f.Status == "OTHER_OR_UNRECOGNIZED"),
         "Unrecognized status codes must be converted to a non-sensitive generic marker.");
     var safe = report.ToSafeText();
@@ -4579,8 +4583,24 @@ static void TestDiscoveryCoverageReport()
             "Copyable coverage must not contain raw GPO names, values, identifiers or hashes.");
     Assert(safe.Contains("NOT effective RSoP", StringComparison.Ordinal) &&
            safe.Contains("OTHER_OR_UNRECOGNIZED", StringComparison.Ordinal) &&
-           safe.Contains("Recommended", StringComparison.OrdinalIgnoreCase) == false,
-        "Safe coverage must make the result limitation explicit and expose only safe status codes.");
+           safe.Contains("SOURCE_RECHECK_FAILED", StringComparison.Ordinal),
+        "Safe coverage must show data limitations, source freshness and only predefined status codes.");
+
+    var forgedReport = report with
+    {
+        Findings = new[]
+        {
+            new GpoDiscoveryCoverageService.CoverageFinding(
+                secret, secret, 1, secret, secret),
+            new GpoDiscoveryCoverageService.CoverageFinding(
+                "Source provenance", "REGISTRY_SOURCE_LOCATED", 1, secret, secret)
+        }
+    };
+    var forgedCopy = forgedReport.ToSafeText();
+    Assert(!forgedCopy.Contains(secret, StringComparison.Ordinal) &&
+           forgedCopy.Contains("OTHER_OR_UNRECOGNIZED", StringComparison.Ordinal) &&
+           forgedCopy.Contains("one unique", StringComparison.OrdinalIgnoreCase),
+        "Even a manually constructed coverage report cannot copy unsanitized identities or details.");
     var empty = GpoDiscoveryCoverageService.Build(
         Array.Empty<GpoDiscoveryEvidenceService.Evidence>());
     Assert(empty.IndexedRows == 0 && empty.Findings.Count == 0,

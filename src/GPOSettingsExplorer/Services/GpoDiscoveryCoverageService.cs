@@ -29,8 +29,14 @@ public static class GpoDiscoveryCoverageService
             output.AppendLine($"Located Registry.pol source rows: {LocatedSourceRows}");
             output.AppendLine($"Literal comparisons: {LiteralComparisonRows}");
             output.AppendLine($"Operator-reviewed unit comparisons: {ReviewedUnitRows}");
-            foreach (var row in Findings)
-                output.AppendLine($"{row.Area}\t{row.Status}\t{row.Count}\t{row.Meaning}\t{row.NextCheck}");
+            foreach (var finding in Findings)
+            {
+                // Defensive second sanitization: even callers constructing a
+                // report directly cannot smuggle free-text policy data into
+                // the clipboard via a forged CoverageFinding.
+                var safe = SafeForCopy(finding);
+                output.AppendLine($"{safe.Area}\t{safe.Status}\t{safe.Count}\t{safe.Meaning}\t{safe.NextCheck}");
+            }
             return output.ToString();
         }
     }
@@ -83,6 +89,17 @@ public static class GpoDiscoveryCoverageService
                 "Recheck Registry.pol and ADMX/ADML fingerprints before relying on exported evidence."),
             ["MISMATCH_EXPLICIT_MINUTES_HOURS"] = new("Reviewed minutes-to-hours conversion differs.",
                 "Recheck Registry.pol, review ticket and native MMC row; no automatic repair.")
+        };
+
+    private static readonly IReadOnlyDictionary<string, Definition> SourceRecheck =
+        new Dictionary<string, Definition>(StringComparer.Ordinal)
+        {
+            ["NOT_RECHECKED"] = new("No fresh pinned-DC source comparison was recorded.",
+                "Run a read-only recheck before any reviewed unit export."),
+            ["SOURCE_RECHECKED"] = new("Source identity, target, type, value and hash matched a fresh pinned-DC read.",
+                "A separate MMC client/DC and effective client RSoP remain unverified."),
+            ["SOURCE_RECHECK_FAILED"] = new("The pinned source recheck failed, changed or became unavailable.",
+                "Inspect the private row diagnostics; recapture before approving.")
         };
 
     private static readonly IReadOnlyDictionary<string, Definition> Unit =
@@ -147,6 +164,7 @@ public static class GpoDiscoveryCoverageService
         Append("MMC navigation", Navigation, rows.Select(row => row.NavigationStatus), findings);
         Append("Source provenance", Source, rows.Select(row => row.SourceStatus), findings);
         Append("Value verification", Value, rows.Select(row => row.ValueVerificationStatus), findings);
+        Append("Source recheck", SourceRecheck, rows.Select(row => row.SourceRecheckStatus), findings);
         Append("Unit mapping", Unit, rows.Select(row => row.UnitMappingStatus), findings);
         if (reviewStatuses is not null)
             Append("Review eligibility", Review, reviews, findings);
@@ -160,6 +178,28 @@ public static class GpoDiscoveryCoverageService
             rows.Count(row => row.ValueVerificationStatus is
                 "MATCH_EXPLICIT_MINUTES_HOURS" or "MISMATCH_EXPLICIT_MINUTES_HOURS"),
             findings);
+    }
+
+    private static CoverageFinding SafeForCopy(CoverageFinding finding)
+    {
+        var known = finding.Area switch
+        {
+            "MMC navigation" => Navigation,
+            "Source provenance" => Source,
+            "Value verification" => Value,
+            "Source recheck" => SourceRecheck,
+            "Unit mapping" => Unit,
+            "Review eligibility" => Review,
+            _ => null
+        };
+        if (known is not null &&
+            known.TryGetValue(finding.Status ?? string.Empty, out var definition))
+            return new CoverageFinding(finding.Area, finding.Status, Math.Max(0, finding.Count),
+                definition.Meaning, definition.NextCheck);
+
+        return new CoverageFinding("Unknown coverage area", "OTHER_OR_UNRECOGNIZED",
+            Math.Max(0, finding.Count), "Unsupported/unrecognized status; not verified.",
+            "Inspect the local evidence details without sharing confidential values.");
     }
 
     private static void Append(string area,
