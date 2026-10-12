@@ -15,6 +15,8 @@ public partial class MainWindow
         Array.Empty<MmcInventoryEntry>();
     private ICollectionView? _mmcInventoryView;
     private MmcInventoryScanResult? _mmcInventoryResult;
+    private Guid? _mmcInventoryScannedGpoId;
+    private string _mmcInventoryScannedDomain = string.Empty;
     private CancellationTokenSource? _mmcInventoryCancellation;
     private readonly GpoEditorNavigatorService _mmcInventoryNavigator = new();
 
@@ -87,6 +89,8 @@ public partial class MainWindow
                 configured, admx, progress, cancellation.Token);
 
             _mmcInventoryResult = result;
+            _mmcInventoryScannedGpoId = gpo.Id;
+            _mmcInventoryScannedDomain = _domainContext.DomainName;
             // Replace the entire immutable scan snapshot rather than raising
             // tens of thousands of individual ObservableCollection events.
             _mmcInventoryRows = result.Rows;
@@ -148,6 +152,13 @@ public partial class MainWindow
             return;
         }
 
+        if (MessageBox.Show(this,
+            "The evidence export can contain raw Group Policy values, registry paths and computer/security configuration. " +
+            "Treat the resulting TSV as confidential. Do not upload it to public repositories or share it outside authorized administrators.\\n\\n" +
+            "Continue with local export?", "Sensitive policy data",
+            MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+            return;
+
         var dialog = new SaveFileDialog
         {
             Title = "Export GPO discovery evidence (read-only)",
@@ -164,6 +175,10 @@ public partial class MainWindow
             var evidence = GpoDiscoveryEvidenceService.CorrelateMmc(
                 GpoDiscoveryEvidenceService.Build(configured),
                 _mmcInventoryResult is not null &&
+                _mmcInventoryScannedGpoId == gpo.Id &&
+                _domainContext is not null &&
+                string.Equals(_mmcInventoryScannedDomain, _domainContext.DomainName,
+                    StringComparison.OrdinalIgnoreCase) &&
                 _mmcInventoryRows.All(row => row.GpoId == gpo.Id)
                     ? _mmcInventoryRows
                     : Array.Empty<MmcInventoryEntry>());
@@ -182,7 +197,7 @@ public partial class MainWindow
             System.IO.File.WriteAllText(dialog.FileName,
                 GpoDiscoveryEvidenceService.ExportTsv(evidence),
                 new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
-            StatusText.Text = $"Exported {evidence.Count:N0} discovery evidence records (not verified MMC rows).";
+            StatusText.Text = $"Exported {evidence.Count:N0} discovery evidence records (limited literal comparisons; not effective RSoP).";
         }
         catch (Exception ex)
         {
