@@ -71,6 +71,19 @@ public sealed class GpoDiscoveryVerificationWindow : Window
         ToolTip = "Requires independent confirmation of the exact ADMX element and MMC display units."
     };
     private readonly List<DisplayRow> _rows = new();
+    private readonly DataGrid _coverageGrid = new()
+    {
+        AutoGenerateColumns = false,
+        IsReadOnly = true,
+        CanUserAddRows = false,
+        HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+        VerticalScrollBarVisibility = ScrollBarVisibility.Auto
+    };
+    private readonly TextBlock _coverageSummary = new()
+    {
+        TextWrapping = TextWrapping.Wrap
+    };
+    private GpoDiscoveryCoverageService.CoverageReport? _safeCoverageReport;
     private ICollectionView? _view;
 
     public GpoDiscoveryVerificationWindow(
@@ -201,6 +214,65 @@ public sealed class GpoDiscoveryVerificationWindow : Window
         detailPanel.Children.Add(info);
         detailPanel.Children.Add(_details);
         tabs.Items.Add(new TabItem { Header = "Selected row / diagnostics", Content = detailPanel });
+
+        var coveragePanel = new DockPanel { Margin = new Thickness(8) };
+        var coverageHeader = new StackPanel { Margin = new Thickness(0, 0, 0, 10) };
+        coverageHeader.Children.Add(new TextBlock
+        {
+            Text = "Discovery coverage and next verification checks",
+            FontWeight = FontWeights.SemiBold,
+            FontSize = UiStyle.HeadingFontSize,
+            TextWrapping = TextWrapping.Wrap
+        });
+        coverageHeader.Children.Add(new TextBlock
+        {
+            Text = "Counts reflect the captured GPMC/MMC/source snapshots, not all existing " +
+                "domain policies, applied RSoP or a compliance percentage. " +
+                "Redacted diagnostic copies contain status counts and predefined guidance only.",
+            TextWrapping = TextWrapping.Wrap,
+            Foreground = UiStyle.WarningBrush
+        });
+        coverageHeader.Children.Add(_coverageSummary);
+        var copyCoverage = new Button
+        {
+            Content = "Copy redacted coverage",
+            MinWidth = 150,
+            HorizontalAlignment = HorizontalAlignment.Left,
+            Margin = new Thickness(0, 6, 0, 0),
+            ToolTip = "Copy only fixed status codes, counts and safe diagnostics, never raw policy values."
+        };
+        copyCoverage.Click += (_, _) =>
+        {
+            if (_safeCoverageReport is not null)
+                Clipboard.SetText(_safeCoverageReport.ToSafeText());
+        };
+        coverageHeader.Children.Add(copyCoverage);
+        DockPanel.SetDock(coverageHeader, Dock.Top);
+        coveragePanel.Children.Add(coverageHeader);
+
+        void CoverageColumn(string title, string binding, double width)
+        {
+            _coverageGrid.Columns.Add(new DataGridTextColumn
+            {
+                Header = title,
+                Binding = new Binding(binding),
+                Width = new DataGridLength(width, DataGridLengthUnitType.Star),
+                IsReadOnly = true
+            });
+        }
+        CoverageColumn("Evidence area", nameof(GpoDiscoveryCoverageService.CoverageFinding.Area), 1.1);
+        CoverageColumn("Status", nameof(GpoDiscoveryCoverageService.CoverageFinding.Status), 1.35);
+        CoverageColumn("Rows", nameof(GpoDiscoveryCoverageService.CoverageFinding.Count), 0.55);
+        CoverageColumn("Explanation", nameof(GpoDiscoveryCoverageService.CoverageFinding.Meaning), 2.3);
+        CoverageColumn("Recommended next check", nameof(GpoDiscoveryCoverageService.CoverageFinding.NextCheck), 2.8);
+        UiStyle.ApplyDataGridDefaults(_coverageGrid);
+        coveragePanel.Children.Add(_coverageGrid);
+        tabs.Items.Add(new TabItem
+        {
+            Header = "Coverage / next checks",
+            Content = coveragePanel
+        });
+
         root.Children.Add(tabs);
         Content = root;
     }
@@ -301,6 +373,20 @@ public sealed class GpoDiscoveryVerificationWindow : Window
         _summary.Text = string.Format(CultureInfo.InvariantCulture,
             "{0:N0} indexed | {1:N0} native MMC rows | {2:N0} review candidates | {3:N0} session approvals | {4:N0} mismatches",
             _rows.Count, observed, ready, verified, mismatches);
+
+        _safeCoverageReport = GpoDiscoveryCoverageService.Build(
+            _rows.Select(row => row.Evidence),
+            _rows.Select(row => row.ReviewStatus));
+        _coverageGrid.ItemsSource = _safeCoverageReport.Findings;
+        _coverageSummary.Text = string.Format(CultureInfo.InvariantCulture,
+            "{0:N0} indexed | {1:N0} exact MMC | {2:N0} located stored sources | " +
+            "{3:N0} literal comparisons | {4:N0} reviewed unit comparisons",
+            _safeCoverageReport.IndexedRows,
+            _safeCoverageReport.ObservedMmcRows,
+            _safeCoverageReport.LocatedSourceRows,
+            _safeCoverageReport.LiteralComparisonRows,
+            _safeCoverageReport.ReviewedUnitRows);
+
         _grid.SelectedItem = _rows.FirstOrDefault(r => r.Evidence.IdentityHash == selectedHash);
         UpdateSelection();
     }

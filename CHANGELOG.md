@@ -13,6 +13,7 @@
 - Prevent a matching MMC section and displayed policy name from masquerading as verified source correspondence when native navigation reports an ambiguous/unresolved row. Only exact MMC row candidates enter value comparison.
 - Require a full scope-specific Administrative Templates category path for ADMX correlation. Identical category suffixes under different MMC folders are no longer treated as the same policy.
 - Restrict source freshness rereads to Machine/User Registry.pol; do not reread unrelated Security Template, Advanced Audit or GPP XML data simply to approve unit conversions.
+- Add a dedicated **Coverage / next checks** tab with per-status counts and fixed operator diagnostics. Permit copying a redacted report that never includes GPO/DC identities, registry paths, policy values, SHA-256 or raw exception text; unknown status codes cannot appear verbatim. Add regression tests for confidential-data leakage, unknown statuses and row alignment.
 - The existing plain export deliberately performs no unit inference/approval; reviewed exports retain session approvals only while all source/definition checks pass. This is not effective client RSoP or a transactional GPMC/MMC snapshot. Do not merge or release 2.1.0 solely from CI results; validate representative policies and ADMX variations on a nonproduction DC.
 
 ## 2.0.3 - 2026-10-11

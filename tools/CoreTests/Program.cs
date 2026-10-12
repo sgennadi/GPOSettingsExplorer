@@ -80,7 +80,8 @@ var tests = new (string Name, Action Body)[]
     ("Remote AI endpoints and prompts strictly exclude AD/GPO identities", TestRemoteAiBoundary),
     ("Discovery evidence is read-only, fail-closed and spreadsheet-safe", TestDiscoveryEvidence),
     ("Discovery unit review requires unique ADMX/ADML, MMC row, hashes and operator approval", TestDiscoveryUnitReview),
-    ("Discovery source re-read rejects stale, partial and wrong-DC Registry.pol evidence", TestDiscoverySourceFreshness)
+    ("Discovery source re-read rejects stale, partial and wrong-DC Registry.pol evidence", TestDiscoverySourceFreshness),
+    ("Redacted discovery coverage shows actionable counts without leaking GPO evidence", TestDiscoveryCoverageReport)
 };
 
 var failures = new List<string>();
@@ -4505,4 +4506,93 @@ static void TestDiscoverySourceFreshness()
            exported.Contains("SourceRecheckedAtUtc", StringComparison.Ordinal) &&
            exported.Contains("SOURCE_RECHECKED", StringComparison.Ordinal),
         "TSV must disclose freshness status and recheck timestamp separately from MMC.");
+}
+
+
+static void TestDiscoveryCoverageReport()
+{
+    var id = Guid.NewGuid();
+    const string secret = "PRIVATE_SOURCE_VALUE_DO_NOT_EXPORT_12345";
+    const string key = @"Software\Policies\PRIVATE_LOCATION_DO_NOT_EXPORT";
+    var input = new PolicySettingInfo
+    {
+        GpoId = id, GpoName = "PRIVATE_GPO_DO_NOT_EXPORT",
+        SettingName = "PRIVATE_SETTING_DO_NOT_EXPORT", Scope = "Computer",
+        Extension = "RegistrySettings",
+        RegistryKey = key, RegistryValue = "Timeout"
+    };
+    var root = GpoDiscoveryEvidenceService.Build(new[] { input })[0];
+    var rows = new[]
+    {
+        root with
+        {
+            NavigationStatus = "MMC_ROW_OBSERVED",
+            SourceStatus = "REGISTRY_SOURCE_LOCATED",
+            ValueVerificationStatus = "MATCH_LITERAL_INTEGER",
+            UnitMappingStatus = "NOT_EVALUATED",
+            SourceStoredValue = secret, Notes = "PRIVATE_NOTES_DO_NOT_EXPORT",
+            SourceFileHash = new string('A', 64)
+        },
+        root with
+        {
+            NavigationStatus = "SECTION_CANDIDATE",
+            SourceStatus = "REGISTRY_METADATA",
+            ValueVerificationStatus = "NOT_VERIFIED"
+        },
+        root with
+        {
+            NavigationStatus = "AMBIGUOUS",
+            SourceStatus = "NON_REGISTRY_OR_UNVERIFIED",
+            ValueVerificationStatus = "MISMATCH_EXPLICIT_MINUTES_HOURS",
+            UnitMappingStatus = "VERIFIED_EXPLICIT"
+        },
+        root with
+        {
+            NavigationStatus = secret,
+            SourceStatus = secret,
+            ValueVerificationStatus = secret,
+            UnitMappingStatus = secret
+        }
+    };
+    var report = GpoDiscoveryCoverageService.Build(rows,
+        new[] { "READY_FOR_MANUAL_REVIEW", "MMC_NOT_EXACT",
+            "VERIFIED_EXPLICIT", secret });
+
+    Assert(report.IndexedRows == 4 &&
+           report.ObservedMmcRows == 1 &&
+           report.LocatedSourceRows == 1 &&
+           report.LiteralComparisonRows == 1 &&
+           report.ReviewedUnitRows == 1,
+        "Coverage must count exact categories but not invent effective RSoP statistics.");
+    Assert(report.Findings.Any(f => f.Status == "AMBIGUOUS" && f.Area == "MMC navigation") &&
+           report.Findings.Any(f => f.Status == "MMC_NOT_EXACT" && f.Area == "Review eligibility"),
+        "Coverage must group known navigation and review blockers.");
+    Assert(report.Findings.Any(f => f.Status == "OTHER_OR_UNRECOGNIZED"),
+        "Unrecognized status codes must be converted to a non-sensitive generic marker.");
+    var safe = report.ToSafeText();
+    foreach (var disallowed in new[]
+    {
+        secret, input.GpoName, input.SettingName, key, id.ToString("D"),
+        rows[0].SourceFileHash, "PRIVATE_NOTES_DO_NOT_EXPORT"
+    })
+        Assert(!safe.Contains(disallowed, StringComparison.Ordinal),
+            "Copyable coverage must not contain raw GPO names, values, identifiers or hashes.");
+    Assert(safe.Contains("NOT effective RSoP", StringComparison.Ordinal) &&
+           safe.Contains("OTHER_OR_UNRECOGNIZED", StringComparison.Ordinal) &&
+           safe.Contains("Recommended", StringComparison.OrdinalIgnoreCase) == false,
+        "Safe coverage must make the result limitation explicit and expose only safe status codes.");
+    var empty = GpoDiscoveryCoverageService.Build(
+        Array.Empty<GpoDiscoveryEvidenceService.Evidence>());
+    Assert(empty.IndexedRows == 0 && empty.Findings.Count == 0,
+        "Unloaded/empty index must not be interpreted as verified GPO absence.");
+    var countMismatchRejected = false;
+    try
+    {
+        _ = GpoDiscoveryCoverageService.Build(rows, new[] { "NOT_EVALUATED" });
+    }
+    catch (ArgumentException)
+    {
+        countMismatchRejected = true;
+    }
+    Assert(countMismatchRejected, "Review statuses must correspond 1:1 with evidence rows.");
 }
