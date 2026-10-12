@@ -264,9 +264,12 @@ public static class GpoDiscoveryUnitReviewService
             uint.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out value);
     }
 
-    private static bool TryHours(string text, out uint hours) =>
-        text.EndsWith(" hours", StringComparison.Ordinal) &&
-        TryCanonicalUInt(text[..^" hours".Length], out hours);
+    private static bool TryHours(string text, out uint hours)
+    {
+        hours = 0;
+        return text.EndsWith(" hours", StringComparison.Ordinal) &&
+            TryCanonicalUInt(text[..^" hours".Length], out hours);
+    }
     private static bool IsHash(string? text) =>
         text is { Length: 64 } && text.All(Uri.IsHexDigit);
     private static string Sha256(byte[] bytes) =>
