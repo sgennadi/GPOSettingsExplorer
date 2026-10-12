@@ -2,7 +2,10 @@
 
 ## Unreleased
 
-- No unreleased changes yet.
+- **2.1 development preview (read-only):** introduce evidence-first discovery identities and strict native MMC-to-Registry.pol comparison without treating a route, displayed value or matching raw number as effective RSoP.
+- Gate minutes-to-hours conversion behind an explicit, independently reviewed per-policy rule tied to GPO, scope, exact registry target, policy identity SHA-256, pinned Registry.pol SHA-256 and a reviewed ADMX/ADML evidence digest. A name, decimal range or provenance string by itself is never unit proof.
+- Reject conflicting, unsupported, unreviewed or stale rules without falling back to a misleading numeric match. Report unit decision status and review provenance in TSV; extend regression coverage for changed hashes, duplicate rules and localized/ambiguous MMC text.
+- The user-facing export does not auto-infer unit mappings and cannot enable conversions until an auditable review workflow is implemented. Do not merge or release 2.1.0 solely from CI results; validate representative GPO policies on a nonproduction DC.
 
 ## 2.0.3 - 2026-10-11
 
