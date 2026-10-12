@@ -21,7 +21,10 @@ public sealed class SettingValueWindow : Window
         bool exactNavigationAvailable,
         Func<IProgress<string>, Task<bool>> openExactGpoEditor,
         Func<IProgress<string>, Task<bool>>? discoverExactMmcRoute = null,
-        Action? cancelExactDiscovery = null)
+        Action? cancelExactDiscovery = null,
+        Func<IProgress<string>, CancellationToken,
+            Task<GpoKerberosStoredSourceEvidenceService.Result>>?
+            verifyStoredKerberos = null)
     {
         Title =
             $"Setting Value - {setting.SettingName}";
@@ -299,6 +302,118 @@ public sealed class SettingValueWindow : Window
                 footer.Children.Add(cancelScan);
         }
 
+        // On-demand, read-only typed Kerberos source verification. This is
+        // intentionally distinct from exact MMC navigation: agreement of
+        // two stored snapshots must never be labeled as applied client RSoP,
+        // a verified native MMC value, or an authorized policy change.
+        TextBlock? kerberosSourceStatus = null;
+        if (verifyStoredKerberos is not null)
+        {
+            var verifier = verifyStoredKerberos;
+            kerberosSourceStatus = new TextBlock
+            {
+                Text = "Stored Kerberos source: NOT CHECKED. " +
+                    "Click Verify to read only this GPO's pinned-DC GptTmpl.inf " +
+                    "and compare its typed value with the cached GPMC report.",
+                Foreground = UiStyle.WarningBrush,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(4, 8, 4, 8)
+            };
+            var sourceStatus = kerberosSourceStatus;
+            var verifyButton = new Button
+            {
+                Content = "Verify stored Kerberos source...",
+                ToolTip = "On demand: read-only, single-GPO, pinned-DC SecEdit " +
+                    "GptTmpl.inf SHA-256 comparison. Does not start MMC, " +
+                    "write a GPO or establish effective RSoP."
+            };
+            var cancelVerify = new Button
+            {
+                Content = "Cancel source check",
+                IsEnabled = false
+            };
+            CancellationTokenSource? activeRead = null;
+            Closed += (_, _) => activeRead?.Cancel();
+            cancelVerify.Click += (_, _) =>
+            {
+                activeRead?.Cancel();
+                if (IsLoaded)
+                    sourceStatus.Text = "Cancelling the security-template source read...";
+            };
+            verifyButton.Click += async (_, _) =>
+            {
+                if (activeRead is not null)
+                    return;
+                var operation = new CancellationTokenSource();
+                activeRead = operation;
+                var reading = true;
+                verifyButton.IsEnabled = false;
+                cancelVerify.IsEnabled = true;
+                open.IsEnabled = false;
+                sourceStatus.Foreground = UiStyle.WarningBrush;
+                sourceStatus.Text = "Reading pinned Kerberos security-template source (read-only)...";
+                try
+                {
+                    var progress = new Progress<string>(message =>
+                    {
+                        if (IsLoaded && reading)
+                            sourceStatus.Text = message;
+                    });
+                    var result = await verifier(progress, operation.Token);
+                    reading = false;
+                    if (!IsLoaded)
+                        return;
+                    sourceStatus.Foreground =
+                        result.Status == GpoKerberosStoredSourceEvidenceService.Match
+                            ? UiStyle.SuccessBrush : UiStyle.WarningBrush;
+                    var literals = result.IsCompared
+                        ? " Cached GPMC literal: " + result.GpmcLiteral +
+                          "; pinned GptTmpl.inf literal: " + result.InfLiteral + "."
+                        : string.Empty;
+                    sourceStatus.Text = "Stored Kerberos source: " + result.Status +
+                        ". " + result.Explanation + literals +
+                        " This is NOT native MMC value verification or client RSoP.";
+                }
+                catch (OperationCanceledException)
+                {
+                    reading = false;
+                    if (IsLoaded)
+                    {
+                        sourceStatus.Foreground = UiStyle.WarningBrush;
+                        sourceStatus.Text =
+                            "Stored Kerberos source: CANCELED. No stored-value " +
+                            "agreement was established.";
+                    }
+                }
+                catch (Exception ex)
+                {
+                    reading = false;
+                    CrashLogService.Write("Read-only Kerberos source check", ex);
+                    if (IsLoaded)
+                    {
+                        sourceStatus.Foreground = UiStyle.ErrorBrush;
+                        sourceStatus.Text = "Stored Kerberos source: READ_FAILED. " +
+                            ex.GetType().Name + ": " + ex.Message +
+                            ". No source value was verified.";
+                    }
+                }
+                finally
+                {
+                    reading = false;
+                    if (IsLoaded)
+                    {
+                        verifyButton.IsEnabled = true;
+                        cancelVerify.IsEnabled = false;
+                        open.IsEnabled = true;
+                    }
+                    activeRead = null;
+                    operation.Dispose();
+                }
+            };
+            footer.Children.Add(verifyButton);
+            footer.Children.Add(cancelVerify);
+        }
+
         // A raw registry.pol entry has no guaranteed MMC row. Make its real
         // key/value easy to inspect without opening the live local registry.
         if (GpoSettingSourceProvenance.IsVerifiedRegistryTarget(setting))
@@ -368,6 +483,8 @@ public sealed class SettingValueWindow : Window
 
         panel.Children.Add(
             navigationStatus);
+        if (kerberosSourceStatus is not null)
+            panel.Children.Add(kerberosSourceStatus);
 
         panel.Children.Add(
             new TextBlock
@@ -398,6 +515,17 @@ public sealed class SettingValueWindow : Window
 
         panel.Children.Add(Meta("Source type",
             GpoSettingSourceProvenance.SourceType(setting)));
+        if (SoftwareRestrictionMmcRouteService.IsSoftwareRestriction(setting))
+            panel.Children.Add(new TextBlock
+            {
+                Text = "Software Restriction Policies: an exact Additional Rules " +
+                    "path confirms only native MMC row identity. The stored " +
+                    "security level, enforcement and effective client application " +
+                    "are NOT VERIFIED. A separate typed SRP source reader is required.",
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = UiStyle.WarningBrush,
+                Margin = new Thickness(4, 6, 4, 6)
+            });
         panel.Children.Add(Meta("MMC section",
             hasVerifiedSection ? verifiedSectionPath :
                 "UNMAPPED - full editor supports manual navigation only"));

@@ -2,6 +2,12 @@
 
 This feature is read-only and does not change Group Policy or SYSVOL. Optional startup **GPMC indexing** uses a per-user preference and the incremental cache; it does not start the native MMC editor for all GPOs. MMC observations, source values and RSoP have distinct statuses; no bulk scanner can truthfully set every Windows policy to VERIFIED without type-specific evidence.
 
+## Preview 8: on-demand Kerberos comparison in Setting Value
+
+Open a known typed Kerberos setting from **All Settings**, then select **Verify stored Kerberos source...**. This reads only the selected GPO's pinned-DC `Machine/Microsoft/Windows NT/SecEdit/GptTmpl.inf` (read-only and cancellable). It compares the cached GPMC report number/boolean with a uniquely identified, fully read, SHA-256-backed INF key. `STORED_SNAPSHOTS_MATCH` means the saved literals agree, not that native MMC, replication, live GPMC or effective client RSoP has been verified. Missing, duplicate, malformed, partial and mismatched source evidence cannot become Verified. An open **Exact MMC Paths** window also receives the latest same-GPO security source snapshot.
+
+Software Restriction Path Rules still lack a trusted typed source comparison; the policy value dialog explains this limitation.
+
 ## Preview 7: Kerberos stored-source snapshot evidence
 
 Open **Exact MMC Paths** (separate from the Registry.pol-only **Discovery & Verification** unit review), select a typed Kerberos Account setting, then choose **Check Kerberos GptTmpl.inf...**. The program reads only that GPO's SecEdit `GptTmpl.inf` on the pinned DC, hashes the captured file and compares one canonical `SettingNumber` or `SettingBoolean` with the exact `[Kerberos Policy]` entry. Results appear in the **Kerberos stored source** column independently of MMC navigation. Missing or incomplete files, wrong GPO/DC, duplicate source/GPMC identities and unsupported value representations are blockers. Values still represent captured GPMC/SYSVOL snapshots, not atomic live DC equality, effective client RSoP, or signed-off units. This action is opt-in per GPO and **never launches native MMC**.

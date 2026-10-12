@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Preview 8: per-setting typed Kerberos source verification.** Bring the read-only, SHA-256-bound GPMC-to-GptTmpl.inf comparison into the Kerberos Setting Value window. Explicit, cancelable one-GPO/one-DC source reads display stored snapshot match, difference or fail-closed reason, distinct from MMC native-row verification and client RSoP. Refresh the Exact MMC Paths snapshot when it is open. No automatic MMC scan, policy write or unverified-to-verified shortcut.
+- Clarify within the Software Restriction Policies value window that native Path Rule row identity cannot prove the stored security level or client enforcement. Typed SRP stored-source verification remains blocked until an independent trusted reader is added.
+
 - **Preview 7: typed Kerberos stored-source evidence.** Add explicit per-GPO read-only `GptTmpl.inf` capture on the session-pinned DC from **Exact MMC Paths**. Compare one typed GPMC Kerberos Account value with exactly one `[Kerberos Policy]` INF key only when the exact source path, same GPO/domain/DC, full parser, SHA-256 file+row hash, and canonical number/boolean all pass. Separate `STORED_SNAPSHOTS_MATCH`, `STORED_SNAPSHOTS_DIFFER` and fail-closed blockers from MMC-route verification and actual client RSoP. No GPO/SYSVOL writes and no mass MMC scans.
 - Add the `securityOnly` source scan mode (mutually exclusive with `registryOnly`) so the new action reads only the selected GPO's Security Template and avoids unrelated GPP XML and Registry.pol. Source absence, partial reads, duplicate GPMC/source records, stale domain/DC, unexpected Boolean/number encodings and unsupported SRP source families never become verified. Add source identity and format regression tests.
 

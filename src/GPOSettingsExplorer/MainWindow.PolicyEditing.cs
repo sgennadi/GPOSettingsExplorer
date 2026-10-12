@@ -78,6 +78,17 @@ public partial class MainWindow
                     !technical && _gpoEditorNavigatorService.CanNavigateExactly(
                         setting);
 
+                // Explicit opt-in per row. The comparison reads only the
+                // selected pinned-DC GptTmpl.inf when its button is clicked;
+                // startup/index navigation never triggers a security scan.
+                Func<IProgress<string>, CancellationToken,
+                    Task<GpoKerberosStoredSourceEvidenceService.Result>>?
+                    kerberosSourceVerifier =
+                    !technical && KerberosPolicyMetadataService.IsKnownKerberosSetting(setting)
+                        ? (progress, token) => VerifyKerberosStoredSourceAsync(
+                            gpo, setting, progress, token)
+                        : null;
+
                 SettingValueWindow? valueWindow = null;
                 valueWindow = new SettingValueWindow(
                     gpo,
@@ -90,7 +101,8 @@ public partial class MainWindow
                         setting,
                         progress),
                     progress => DiscoverAndOpenExactMmcRouteAsync(
-                        gpo, setting, (Window?)valueWindow ?? this, progress))
+                        gpo, setting, (Window?)valueWindow ?? this, progress),
+                    verifyStoredKerberos: kerberosSourceVerifier)
                 {
                     Owner = this
                 };
