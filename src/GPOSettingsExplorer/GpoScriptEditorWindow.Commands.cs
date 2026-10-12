@@ -436,8 +436,20 @@ public sealed partial class GpoScriptEditorWindow
             _saving = false;
             DialogResult = true;
         }
+        catch (ChangePreviewCanceledException)
+        {
+            // This is the operator's expected Cancel/close choice, not an IO
+            // or SYSVOL save failure. Do not open ErrorDialog or claim success.
+            // The edited text, encoding, EOL and undo history stay untouched.
+            _validationMessage =
+                "Save canceled in preview - no script changes written. " +
+                "Unsaved edits remain in the editor.";
+            UpdateStatus();
+            _statusText.Foreground = UiStyle.WarningBrush;
+        }
         catch (Exception ex)
         {
+            // Genuine failures still require diagnostics, and the edits stay open.
             // Keep the editor and its changed text open; never discard it on failure.
             ErrorDialog.Show(
                 this, "Save GPO Script",

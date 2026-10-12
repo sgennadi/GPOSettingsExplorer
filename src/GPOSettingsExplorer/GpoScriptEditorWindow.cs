@@ -56,6 +56,7 @@ public sealed partial class GpoScriptEditorWindow : Window
         MinWidth = 690;
         MinHeight = 480;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
+        UiStyle.ApplyWindowDefaults(this);
 
         var root = new DockPanel { Margin = new Thickness(9) };
         Content = root;
@@ -322,6 +323,7 @@ public sealed partial class GpoScriptEditorWindow : Window
         _editor.Options.IndentationSize = 4;
         _editor.Options.EnableHyperlinks = false;
         _editor.Options.EnableEmailHyperlinks = false;
+        ConfigureEditorContextMenu();
 
         try
         {

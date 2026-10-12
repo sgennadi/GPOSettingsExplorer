@@ -746,7 +746,11 @@ public partial class MainWindow : Window
     private void SetBusy(bool busy, string? message = null)
     {
         BusyProgress.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
-        Mouse.OverrideCursor = busy ? Cursors.Wait : null;
+        // Mouse.OverrideCursor is global across ALL WPF windows. A script
+        // preview displayed during an in-progress backup was still clickable
+        // but misleadingly showed the wait cursor. Busy belongs to MAIN only:
+        // owned confirmation dialogs must retain the regular pointer.
+        Cursor = busy ? Cursors.Wait : null;
 
         if (!string.IsNullOrWhiteSpace(message))
         {

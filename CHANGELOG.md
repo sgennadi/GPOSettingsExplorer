@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Preview 4: handle a declined **Save GPO script** change Preview as a typed, expected `ChangePreviewCanceledException`, not a script-save failure. Cancel/Close preserves the edited text and undo history without GPO/SYSVOL writes, shows a neutral status, and still reports genuine filesystem, backup, audit or verification faults as errors. The confirmation gate remains mandatory.
+- Eliminate misleading busy cursors on interactive Preview/confirmation windows: keep main-window busy cursors scoped to the main window, temporarily suspend any global cursor override while the modal Preview is open, restore it afterward, and add explicit "Approve and save" vs "Cancel" labels.
+- Add a real AvalonEdit **right-click context menu** directly on its TextArea: Undo/Redo, Cut/Copy/Paste, Copy current line/entire script, Select All/current line/Deselect, Find/Replace/Go to line, comment/uncomment, indent/outdent, syntax check and guarded Save. Selection/read-only/save states control disabled items. Fonts and HiDPI remain centralized.
+- Publish separate v2.1.0-preview.4 x64/ARM64 portable ZIPs after Windows Build, UI style lint, CoreTests and EXE version validation; keep previously published preview.3 and stable 2.0.3 intact.
+
 - Preview 3: add one **Exact MMC Paths** coverage screen for every indexed GPMC row with typed, same-GPO/scope exact native routes, complete section checks, duplicate detection and explicit reasons for unsupported/unscanned policies. An on-demand read-only MMC scan inspects ONE selected GPO; it is never run for every GPO on startup.
 - Reuse exact native row activation for uniquely observed entries across eligible Security Options, Kerberos, Password and Lockout Policy, nested Advanced Audit, SRP Path Rules, matching ADMX categories and registered Group Policy Preferences sections. Unknown third-party policy routes remain not automatically verified.
 - Add a one-time operator-reviewed native-row picker for GPMC entries that cannot be mapped automatically. Requires deliberate confirmation and revalidation of exact tree/row in a new MMC editor; does not claim stored source/value or effective RSoP verification. Add scan-cancel UX from a modal Setting Value window and regression tests for duplicate/other-GPO/wrong-scope routes.

@@ -385,7 +385,7 @@ public sealed class GpoScriptService
                 $" BOM {document.OriginalEmitBom} -> {document.EmitBom};" +
                 $" EOL {ScriptEncodingService.DisplayLineEnding(document.OriginalNewLine)} -> " +
                 ScriptEncodingService.DisplayLineEnding(document.NewLine),
-                "Save"));
+                "Approve and save"));
 
         var temp =
             fullPath +

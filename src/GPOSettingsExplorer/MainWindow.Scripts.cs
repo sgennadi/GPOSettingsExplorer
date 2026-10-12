@@ -648,7 +648,10 @@ public partial class MainWindow
                     script.GpoId,
                     $"Automatic backup before editing script '{script.FileName}'"));
 
-            SetBusy(true, "Writing and verifying script in SYSVOL...");
+            // Native SaveDocumentWithEvidence requests approval BEFORE it
+            // writes any SYSVOL bytes. Do not say "Writing" while the
+            // operator is still considering the modal Preview.
+            SetBusy(true, "Reviewing script change and awaiting approval...");
             var saveEvidence = await StaTask.Run(() =>
                 _gpoScriptService.SaveDocumentWithEvidence(
                     gpo,
@@ -704,6 +707,16 @@ public partial class MainWindow
                     ? $"Saved {script.FileName}. Backup: {backupPath}. Refresh failed; use Refresh manually."
                     : $"No byte changes committed for {script.FileName}. Backup: {backupPath}. Refresh failed; use Refresh manually.";
             }
+        }
+        catch (ChangePreviewCanceledException)
+        {
+            // Backup may already exist, but preview cancellation occurs
+            // before any staged/committed script write. Propagate the typed
+            // cancellation for the editor's neutral, non-error status.
+            StatusText.Text =
+                $"Save canceled in Preview: {script.FileName} was NOT written to SYSVOL. " +
+                "Unsaved edits remain in the script editor.";
+            throw;
         }
         finally
         {

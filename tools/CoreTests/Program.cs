@@ -44,6 +44,7 @@ var tests = new (string Name, Action Body)[]
     ("Cross-DC GPO version evidence refuses aliases and incomplete comparisons", TestCrossDcVersionEvidence),
     ("GPP XML evidence is bounded, redacted and never interpreted as effective policy", TestGppXmlEvidence),
     ("Mandatory Security Settings preview cannot run headlessly or be disabled", TestRequiredSecurityPreviewGuard),
+    ("Preview Cancel remains a typed non-error and never authorizes a write", TestChangePreviewCancellationContract),
     ("Legacy security boolean edit rejects absent and ambiguous DWORD values", TestSafeRegistryBooleanSecurityEdit),
     ("Comprehensive evidence ZIP contains manifests, source hashes and safe CSV", TestGpoEvidenceArchive),
     ("Selective recovery requires same GPO, intact backup and supported key", TestSelectiveSecurityRecovery),
@@ -1778,6 +1779,35 @@ static void TestGpoStartupIndexPreferences()
     {
         Directory.Delete(dir, recursive: true);
     }
+}
+
+static void TestChangePreviewCancellationContract()
+{
+    // Pure gate test. It cannot auto-approve or display a native WPF dialog
+    // in CI and must never write a real GPO or SYSVOL.
+    ChangePreviewGuard.RequireApprovedResult(true);
+
+    var canceled = false;
+    try
+    {
+        ChangePreviewGuard.RequireApprovedResult(false);
+    }
+    catch (ChangePreviewCanceledException ex)
+    {
+        canceled = true;
+        Assert(ex is OperationCanceledException &&
+               ex.Message.Contains("canceled in the preview", StringComparison.OrdinalIgnoreCase),
+            "Preview Cancel needs its own harmless exception type, not an IOException.");
+    }
+    Assert(canceled, "A canceled preview must not authorize the protected writer.");
+
+    // Unrelated cancellation and real write failures must not be disguised
+    // as a preview decline by the editor.
+    Assert(typeof(ChangePreviewCanceledException).IsSubclassOf(
+               typeof(OperationCanceledException)) &&
+           !typeof(IOException).IsAssignableFrom(
+               typeof(ChangePreviewCanceledException)),
+        "Only the explicit operator decline is treated as a neutral cancel.");
 }
 
 static void TestBatchSyntaxDiagnostics()
