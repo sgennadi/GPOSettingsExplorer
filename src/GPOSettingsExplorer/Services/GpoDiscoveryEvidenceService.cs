@@ -90,6 +90,9 @@ public static partial class GpoDiscoveryEvidenceService
                 return item;
 
             var matches = rows.Where(row =>
+                // A located section and a matching label do not establish
+                // the identity of a row when MMC itself reports ambiguity.
+                row.Navigation == "Exact MMC row candidate" &&
                 row.GpoId == item.GpoId &&
                 row.Scope.Equals(item.Scope, StringComparison.OrdinalIgnoreCase) &&
                 row.SettingName.Equals(item.SettingName, StringComparison.OrdinalIgnoreCase) &&

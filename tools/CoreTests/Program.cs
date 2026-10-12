@@ -3912,9 +3912,14 @@ static void TestDiscoveryEvidence()
         new MmcInventoryEntry
         {
             GpoId = id, Scope = "Computer", SettingName = "Account: MaxTicketAge",
-            TreeSegments = rows[0].MmcSection.Split(" > ")
+            TreeSegments = rows[0].MmcSection.Split(" > "),
+            Navigation = "Exact MMC row candidate"
         }
     };
+    Assert(GpoDiscoveryEvidenceService.CorrelateMmc(rows,
+        new[] { observed[0] with { Navigation = "Section only / ambiguous" } })[0]
+        .NavigationStatus == "SECTION_CANDIDATE",
+        "Even a matching name and section must not verify a row that MMC cannot navigate exactly.");
     var verified = GpoDiscoveryEvidenceService.CorrelateMmc(rows, observed);
     Assert(verified[0].ValueVerificationStatus == "MMC_OBSERVED_SOURCE_NOT_COMPARED",
         "An MMC row must not claim source-value verification.");

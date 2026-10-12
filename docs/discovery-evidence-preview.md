@@ -17,7 +17,7 @@ The original plain discovery export uses only a previously captured snapshot for
 ## Interpretation
 
 - SECTION_CANDIDATE: a section inferred from known extension/category rules; not proof of native MMC presence.
-- MMC_ROW_OBSERVED: exactly one matching native row for the same GPO, scope, section and literal name.
+- MMC_ROW_OBSERVED: exactly one matching native row for the same GPO, scope, section and literal name, **with Exact MMC row candidate navigation**. A section match alone is insufficient.
 - AMBIGUOUS: multiple candidate MMC rows; no exact target is asserted.
 - UNMAPPED: no reliable section route.
 - REGISTRY_SOURCE_LOCATED: one exact Registry.pol key/value target was found in the matching source snapshot.

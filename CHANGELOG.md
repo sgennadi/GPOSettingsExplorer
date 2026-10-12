@@ -10,6 +10,7 @@
 - Re-read the selected Registry.pol from the connected/pinned DC both before and after manual unit review and immediately before exporting approved results. Validate full UNC path, same GPO, scope, file SHA-256, exact key/value target, registry type and bytes-derived value; reject partial/incomplete source snapshots and changed files.
 - Include source recheck status/timestamp in the reviewed TSV; a failed recheck blocks export and revokes the current in-memory match. Correctly reject MMC Not Configured rows as value matches.
 - Pin SYSVOL's UNC root to the captured DC for the entire read-only scan, and reject both source and MMC snapshots if the application connection changes mid-scan; no silent cross-DC mixing.
+- Prevent a matching MMC section and displayed policy name from masquerading as verified source correspondence when native navigation reports an ambiguous/unresolved row. Only exact MMC row candidates enter value comparison.
 - The existing plain export deliberately performs no unit inference/approval; reviewed exports retain session approvals only while all source/definition checks pass. This is not effective client RSoP or a transactional GPMC/MMC snapshot. Do not merge or release 2.1.0 solely from CI results; validate representative policies and ADMX variations on a nonproduction DC.
 
 ## 2.0.3 - 2026-10-11
