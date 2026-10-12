@@ -304,7 +304,7 @@
                                             ToolTip="Open only a uniquely verified literal row in the standard MMC editor. No automatic GPO write."/>
                                     <Button Content="Export CSV..." Click="ExportMmcInventory_Click"/>
                                     <Button Content="Export discovery evidence..." Click="ExportDiscoveryEvidence_Click"
-                                            ToolTip="Read-only source classification and candidate MMC routes for the selected GPO. No values are verified by this export."/>
+                                            ToolTip="Read-only evidence export. Limited literal value comparisons are supported; no effective RSoP verification. Export may contain confidential policy values."/>
                                     <TextBlock x:Name="MmcInventoryShownCountText" Margin="12,0,0,0"
                                                VerticalAlignment="Center"
                                                Foreground="{DynamicResource UiMutedBrush}"/>
