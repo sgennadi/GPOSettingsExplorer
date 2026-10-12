@@ -132,6 +132,104 @@ public partial class MainWindow
         }
     }
 
+    private sealed record DiscoverySnapshot(
+        IReadOnlyList<GpoDiscoveryEvidenceService.Evidence> Rows,
+        string Domain,
+        string DomainController,
+        string Coverage);
+
+    /// <summary>
+    /// Only correlate previously captured, same-GPO, same-domain, pinned-DC
+    /// snapshots. This never launches MMC or reads fresh SYSVOL implicitly.
+    /// </summary>
+    private DiscoverySnapshot CreateDiscoverySnapshot(GpoInfo gpo)
+    {
+        var configured = _settings.Where(row => row.GpoId == gpo.Id).ToArray();
+        var domain = _domainContext?.DomainName ?? "";
+        var dc = DomainConnectionState.GetServerFor(domain);
+        var mmcAvailable = _mmcInventoryResult is not null &&
+            _mmcInventoryScannedGpoId == gpo.Id &&
+            _mmcInventoryScannedDomain.Equals(domain, StringComparison.OrdinalIgnoreCase) &&
+            _mmcInventoryRows.All(row => row.GpoId == gpo.Id);
+        var sourceAvailable = _realSourceSnapshot is not null &&
+            _realSourceSnapshot.GpoId == gpo.Id &&
+            _realSourceSnapshot.Matches(domain, dc);
+
+        var evidence = GpoDiscoveryEvidenceService.CorrelateMmc(
+            GpoDiscoveryEvidenceService.Build(configured),
+            mmcAvailable ? _mmcInventoryRows : Array.Empty<MmcInventoryEntry>(),
+            _admxPolicies);
+        if (sourceAvailable)
+            evidence = GpoDiscoveryEvidenceService.CorrelateRegistrySource(
+                evidence, _realSourceSnapshot!.Rows);
+        evidence = GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(evidence);
+
+        var coverage = $"{configured.Length:N0} GPMC index rows; " +
+            (mmcAvailable
+                ? $"{_mmcInventoryRows.Count:N0} MMC rows ({(_mmcInventoryResult!.IsComplete ? "complete" : "PARTIAL")})"
+                : "MMC not captured for this GPO") + "; " +
+            (sourceAvailable
+                ? $"{_realSourceSnapshot!.Rows.Count:N0} source records " +
+                  (_realSourceSnapshot.IsPartial ? "(PARTIAL)" : "(available files scanned)")
+                : "Registry.pol source not captured for this GPO/pinned DC") + "; " +
+            (_admxPolicies is null ? "ADMX missing" : "ADMX catalog loaded");
+        return new DiscoverySnapshot(evidence, domain, dc, coverage);
+    }
+
+    private async void OpenDiscoveryVerification_Click(object sender, RoutedEventArgs e)
+    {
+        var gpo = MmcInventoryGpoCombo.SelectedItem as GpoInfo ??
+                  GpoGrid.SelectedItem as GpoInfo;
+        if (_domainContext is null || gpo is null)
+        {
+            MessageBox.Show(this, "Connect to the domain and select a specific GPO.",
+                "Discovery & Verification", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        if (!_settings.Any(setting => setting.GpoId == gpo.Id))
+        {
+            MessageBox.Show(this,
+                "Load the GPMC settings index for this GPO first. " +
+                "No indexed rows does not establish that the GPO is empty.",
+                "Discovery & Verification", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        // ADMX loading is optional: without it, all unit reviews are blocked
+        // but ordinary source/MMC evidence remains visible.
+        if (_admxPolicies is null)
+        {
+            try
+            {
+                await EnsureAdmxCatalogAsync();
+            }
+            catch (Exception ex)
+            {
+                StatusText.Text = "ADMX unavailable; unit verification blocked: " + ex.Message;
+            }
+        }
+
+        try
+        {
+            var snapshot = CreateDiscoverySnapshot(gpo);
+            var window = new GpoDiscoveryVerificationWindow(
+                gpo.DisplayName, snapshot.Domain, snapshot.DomainController,
+                snapshot.Rows, _admxPolicies,
+                _admxCatalogService.LastSourcePath,
+                _admxCatalogService.LastLanguage, snapshot.Coverage)
+            {
+                Owner = this
+            };
+            window.ShowDialog();
+        }
+        catch (Exception ex)
+        {
+            ErrorDialog.Show(this, "Discovery & Verification",
+                "Unable to open the read-only evidence review.", ex);
+        }
+    }
+
     private void ExportDiscoveryEvidence_Click(object sender, RoutedEventArgs e)
     {
         var gpo = MmcInventoryGpoCombo.SelectedItem as GpoInfo ??
@@ -172,32 +270,11 @@ public partial class MainWindow
 
         try
         {
-            var evidence = GpoDiscoveryEvidenceService.CorrelateMmc(
-                GpoDiscoveryEvidenceService.Build(configured),
-                _mmcInventoryResult is not null &&
-                _mmcInventoryScannedGpoId == gpo.Id &&
-                _domainContext is not null &&
-                string.Equals(_mmcInventoryScannedDomain, _domainContext.DomainName,
-                    StringComparison.OrdinalIgnoreCase) &&
-                _mmcInventoryRows.All(row => row.GpoId == gpo.Id)
-                    ? _mmcInventoryRows
-                    : Array.Empty<MmcInventoryEntry>());
-            // Reuse only the explicitly scanned, pinned-DC source snapshot.
-            // Never silently scan another DC or equate source presence with value agreement.
-            var currentDc = DomainConnectionState.GetServerFor(
-                _domainContext?.DomainName ?? "");
-            if (_realSourceSnapshot is not null &&
-                _realSourceSnapshot.GpoId == gpo.Id &&
-                _realSourceSnapshot.Matches(_domainContext?.DomainName ?? "", currentDc))
-            {
-                evidence = GpoDiscoveryEvidenceService.CorrelateRegistrySource(
-                    evidence, _realSourceSnapshot.Rows);
-            }
-            evidence = GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(evidence);
+            var snapshot = CreateDiscoverySnapshot(gpo);
             System.IO.File.WriteAllText(dialog.FileName,
-                GpoDiscoveryEvidenceService.ExportTsv(evidence),
+                GpoDiscoveryEvidenceService.ExportTsv(snapshot.Rows),
                 new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
-            StatusText.Text = $"Exported {evidence.Count:N0} discovery evidence records (limited literal comparisons; not effective RSoP).";
+            StatusText.Text = $"Exported {snapshot.Rows.Count:N0} discovery evidence records (limited literal comparisons; not effective RSoP).";
         }
         catch (Exception ex)
         {

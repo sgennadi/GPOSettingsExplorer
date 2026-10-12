@@ -78,7 +78,8 @@ var tests = new (string Name, Action Body)[]
     ("Kerberos GPMC names resolve to correct Security section, not Registry", TestKerberosGpmcRouting),
     ("GPO settings report provides bounded native GPMC hierarchy", TestGpoSettingsReportTree),
     ("Remote AI endpoints and prompts strictly exclude AD/GPO identities", TestRemoteAiBoundary),
-    ("Discovery evidence is read-only, fail-closed and spreadsheet-safe", TestDiscoveryEvidence)
+    ("Discovery evidence is read-only, fail-closed and spreadsheet-safe", TestDiscoveryEvidence),
+    ("Discovery unit review requires unique ADMX/ADML, MMC row, hashes and operator approval", TestDiscoveryUnitReview)
 };
 
 var failures = new List<string>();
@@ -4165,4 +4166,179 @@ static void TestDiscoveryEvidence()
     var tsv = GpoDiscoveryEvidenceService.ExportTsv(rows);
     Assert(tsv.Contains("'=HYPERLINK", StringComparison.Ordinal),
         "TSV export must escape spreadsheet formulas.");
+}
+
+
+static void TestDiscoveryUnitReview()
+{
+    var id = Guid.NewGuid();
+    var registryKey = @"Software\Policies\Example";
+    var policy = new AdmxPolicyDefinition
+    {
+        AdmxFile = "Example.admx", Name = "ExampleTimeout",
+        DisplayName = "Example timeout", Scope = "Computer",
+        Category = "Example Policies",
+        Key = registryKey,
+        Elements = new[]
+        {
+            new AdmxElementDefinition
+            {
+                Id = "Timeout", Label = "Timeout value", Type = AdmxElementType.Decimal,
+                Key = registryKey, ValueName = "TimeoutMinutes"
+            }
+        }
+    };
+    var setting = new PolicySettingInfo
+    {
+        GpoId = id, Scope = "Computer", Extension = "RegistrySettings",
+        Category = "Administrative Templates > Example Policies",
+        SettingName = "Example timeout",
+        RegistryKey = registryKey, RegistryValue = "TimeoutMinutes"
+    };
+    var raw = GpoDiscoveryEvidenceService.Build(new[] { setting });
+    Assert(raw.Count == 1 && raw[0].NavigationStatus == "SECTION_CANDIDATE",
+        "A GPMC Administrative Templates route by itself must remain a section candidate.");
+    var section = "Computer Configuration > Policies > Administrative Templates > Example Policies";
+    var observed = new MmcInventoryEntry
+    {
+        GpoId = id, Scope = "Computer", SettingName = "Example timeout",
+        SectionPath = section, TreeSegments = section.Split(" > "),
+        Navigation = "Exact MMC row candidate", MmcState = "Enabled",
+        MmcValue = "10 hours"
+    };
+    Assert(GpoDiscoveryEvidenceService.CorrelateMmc(raw, new[] { observed })[0]
+        .NavigationStatus == "SECTION_CANDIDATE",
+        "A nested Administrative Templates row must not match without an exact ADMX definition.");
+    var mmcMatched = GpoDiscoveryEvidenceService.CorrelateMmc(raw,
+        new[] { observed }, new[] { policy });
+    Assert(mmcMatched[0].NavigationStatus == "MMC_ROW_OBSERVED" &&
+           mmcMatched[0].MmcObservedSection == section &&
+           mmcMatched[0].MmcRowNavigation == "Exact MMC row candidate",
+        "Unique same-GPO/scope/registry-element and exact MMC section should be observed.");
+    Assert(GpoDiscoveryEvidenceService.CorrelateMmc(raw,
+        new[] { observed with { Navigation = "Section only / ambiguous" } },
+        new[] { policy })[0].NavigationStatus == "SECTION_CANDIDATE",
+        "Nonexact MMC row navigation must never upgrade the discovery status.");
+    Assert(GpoDiscoveryEvidenceService.CorrelateMmc(raw,
+        new[] { observed }, new[] { policy, policy })[0]
+        .NavigationStatus == "SECTION_CANDIDATE",
+        "Ambiguous same-name ADMX policies must never be selected by first match.");
+    Assert(GpoDiscoveryEvidenceService.CorrelateMmc(raw,
+        new[] { observed with { GpoId = Guid.NewGuid() } }, new[] { policy })[0]
+        .NavigationStatus == "SECTION_CANDIDATE",
+        "MMC evidence from another GPO must be excluded.");
+    Assert(GpoDiscoveryEvidenceService.CorrelateMmc(raw,
+        new[] { observed with { SectionPath = section + " > Wrong",
+            TreeSegments = (section + " > Wrong").Split(" > ") } },
+        new[] { policy })[0].NavigationStatus == "SECTION_CANDIDATE",
+        "A row in another MMC folder is not the same configured policy.");
+
+    var source = new RealSettingRecord
+    {
+        GpoId = id, Scope = "Computer", RegistryKey = registryKey,
+        RegistryValue = "TimeoutMinutes", SourceFile = @"Machine\Registry.pol",
+        SourceSha256 = new string('A', 64), ValueType = "REG_DWORD", Value = "600"
+    };
+    var withSource = GpoDiscoveryEvidenceService.CorrelateRegistrySource(
+        mmcMatched, new[] { source });
+    var verified = GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(withSource);
+    Assert(verified[0].ValueVerificationStatus == "SOURCE_RECORD_LOCATED_VALUE_NOT_COMPARED",
+        "Never infer minutes from 600 and 10 hours.");
+    var row = verified[0];
+    var candidate = GpoDiscoveryUnitReviewService.Inspect(row, new[] { policy });
+    Assert(candidate.CanReview && candidate.Status == "READY_FOR_MANUAL_REVIEW",
+        "Exact MMC and Registry.pol evidence permits manual review, not automatic conversion.");
+    Assert(GpoDiscoveryUnitReviewService.Inspect(row, new[] { policy, policy }).Status ==
+           "AMBIGUOUS_ADMX", "Ambiguous templates must block review.");
+    Assert(GpoDiscoveryUnitReviewService.Inspect(row with { SourceStoredType = "REG_SZ" },
+        new[] { policy }).Status == "SOURCE_NOT_EXACT", "Non-DWORD sources block review.");
+    Assert(GpoDiscoveryUnitReviewService.Inspect(row with { SourceFileHash = "" },
+        new[] { policy }).Status == "SOURCE_NOT_EXACT", "Unhashed source blocks review.");
+    Assert(GpoDiscoveryUnitReviewService.Inspect(row with { MmcObservedValue = "10 Hours" },
+        new[] { policy }).Status == "UNSUPPORTED_FORMAT",
+        "Unrecognized/native localized MMC units require a dedicated parser.");
+    Assert(GpoDiscoveryUnitReviewService.Inspect(row with { MmcObservedState = "Not Configured (MMC)" },
+        new[] { policy }).Status == "MMC_NOT_CONFIGURED",
+        "Not Configured MMC rows cannot be approved as configured-source value equivalence.");
+    Assert(GpoDiscoveryUnitReviewService.Inspect(row, new[] { policy }).CanReview,
+        "The exact policy record remains eligible.");
+    Assert(GpoDiscoveryUnitReviewService.Inspect(row, new[] { new AdmxPolicyDefinition
+    {
+        AdmxFile = policy.AdmxFile, Name = policy.Name, DisplayName = policy.DisplayName,
+        Scope = policy.Scope, Category = policy.Category, Elements =
+            new[] { policy.Elements[0], policy.Elements[0] }
+    } }).Status == "AMBIGUOUS_ELEMENT",
+        "Two exact decimal element mappings are ambiguous.");
+    var root = Path.Combine(Path.GetTempPath(), "GPOSE-discovery-" + Guid.NewGuid().ToString("N"));
+    try
+    {
+        var langDir = Path.Combine(root, "en-US");
+        Directory.CreateDirectory(langDir);
+        var admxPath = Path.Combine(root, "Example.admx");
+        var admlPath = Path.Combine(langDir, "Example.adml");
+        File.WriteAllText(admxPath,
+            "<policyDefinitions><policies><policy name=\"ExampleTimeout\" class=\"Machine\" " +
+            "key=\"Software\\Policies\\Example\" displayName=\"$(string.PolicyName)\">" +
+            "<elements><decimal id=\"Timeout\" valueName=\"TimeoutMinutes\"/></elements>" +
+            "</policy></policies></policyDefinitions>");
+        File.WriteAllText(admlPath,
+            "<policyDefinitionResources><resources><stringTable>" +
+            "<string id=\"PolicyName\">Example timeout</string>" +
+            "</stringTable></resources></policyDefinitionResources>");
+        var fingerprint = GpoDiscoveryUnitReviewService.CaptureDefinition(candidate,
+            root, "en-US");
+        Assert(fingerprint.AdmxSha256.Length == 64 &&
+               fingerprint.AdmlSha256.Length == 64 &&
+               fingerprint.DefinitionSha256.Length == 64,
+            "Review must SHA-256 fingerprint actual ADMX and ADML bytes and the exact policy.");
+        var mapping = GpoDiscoveryUnitReviewService.Approve(
+            candidate, fingerprint, "Change-Ticket-123");
+        var applied = GpoDiscoveryEvidenceService.ApplyVerifiedUnitMappings(
+            new[] { row }, new[] { mapping });
+        var converted = GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(applied);
+        Assert(converted[0].ValueVerificationStatus == "MATCH_EXPLICIT_MINUTES_HOURS" &&
+               converted[0].UnitMappingEvidence?.ReviewReference == "Change-Ticket-123",
+            "Explicit, reviewed and fingerprint-bound conversion may match 600 minutes to 10 hours.");
+
+        var failedApproval = false;
+        try
+        {
+            _ = GpoDiscoveryUnitReviewService.Approve(candidate, fingerprint, "x");
+        }
+        catch (ArgumentException)
+        {
+            failedApproval = true;
+        }
+        Assert(failedApproval, "A valid review reference must be required.");
+
+        File.AppendAllText(admlPath, "\n<!-- modified after capture -->");
+        var changed = GpoDiscoveryUnitReviewService.CaptureDefinition(candidate, root, "en-US");
+        Assert(changed.DefinitionSha256 != fingerprint.DefinitionSha256,
+            "Changes to any reviewed ADMX/ADML byte must invalidate the previous review digest.");
+        var rejectedLanguage = false;
+        try
+        {
+            _ = GpoDiscoveryUnitReviewService.CaptureDefinition(candidate, root, "../en-US");
+        }
+        catch (InvalidOperationException)
+        {
+            rejectedLanguage = true;
+        }
+        Assert(rejectedLanguage, "Review cannot traverse out of the pinned ADML language directory.");
+        File.Delete(admlPath);
+        var rejectedMissing = false;
+        try
+        {
+            _ = GpoDiscoveryUnitReviewService.CaptureDefinition(candidate, root, "en-US");
+        }
+        catch (InvalidOperationException)
+        {
+            rejectedMissing = true;
+        }
+        Assert(rejectedMissing, "Missing ADML must never be reported as verified source units.");
+    }
+    finally
+    {
+        Directory.Delete(root, recursive: true);
+    }
 }

@@ -6,9 +6,11 @@ This feature is read-only and does not change Group Policy or SYSVOL.
 
 1. Connect to the domain and load the GPMC settings index.
 2. Open **MMC Full Settings Inventory** and select a specific GPO.
-3. Optionally run **Scan MMC (read-only)** to capture native observed rows.
-4. In **All Settings**, select the same GPO and load its stored source files if Registry.pol source correlation is needed.
-5. Select **Export discovery evidence...** and save the TSV locally.
+3. Run **Scan MMC (read-only)** to capture exact native rows for the selected GPO (incomplete sections remain explicitly marked).
+4. In **All Settings**, load stored GPO source files on the same selected GPO and pinned domain controller, using **Read stored sources**.
+5. Select **Discovery & Verification...** in the MMC Full Settings Inventory toolbar. Inspect the searchable verification grid, the selected setting's source/MMC/hash diagnostics and review eligibility.
+6. For a uniquely correlated Administrative Templates DWORD element that the native MMC displays as exact English `N hours`, choose **Review minutes / hours...**. The dialog re-reads current ADMX + ADML bytes, shows their SHA-256 fingerprints and exact element, requires independent human verification of the stored minutes and displayed hours, a deliberate checkbox, review reference and confirmation. Merely locating an ADMX decimal element never authorizes conversion.
+7. **Export review TSV...** inside the window revalidates the ADMX/ADML fingerprints and exports session-approved conversions, review references, policy/source hashes and all current statuses. Approvals are discarded when the window closes. The original **Export discovery evidence...** remains a separate read-only, no-approval export.
 
 The export uses only a previously captured source snapshot for the exact selected GPO, domain, and pinned domain controller. It does not trigger a fresh SYSVOL scan. Exported rows may contain confidential policy values; the GUI requires explicit confirmation before saving. Do not publish or upload the TSV.
 
@@ -32,12 +34,12 @@ The TSV includes raw source value, registry type and source-file SHA-256 when un
 - **UNVERIFIED_RULE**: the review is missing, the policy/source fingerprint is stale, or a required evidence field is missing. No numeric fallback.
 - **SOURCE_NOT_VERIFIED** or **UNSUPPORTED_UNIT**: the source isn't a hashed DWORD Registry.pol record or the unit pair is not allowlisted. No numeric fallback.
 
-A label, explainText, name containing "minutes", decimal min/max, or a nonempty provenance string **does not** establish units. The mapping API requires external trusted review; its fingerprints are audit anchors, not independent semantic proof. Recheck evidence when the GPO, ADMX/ADML or source snapshot changes. Directly setting `SourceUnit` cannot authorize conversion. The production export still provides no reviewed mappings; all conversions remain disabled until the verification UI can supply real, auditable approvals. Do not present literal-integer agreement as equivalent units.
+A label, explainText, name containing "minutes", decimal min/max, or a nonempty provenance string **does not** establish units. The mapping API requires trusted manual review; its fingerprints are audit anchors, not independent semantic proof. The dedicated Discovery & Verification window now allows a **temporary per-session** approval after the operator independently confirms the exact ADMX/ADML decimal element's stored unit and the exact native MMC display unit. The window does not automatically extract or guess units from ADMX names, labels, explain text or number ranges. It checks policy identity, one matching decimal registry element, a source-file SHA-256, the ADMX + ADML file contents and the selected MMC row before offering that review. The legacy export contains no reviewed mappings, and opening a window does not approve anything. Recheck evidence when the GPO, ADMX/ADML or source snapshot changes; this UI verifies cached source hashes against reviewed identities, **not** a fresh atomic DC source reread. Directly setting `SourceUnit` cannot authorize conversion. Do not present literal-integer agreement as equivalent units.
 
 ## Remaining release blockers
 
 - Source-specific, type-aware and unit-aware value comparison (including Kerberos/SecEdit and GPP sources).
-- Discovery & Verification dedicated GUI with explicit coverage and mismatch details.
+- Live source snapshot recapture and provenance sign-off on a nonproduction domain controller; the new Discovery & Verification window is read-only and approvals expire at close.
 - Verification on representative domain policies and supported Windows MMC versions.
 - Final version bump, release notes and x64/ARM64 portable release validation.
 

@@ -19,6 +19,8 @@ public static partial class GpoDiscoveryEvidenceService
     {
         public string MmcObservedState { get; init; } = string.Empty;
         public string MmcObservedValue { get; init; } = string.Empty;
+        public string MmcObservedSection { get; init; } = string.Empty;
+        public string MmcRowNavigation { get; init; } = string.Empty;
         public string ValueVerificationStatus { get; init; } = "NOT_VERIFIED";
         public string SourceStoredValue { get; init; } = string.Empty;
         public string SourceStoredType { get; init; } = string.Empty;
@@ -59,7 +61,8 @@ public static partial class GpoDiscoveryEvidenceService
     /// An MMC observation does not validate the underlying configured value.
     /// </summary>
     public static IReadOnlyList<Evidence> CorrelateMmc(
-        IEnumerable<Evidence> evidence, IEnumerable<MmcInventoryEntry> observed)
+        IEnumerable<Evidence> evidence, IEnumerable<MmcInventoryEntry> observed,
+        IReadOnlyList<AdmxPolicyDefinition>? admxCatalog = null)
     {
         ArgumentNullException.ThrowIfNull(evidence);
         ArgumentNullException.ThrowIfNull(observed);
@@ -73,9 +76,10 @@ public static partial class GpoDiscoveryEvidenceService
                 row.GpoId == item.GpoId &&
                 row.Scope.Equals(item.Scope, StringComparison.OrdinalIgnoreCase) &&
                 row.SettingName.Equals(item.SettingName, StringComparison.OrdinalIgnoreCase) &&
-                row.TreeSegments.SequenceEqual(
-                    item.MmcSection.Split(" > ", StringSplitOptions.RemoveEmptyEntries),
-                    StringComparer.OrdinalIgnoreCase)).ToArray();
+                (row.TreeSegments.SequenceEqual(
+                     item.MmcSection.Split(" > ", StringSplitOptions.RemoveEmptyEntries),
+                     StringComparer.OrdinalIgnoreCase) ||
+                 IsExactAdmxObservation(item, row, admxCatalog))).ToArray();
 
             return matches.Length switch
             {
@@ -84,6 +88,8 @@ public static partial class GpoDiscoveryEvidenceService
                     NavigationStatus = "MMC_ROW_OBSERVED",
                     MmcObservedState = matches[0].MmcState,
                     MmcObservedValue = matches[0].MmcValue,
+                    MmcObservedSection = matches[0].SectionPath,
+                    MmcRowNavigation = matches[0].Navigation,
                     ValueVerificationStatus = "MMC_OBSERVED_SOURCE_NOT_COMPARED",
                     Notes = "One matching native MMC row observed. Value and effective RSoP are not verified."
                 },
@@ -95,6 +101,44 @@ public static partial class GpoDiscoveryEvidenceService
                 _ => item
             };
         }).ToArray();
+    }
+
+    // An Administrative Templates route is only a parent section. Promote a
+    // nested MMC row only when one exact ADMX policy AND one exact decimal
+    // registry element identify the row's folder and stored target. Avoid
+    // the tempting but unsafe same-display-name-only fallback.
+    private static bool IsExactAdmxObservation(
+        Evidence item, MmcInventoryEntry row,
+        IReadOnlyList<AdmxPolicyDefinition>? catalog)
+    {
+        if (catalog is null ||
+            item.SourceStatus != "REGISTRY_METADATA" ||
+            string.IsNullOrWhiteSpace(item.RegistryTarget) ||
+            row.Navigation != "Exact MMC row candidate")
+            return false;
+
+        var prefix = item.MmcSection.Split(" > ",
+            StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        if (prefix.Length != 3 ||
+            !prefix[2].Equals("Administrative Templates", StringComparison.OrdinalIgnoreCase) ||
+            row.TreeSegments.Count <= prefix.Length ||
+            !row.TreeSegments.Take(prefix.Length).SequenceEqual(
+                prefix, StringComparer.OrdinalIgnoreCase))
+            return false;
+
+        var definitions = catalog.Where(policy =>
+            (policy.Scope.Equals(item.Scope, StringComparison.OrdinalIgnoreCase) ||
+             policy.Scope.Equals("Both", StringComparison.OrdinalIgnoreCase)) &&
+            policy.DisplayName.Equals(item.SettingName, StringComparison.Ordinal) &&
+            MmcInventoryReconciliation.SectionMatches(row.SectionPath, policy.Category) &&
+            policy.Elements.Count(element =>
+                element.Type == AdmxElementType.Decimal &&
+                !string.IsNullOrWhiteSpace(element.ValueName) &&
+                string.Equals(
+                    element.Key + " / " + element.ValueName,
+                    item.RegistryTarget, StringComparison.OrdinalIgnoreCase)) == 1).ToArray();
+
+        return definitions.Length == 1;
     }
 
     /// <summary>
@@ -257,14 +301,15 @@ public static partial class GpoDiscoveryEvidenceService
         }
 
         var output = new StringBuilder();
-        output.AppendLine("GpoId\tScope\tExtension\tSettingName\tSourceType\tSourceStatus\tRegistryTarget\tMmcSection\tNavigationStatus\tIdentityHash\tNotes\tMmcObservedState\tMmcObservedValue\tValueVerificationStatus\tSourceStoredValue\tSourceStoredType\tSourceFileHash\tSourceUnit\tUnitMappingStatus\tUnitMappingProvenance\tUnitMappingDefinitionSha256\tUnitMappingReviewReference");
+        output.AppendLine("GpoId\tScope\tExtension\tSettingName\tSourceType\tSourceStatus\tRegistryTarget\tMmcSection\tNavigationStatus\tIdentityHash\tNotes\tMmcObservedState\tMmcObservedValue\tMmcObservedSection\tMmcRowNavigation\tValueVerificationStatus\tSourceStoredValue\tSourceStoredType\tSourceFileHash\tSourceUnit\tUnitMappingStatus\tUnitMappingProvenance\tUnitMappingDefinitionSha256\tUnitMappingReviewReference");
         foreach (var row in evidence)
             output.AppendLine(string.Join("\t", new[]
             {
                 row.GpoId.ToString("D"), row.Scope, row.Extension, row.SettingName,
                 row.SourceType, row.SourceStatus, row.RegistryTarget, row.MmcSection,
                 row.NavigationStatus, row.IdentityHash, row.Notes,
-                row.MmcObservedState, row.MmcObservedValue, row.ValueVerificationStatus,
+                row.MmcObservedState, row.MmcObservedValue, row.MmcObservedSection,
+                row.MmcRowNavigation, row.ValueVerificationStatus,
                 row.SourceStoredValue, row.SourceStoredType, row.SourceFileHash, row.SourceUnit,
                 row.UnitMappingStatus, row.UnitMappingEvidence?.Provenance ?? string.Empty,
                 row.UnitMappingEvidence?.DefinitionEvidenceSha256 ?? string.Empty,

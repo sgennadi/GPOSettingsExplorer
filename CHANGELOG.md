@@ -5,7 +5,9 @@
 - **2.1 development preview (read-only):** introduce evidence-first discovery identities and strict native MMC-to-Registry.pol comparison without treating a route, displayed value or matching raw number as effective RSoP.
 - Gate minutes-to-hours conversion behind an explicit, independently reviewed per-policy rule tied to GPO, scope, exact registry target, policy identity SHA-256, pinned Registry.pol SHA-256 and a reviewed ADMX/ADML evidence digest. A name, decimal range or provenance string by itself is never unit proof.
 - Reject conflicting, unsupported, unreviewed or stale rules without falling back to a misleading numeric match. Report unit decision status and review provenance in TSV; extend regression coverage for changed hashes, duplicate rules and localized/ambiguous MMC text.
-- The user-facing export does not auto-infer unit mappings and cannot enable conversions until an auditable review workflow is implemented. Do not merge or release 2.1.0 solely from CI results; validate representative GPO policies on a nonproduction DC.
+- Add a dedicated read-only **Discovery & Verification** GUI with searchable evidence statuses, full MMC/source provenance and coverage reasons. Correlate a nested Administrative Templates row only when a unique same-scope ADMX decimal element has the exact registry target, category and native MMC path.
+- Add an opt-in, session-only operator review dialog for DWORD minutes-to-hours conversions. Require an independently checked native MMC unit, reviewed ADMX/ADML file SHA-256 fingerprints, a review checkbox and change-ticket reference; revalidate fingerprints before export. No GPO, AD or SYSVOL writes.
+- The existing plain export deliberately performs no unit inference/approval; a new local review TSV exposes signed-off in-session evidence (not effective client RSoP). Do not merge or release 2.1.0 solely from CI results; validate representative policies and ADMX variations on a nonproduction DC.
 
 ## 2.0.3 - 2026-10-11
 

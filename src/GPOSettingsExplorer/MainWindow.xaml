@@ -303,6 +303,8 @@
                                     <Button Content="Open exact in MMC..." Click="OpenMmcInventoryRow_Click"
                                             ToolTip="Open only a uniquely verified literal row in the standard MMC editor. No automatic GPO write."/>
                                     <Button Content="Export CSV..." Click="ExportMmcInventory_Click"/>
+                                    <Button Content="Discovery &amp; Verification..." Click="OpenDiscoveryVerification_Click"
+                                            ToolTip="Inspect exact GPMC/MMC/Registry.pol evidence, diagnostics and session-only reviewed unit mappings. No GPO writes."/>
                                     <Button Content="Export discovery evidence..." Click="ExportDiscoveryEvidence_Click"
                                             ToolTip="Read-only evidence export. Limited literal value comparisons are supported; no effective RSoP verification. Export may contain confidential policy values."/>
                                     <TextBlock x:Name="MmcInventoryShownCountText" Margin="12,0,0,0"
