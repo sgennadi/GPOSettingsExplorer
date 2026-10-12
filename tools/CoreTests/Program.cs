@@ -4036,6 +4036,14 @@ static void TestDiscoveryEvidence()
         explicitMinutes with { MmcObservedValue = "10 Hours" } })[0]
         .ValueVerificationStatus == "SOURCE_RECORD_LOCATED_VALUE_NOT_COMPARED",
         "Unrecognized MMC localization must fail closed.");
+    Assert(GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(new[] {
+        explicitMinutes with { MmcObservedValue = "600" } })[0]
+        .ValueVerificationStatus == "SOURCE_RECORD_LOCATED_VALUE_NOT_COMPARED",
+        "A bare MMC number must not bypass a declared source-unit mapping.");
+    Assert(GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(new[] {
+        explicitMinutes with { SourceUnit = "seconds", MmcObservedValue = "600" } })[0]
+        .ValueVerificationStatus == "SOURCE_RECORD_LOCATED_VALUE_NOT_COMPARED",
+        "Unsupported source units must never be treated as unitless numbers.");
     var noHash = GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(
         new[] { literalCandidate with { SourceFileHash = "" } })[0];
     Assert(noHash.ValueVerificationStatus ==
