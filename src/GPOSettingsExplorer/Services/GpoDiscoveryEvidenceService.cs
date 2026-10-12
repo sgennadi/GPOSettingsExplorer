@@ -184,6 +184,11 @@ public static class GpoDiscoveryEvidenceService
                     Notes = item.Notes + " Explicit minutes-to-hours mapping only; effective RSoP not verified."
                 };
             }
+            // Once a source unit is declared, a bare number cannot be assumed to use that unit.
+            // Only the explicitly supported typed conversion above may verify it.
+            if (!string.IsNullOrEmpty(item.SourceUnit))
+                return item;
+
             if (item.SourceStoredType.Equals("REG_DWORD", StringComparison.OrdinalIgnoreCase) ||
                 item.SourceStoredType.Equals("REG_QWORD", StringComparison.OrdinalIgnoreCase))
             {
