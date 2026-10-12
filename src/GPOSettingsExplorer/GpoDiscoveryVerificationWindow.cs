@@ -137,12 +137,19 @@ public sealed class GpoDiscoveryVerificationWindow : Window
         _search.TextChanged += (_, _) => _view?.Refresh();
         _filter.SelectionChanged += (_, _) => _view?.Refresh();
         var export = new Button { Content = "Export review TSV...", MinWidth = 135 };
+        var reset = new Button { Content = "Clear session approvals", MinWidth = 135 };
         var close = new Button { Content = "Close", MinWidth = 75 };
         toolbar.Children.Add(_review);
         toolbar.Children.Add(export);
+        toolbar.Children.Add(reset);
         toolbar.Children.Add(close);
         _review.Click += (_, _) => ReviewSelected();
         export.Click += (_, _) => ExportReview();
+        reset.Click += (_, _) =>
+        {
+            _approvals.Clear();
+            RefreshRows();
+        };
         close.Click += (_, _) => Close();
         DockPanel.SetDock(toolbar, Dock.Top);
         root.Children.Add(toolbar);
@@ -157,11 +164,6 @@ public sealed class GpoDiscoveryVerificationWindow : Window
         AddColumn("Registry target", nameof(DisplayRow.RegistryTarget), 2.3);
         UiStyle.ApplyDataGridDefaults(_grid);
         _grid.SelectionChanged += (_, _) => UpdateSelection();
-        _grid.MouseDoubleClick += (_, e) =>
-        {
-            if (e.OriginalSource is DependencyObject)
-                ReviewSelected();
-        };
 
         var tabs = new TabControl();
         tabs.Items.Add(new TabItem { Header = "Discovered policy evidence", Content = _grid });
@@ -443,11 +445,14 @@ internal sealed class GpoDiscoveryUnitReviewDialog : Window
         var buttons = new StackPanel { Margin = new Thickness(0, 8, 0, 0) };
         var checkbox = new CheckBox
         {
-            Content = "I independently confirmed that this exact ADMX element stores minutes " +
-                "and this native MMC row displays hours (not inferred from a label or numeric range).",
+            Content = new TextBlock
+            {
+                Text = "I independently confirmed that this exact ADMX element stores minutes " +
+                    "and this native MMC row displays hours (not inferred from a label or numeric range).",
+                TextWrapping = TextWrapping.Wrap
+            },
             IsThreeState = false
         };
-        checkbox.SetValue(TextBlock.TextWrappingProperty, TextWrapping.Wrap);
         buttons.Children.Add(checkbox);
         var referenceLabel = new TextBlock
         {
