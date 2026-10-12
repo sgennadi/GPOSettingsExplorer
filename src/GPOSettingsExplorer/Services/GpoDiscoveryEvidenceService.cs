@@ -146,6 +146,39 @@ public static class GpoDiscoveryEvidenceService
     }
 
     /// <summary>
+    /// Attach an explicit unit only when exactly one trusted ADMX/ADML-derived
+    /// registry target declaration agrees with the exact GPO evidence identity.
+    /// ADMX decimal ranges alone do not define a time unit.
+    /// </summary>
+    public sealed record VerifiedUnitMapping(
+        Guid GpoId, string Scope, string RegistryTarget, string SourceUnit,
+        string Provenance);
+
+    public static IReadOnlyList<Evidence> ApplyVerifiedUnitMappings(
+        IEnumerable<Evidence> evidence, IEnumerable<VerifiedUnitMapping> mappings)
+    {
+        ArgumentNullException.ThrowIfNull(evidence);
+        ArgumentNullException.ThrowIfNull(mappings);
+        var rules = mappings.ToArray();
+        return evidence.Select(item =>
+        {
+            if (item.SourceStatus != "REGISTRY_SOURCE_LOCATED" ||
+                item.SourceStoredType != "REG_DWORD")
+                return item;
+            var matching = rules.Where(rule =>
+                rule.GpoId == item.GpoId &&
+                string.Equals(rule.Scope, item.Scope, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(rule.RegistryTarget, item.RegistryTarget, StringComparison.OrdinalIgnoreCase) &&
+                rule.SourceUnit == "minutes" &&
+                !string.IsNullOrWhiteSpace(rule.Provenance)).ToArray();
+            return matching.Length == 1
+                ? item with { SourceUnit = "minutes",
+                    Notes = item.Notes + " Unit mapping provenance: " + matching[0].Provenance }
+                : item;
+        }).ToArray();
+    }
+
+    /// <summary>
     /// Compare only a narrowly supported, unambiguous literal registry value.
     /// MMC display strings are not a typed API: never infer units, enabled state,
     /// security-template values, or effective RSoP from textual resemblance.
