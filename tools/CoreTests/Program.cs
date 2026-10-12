@@ -4016,6 +4016,26 @@ static void TestDiscoveryEvidence()
             SourceStoredValue = "4294967296", MmcObservedValue = "4294967296" } })[0]
         .ValueVerificationStatus == "MATCH_LITERAL_INTEGER",
         "QWORD values may exceed the DWORD range.");
+    var explicitMinutes = numeric with
+    {
+        SourceStoredValue = "600", MmcObservedValue = "10 hours",
+        SourceUnit = "minutes"
+    };
+    Assert(GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(new[] { explicitMinutes })[0]
+        .ValueVerificationStatus == "MATCH_EXPLICIT_MINUTES_HOURS",
+        "Verified source minutes may match exact MMC hours.");
+    Assert(GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(new[] {
+        explicitMinutes with { MmcObservedValue = "11 hours" } })[0]
+        .ValueVerificationStatus == "MISMATCH_EXPLICIT_MINUTES_HOURS",
+        "Explicit unit mapping must detect unequal durations.");
+    Assert(GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(new[] {
+        explicitMinutes with { SourceUnit = "" } })[0]
+        .ValueVerificationStatus == "SOURCE_RECORD_LOCATED_VALUE_NOT_COMPARED",
+        "Never guess the source unit.");
+    Assert(GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(new[] {
+        explicitMinutes with { MmcObservedValue = "10 Hours" } })[0]
+        .ValueVerificationStatus == "SOURCE_RECORD_LOCATED_VALUE_NOT_COMPARED",
+        "Unrecognized MMC localization must fail closed.");
     var noHash = GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(
         new[] { literalCandidate with { SourceFileHash = "" } })[0];
     Assert(noHash.ValueVerificationStatus ==
