@@ -9,7 +9,7 @@ namespace GPOSettingsExplorer.Services;
 /// Evidence-first discovery of setting identity and navigation readiness.
 /// No MMC invocation, network writes, or inference of effective RSoP.
 /// </summary>
-public static class GpoDiscoveryEvidenceService
+public static partial class GpoDiscoveryEvidenceService
 {
     public sealed record Evidence(
         Guid GpoId, string Scope, string Extension, string SettingName,
@@ -24,6 +24,8 @@ public static class GpoDiscoveryEvidenceService
         public string SourceStoredType { get; init; } = string.Empty;
         public string SourceFileHash { get; init; } = string.Empty;
         public string SourceUnit { get; init; } = string.Empty;
+        public string UnitMappingStatus { get; init; } = "NOT_EVALUATED";
+        public VerifiedUnitMapping? UnitMappingEvidence { get; init; }
     }
 
     public static IReadOnlyList<Evidence> Build(
@@ -146,39 +148,6 @@ public static class GpoDiscoveryEvidenceService
     }
 
     /// <summary>
-    /// Attach an explicit unit only when exactly one trusted ADMX/ADML-derived
-    /// registry target declaration agrees with the exact GPO evidence identity.
-    /// ADMX decimal ranges alone do not define a time unit.
-    /// </summary>
-    public sealed record VerifiedUnitMapping(
-        Guid GpoId, string Scope, string RegistryTarget, string SourceUnit,
-        string Provenance);
-
-    public static IReadOnlyList<Evidence> ApplyVerifiedUnitMappings(
-        IEnumerable<Evidence> evidence, IEnumerable<VerifiedUnitMapping> mappings)
-    {
-        ArgumentNullException.ThrowIfNull(evidence);
-        ArgumentNullException.ThrowIfNull(mappings);
-        var rules = mappings.ToArray();
-        return evidence.Select(item =>
-        {
-            if (item.SourceStatus != "REGISTRY_SOURCE_LOCATED" ||
-                item.SourceStoredType != "REG_DWORD")
-                return item;
-            var matching = rules.Where(rule =>
-                rule.GpoId == item.GpoId &&
-                string.Equals(rule.Scope, item.Scope, StringComparison.OrdinalIgnoreCase) &&
-                string.Equals(rule.RegistryTarget, item.RegistryTarget, StringComparison.OrdinalIgnoreCase) &&
-                rule.SourceUnit == "minutes" &&
-                !string.IsNullOrWhiteSpace(rule.Provenance)).ToArray();
-            return matching.Length == 1
-                ? item with { SourceUnit = "minutes",
-                    Notes = item.Notes + " Unit mapping provenance: " + matching[0].Provenance }
-                : item;
-        }).ToArray();
-    }
-
-    /// <summary>
     /// Compare only a narrowly supported, unambiguous literal registry value.
     /// MMC display strings are not a typed API: never infer units, enabled state,
     /// security-template values, or effective RSoP from textual resemblance.
@@ -192,19 +161,23 @@ public static class GpoDiscoveryEvidenceService
                 item.SourceStatus != "REGISTRY_SOURCE_LOCATED" ||
                 string.IsNullOrWhiteSpace(item.MmcObservedValue) ||
                 string.IsNullOrWhiteSpace(item.SourceStoredType) ||
-                string.IsNullOrWhiteSpace(item.SourceFileHash) ||
-                item.SourceFileHash.Length != 64 ||
-                !item.SourceFileHash.All(Uri.IsHexDigit))
+                !IsSha256(item.SourceFileHash))
                 return item;
 
             // REG_SZ is a literal string; numeric types require explicit MMC units.
             // Refuse comparisons where the source is a registry operation directive.
             if (item.RegistryTarget.Contains(" / **", StringComparison.Ordinal))
                 return item;
-            // Unit conversions require an explicitly verified source-unit mapping.
-            // Never infer source units from an ADMX name or a numeric registry value.
-            if (item.SourceUnit.Equals("minutes", StringComparison.Ordinal) &&
-                item.SourceStoredType.Equals("REG_DWORD", StringComparison.OrdinalIgnoreCase) &&
+            // An explicit mapping must be independently reviewed and remain
+            // bound to this exact policy and Registry.pol snapshot.
+            // A SourceUnit string alone is never authorization to convert.
+            if (item.UnitMappingStatus != "NOT_EVALUATED" &&
+                item.UnitMappingStatus != "VERIFIED_EXPLICIT")
+                return item;
+            if (item.UnitMappingStatus == "VERIFIED_EXPLICIT" &&
+                item.UnitMappingEvidence is { } proof &&
+                IsVerifiedUnitProof(item, proof) &&
+                item.SourceUnit.Equals("minutes", StringComparison.Ordinal) &&
                 IsCanonicalDecimal(item.SourceStoredValue) &&
                 uint.TryParse(item.SourceStoredValue, NumberStyles.None,
                     CultureInfo.InvariantCulture, out var sourceMinutes) &&
@@ -214,12 +187,13 @@ public static class GpoDiscoveryEvidenceService
                 {
                     ValueVerificationStatus = (ulong)sourceMinutes == (ulong)displayHours * 60UL
                         ? "MATCH_EXPLICIT_MINUTES_HOURS" : "MISMATCH_EXPLICIT_MINUTES_HOURS",
-                    Notes = item.Notes + " Explicit minutes-to-hours mapping only; effective RSoP not verified."
+                    Notes = item.Notes + " Reviewed and fingerprint-bound minutes-to-hours mapping; effective RSoP not verified."
                 };
             }
-            // Once a source unit is declared, a bare number cannot be assumed to use that unit.
-            // Only the explicitly supported typed conversion above may verify it.
-            if (!string.IsNullOrEmpty(item.SourceUnit))
+            // Failed proof, unsupported display format, stale hashes or an
+            // unreviewed SourceUnit must never fall through to literal integers.
+            if (item.UnitMappingStatus == "VERIFIED_EXPLICIT" ||
+                !string.IsNullOrEmpty(item.SourceUnit))
                 return item;
 
             if (item.SourceStoredType.Equals("REG_DWORD", StringComparison.OrdinalIgnoreCase) ||
@@ -283,7 +257,7 @@ public static class GpoDiscoveryEvidenceService
         }
 
         var output = new StringBuilder();
-        output.AppendLine("GpoId\tScope\tExtension\tSettingName\tSourceType\tSourceStatus\tRegistryTarget\tMmcSection\tNavigationStatus\tIdentityHash\tNotes\tMmcObservedState\tMmcObservedValue\tValueVerificationStatus\tSourceStoredValue\tSourceStoredType\tSourceFileHash\tSourceUnit");
+        output.AppendLine("GpoId\tScope\tExtension\tSettingName\tSourceType\tSourceStatus\tRegistryTarget\tMmcSection\tNavigationStatus\tIdentityHash\tNotes\tMmcObservedState\tMmcObservedValue\tValueVerificationStatus\tSourceStoredValue\tSourceStoredType\tSourceFileHash\tSourceUnit\tUnitMappingStatus\tUnitMappingProvenance\tUnitMappingDefinitionSha256\tUnitMappingReviewReference");
         foreach (var row in evidence)
             output.AppendLine(string.Join("\t", new[]
             {
@@ -291,7 +265,10 @@ public static class GpoDiscoveryEvidenceService
                 row.SourceType, row.SourceStatus, row.RegistryTarget, row.MmcSection,
                 row.NavigationStatus, row.IdentityHash, row.Notes,
                 row.MmcObservedState, row.MmcObservedValue, row.ValueVerificationStatus,
-                row.SourceStoredValue, row.SourceStoredType, row.SourceFileHash, row.SourceUnit
+                row.SourceStoredValue, row.SourceStoredType, row.SourceFileHash, row.SourceUnit,
+                row.UnitMappingStatus, row.UnitMappingEvidence?.Provenance ?? string.Empty,
+                row.UnitMappingEvidence?.DefinitionEvidenceSha256 ?? string.Empty,
+                row.UnitMappingEvidence?.ReviewReference ?? string.Empty
             }.Select(Safe)));
         return output.ToString();
     }

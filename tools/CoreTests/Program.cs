@@ -4016,53 +4016,131 @@ static void TestDiscoveryEvidence()
             SourceStoredValue = "4294967296", MmcObservedValue = "4294967296" } })[0]
         .ValueVerificationStatus == "MATCH_LITERAL_INTEGER",
         "QWORD values may exceed the DWORD range.");
+    // Conversion requires a reviewed same-GPO/same-setting identity, a
+    // pinned Registry.pol hash and a fingerprint of the reviewed ADMX/ADML
+    // evidence. Strings such as "minutes" are not themselves proof.
+    var approvedRule = new GpoDiscoveryEvidenceService.VerifiedUnitMapping(
+        integerCandidate.GpoId, integerCandidate.Scope, integerCandidate.RegistryTarget,
+        "minutes", "Reviewed ADMX/ADML element and its native MMC display")
+    {
+        IdentitySha256 = integerCandidate.IdentityHash,
+        SourceFileSha256 = integerCandidate.SourceFileHash,
+        DefinitionEvidenceSha256 = new string('B', 64),
+        ReviewedAgainstMmc = true,
+        ReviewReference = "review-001"
+    };
     var mappedMinutes = GpoDiscoveryEvidenceService.ApplyVerifiedUnitMappings(
-        new[] { integerCandidate },
-        new[] { new GpoDiscoveryEvidenceService.VerifiedUnitMapping(
-            integerCandidate.GpoId, integerCandidate.Scope, integerCandidate.RegistryTarget,
-            "minutes", "Verified ADMX/ADML source mapping") })[0];
-    Assert(mappedMinutes.SourceUnit == "minutes",
-        "Unique, proven same-target mapping must propagate to evidence.");
+        new[] { integerCandidate }, new[] { approvedRule })[0];
+    Assert(mappedMinutes.SourceUnit == "minutes" &&
+           mappedMinutes.UnitMappingStatus == "VERIFIED_EXPLICIT" &&
+           mappedMinutes.UnitMappingEvidence is not null,
+        "Only a unique, reviewed, fingerprint-bound rule may provide units.");
     Assert(GpoDiscoveryEvidenceService.ApplyVerifiedUnitMappings(
         new[] { integerCandidate },
-        new[] { new GpoDiscoveryEvidenceService.VerifiedUnitMapping(
-            Guid.NewGuid(), integerCandidate.Scope, integerCandidate.RegistryTarget,
-            "minutes", "Verified ADMX/ADML source mapping") })[0].SourceUnit == "",
+        new[] { approvedRule with { GpoId = Guid.NewGuid() } })[0].SourceUnit == "",
         "Mappings from a different GPO must not apply.");
     Assert(GpoDiscoveryEvidenceService.ApplyVerifiedUnitMappings(
         new[] { integerCandidate },
-        new[] { new GpoDiscoveryEvidenceService.VerifiedUnitMapping(
-            integerCandidate.GpoId, integerCandidate.Scope, integerCandidate.RegistryTarget,
-            "minutes", "") })[0].SourceUnit == "",
-        "Unproven mappings must fail closed.");
-    var explicitMinutes = integerCandidate with
+        new[] { approvedRule with { Scope = "User" } })[0].SourceUnit == "",
+        "Mappings from another policy scope must not apply.");
+    Assert(GpoDiscoveryEvidenceService.ApplyVerifiedUnitMappings(
+        new[] { integerCandidate },
+        new[] { approvedRule with { RegistryTarget = "Other / Value" } })[0].SourceUnit == "",
+        "Mappings for a different Registry.pol target must not apply.");
+    var unapproved = GpoDiscoveryEvidenceService.ApplyVerifiedUnitMappings(
+        new[] { integerCandidate },
+        new[] { approvedRule with { ReviewedAgainstMmc = false } })[0];
+    Assert(unapproved.UnitMappingStatus == "UNVERIFIED_RULE" &&
+           string.IsNullOrEmpty(unapproved.SourceUnit),
+        "A provenance sentence without independent review is not proof.");
+    foreach (var badRule in new[]
     {
-        SourceStoredValue = "600", MmcObservedValue = "10 hours",
-        SourceUnit = "minutes"
-    };
-    Assert(GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(new[] { explicitMinutes })[0]
-        .ValueVerificationStatus == "MATCH_EXPLICIT_MINUTES_HOURS",
-        "Verified source minutes may match exact MMC hours.");
+        approvedRule with { Provenance = "" },
+        approvedRule with { ReviewReference = "" },
+        approvedRule with { DefinitionEvidenceSha256 = "" },
+        approvedRule with { IdentitySha256 = new string('C', 64) },
+        approvedRule with { SourceFileSha256 = new string('C', 64) }
+    })
+    {
+        Assert(GpoDiscoveryEvidenceService.ApplyVerifiedUnitMappings(
+            new[] { integerCandidate }, new[] { badRule })[0].UnitMappingStatus ==
+            "UNVERIFIED_RULE", "Incomplete or stale reviewed unit evidence must fail closed.");
+    }
+    var ambiguousRules = GpoDiscoveryEvidenceService.ApplyVerifiedUnitMappings(
+        new[] { integerCandidate },
+        new[] { approvedRule, approvedRule with { SourceUnit = "seconds" } })[0];
+    Assert(ambiguousRules.UnitMappingStatus == "AMBIGUOUS_RULES" &&
+           string.IsNullOrEmpty(ambiguousRules.SourceUnit),
+        "Contradictory same-target unit rules must not be silently filtered.");
+    Assert(GpoDiscoveryEvidenceService.ApplyVerifiedUnitMappings(
+        new[] { integerCandidate }, new[] { approvedRule, approvedRule })[0]
+        .UnitMappingStatus == "AMBIGUOUS_RULES",
+        "Duplicate mapping declarations are also ambiguous.");
+    var unsupportedRule = GpoDiscoveryEvidenceService.ApplyVerifiedUnitMappings(
+        new[] { integerCandidate },
+        new[] { approvedRule with { SourceUnit = "seconds" } })[0];
+    Assert(unsupportedRule.UnitMappingStatus == "UNSUPPORTED_UNIT" &&
+           string.IsNullOrEmpty(unsupportedRule.SourceUnit),
+        "Unimplemented unit pairs must never be guessed.");
+    Assert(GpoDiscoveryEvidenceService.ApplyVerifiedUnitMappings(
+        new[] { integerCandidate with { SourceStoredType = "REG_QWORD" } },
+        new[] { approvedRule })[0].UnitMappingStatus == "SOURCE_NOT_VERIFIED",
+        "The typed conversion allowlist is DWORD-only.");
+    Assert(GpoDiscoveryEvidenceService.ApplyVerifiedUnitMappings(
+        new[] { integerCandidate with { SourceFileHash = "" } },
+        new[] { approvedRule })[0].UnitMappingStatus == "SOURCE_NOT_VERIFIED",
+        "Missing Registry.pol hashes must block unit mapping.");
+    Assert(GpoDiscoveryEvidenceService.ApplyVerifiedUnitMappings(
+        new[] { mappedMinutes }, Array.Empty<GpoDiscoveryEvidenceService.VerifiedUnitMapping>())[0]
+        .SourceUnit == "",
+        "Repeating validation without approvals must drop previously attached units.");
+
+    var explicitMinutes = mappedMinutes with { MmcObservedValue = "10 hours" };
+    Assert(GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(
+        new[] { explicitMinutes })[0].ValueVerificationStatus ==
+        "MATCH_EXPLICIT_MINUTES_HOURS",
+        "Reviewed source minutes may match exact MMC hours.");
     Assert(GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(new[] {
         explicitMinutes with { MmcObservedValue = "11 hours" } })[0]
         .ValueVerificationStatus == "MISMATCH_EXPLICIT_MINUTES_HOURS",
-        "Explicit unit mapping must detect unequal durations.");
+        "Reviewed unit mapping must detect unequal durations.");
     Assert(GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(new[] {
-        explicitMinutes with { SourceUnit = "" } })[0]
+        integerCandidate with { MmcObservedValue = "10 hours", SourceUnit = "minutes" } })[0]
         .ValueVerificationStatus == "SOURCE_RECORD_LOCATED_VALUE_NOT_COMPARED",
-        "Never guess the source unit.");
+        "Setting SourceUnit directly without reviewed evidence must not authorize conversion.");
     Assert(GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(new[] {
-        explicitMinutes with { MmcObservedValue = "10 Hours" } })[0]
+        explicitMinutes with { UnitMappingEvidence = null } })[0]
         .ValueVerificationStatus == "SOURCE_RECORD_LOCATED_VALUE_NOT_COMPARED",
-        "Unrecognized MMC localization must fail closed.");
+        "An unbacked VERIFIED_EXPLICIT marker must not authorize conversion.");
     Assert(GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(new[] {
-        explicitMinutes with { MmcObservedValue = "600" } })[0]
+        explicitMinutes with { SourceFileHash = new string('C', 64) } })[0]
         .ValueVerificationStatus == "SOURCE_RECORD_LOCATED_VALUE_NOT_COMPARED",
-        "A bare MMC number must not bypass a declared source-unit mapping.");
-    Assert(GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(new[] {
-        explicitMinutes with { SourceUnit = "seconds", MmcObservedValue = "600" } })[0]
+        "A source file changed after review must invalidate an approved conversion.");
+    foreach (var ambiguousText in new[] { "10 Hours", "10 hrs", "010 hours",
+        "10.0 hours", "10 hours ", "10 hours extra", "10 часов", "600" })
+    {
+        Assert(GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(new[] {
+            explicitMinutes with { MmcObservedValue = ambiguousText } })[0]
+            .ValueVerificationStatus == "SOURCE_RECORD_LOCATED_VALUE_NOT_COMPARED",
+            "Unrecognized, localized or unitless MMC values must not be converted.");
+    }
+    Assert(GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(
+        new[] { ambiguousRules with { MmcObservedValue = "600" } })[0]
         .ValueVerificationStatus == "SOURCE_RECORD_LOCATED_VALUE_NOT_COMPARED",
-        "Unsupported source units must never be treated as unitless numbers.");
+        "Ambiguous unit rules must block even an equal-looking bare numeric value.");
+    Assert(GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(
+        new[] { unapproved with { MmcObservedValue = "600" } })[0]
+        .ValueVerificationStatus == "SOURCE_RECORD_LOCATED_VALUE_NOT_COMPARED",
+        "A rejected unit review must block a misleading numeric literal fallback.");
+    Assert(GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(
+        new[] { unsupportedRule with { MmcObservedValue = "600" } })[0]
+        .ValueVerificationStatus == "SOURCE_RECORD_LOCATED_VALUE_NOT_COMPARED",
+        "Unknown source units must not be compared as unitless integers.");
+    var mappedExport = GpoDiscoveryEvidenceService.ExportTsv(new[] { explicitMinutes });
+    Assert(mappedExport.Contains("UnitMappingStatus", StringComparison.Ordinal) &&
+           mappedExport.Contains("VERIFIED_EXPLICIT", StringComparison.Ordinal) &&
+           mappedExport.Contains("review-001", StringComparison.Ordinal),
+        "TSV must expose explicit unit review status and its audit reference.");
     var noHash = GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(
         new[] { literalCandidate with { SourceFileHash = "" } })[0];
     Assert(noHash.ValueVerificationStatus ==
