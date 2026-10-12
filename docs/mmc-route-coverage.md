@@ -22,6 +22,19 @@ The 2026-10-09 route audit of the user's domain indexed 185 GPOs and 12 distinct
 - **MMC Not Verified:** means native MMC row/value corroboration has **not** been completed. It does not mean Not Configured. A successful GPMC XML index or ADMX catalog scan cannot turn every Windows policy into verified native MMC evidence.
 - **Refresh cached GPMC index on startup:** optional per-user checkbox in **MMC Full Settings Inventory**. Uses the existing on-disk index and refreshes only changed/new GPO XML in the background. Off by default for production DC safety. No automated MMC windows, no GPO edits, no client RSoP claims. For a selected GPO, run **Scan MMC (read-only)** and use **Discovery & Verification** to inspect which exact rows/source files are eligible for a stronger status.
 
+## Exact MMC Paths for all indexed GPMC settings (Preview 3)
+
+Open **All Settings > Configured GPMC settings > Exact MMC Paths...** (or **MMC Full Settings Inventory > Exact Paths (all indexed)...**). This window shows every currently indexed GPMC setting with separate:
+- GPMC source/GPO/scope and the route's documented *candidate section*;
+- `MMC_NOT_SCANNED`, `EXACT_ROW_OBSERVED`, `SECTION_ONLY`, `AMBIGUOUS`, `SOURCE_AMBIGUOUS`, `EXACT_ROW_NOT_OBSERVED`, or `UNSUPPORTED_SOURCE`;
+- the literal complete MMC tree+row path only when a unique matching native row was actually observed.
+
+Click **Find / open selected exact route...** to inspect one GPO. With explicit permission, a bounded read-only scan opens a separate MMC editor and reads its safe native tree/list. The selected row is matched by exact GPO, scope, known family, full section hierarchy, and literal policy identity; duplicate names/folders never silently select a first match. A new MMC editor re-reads the route before requesting Properties. For unknown/custom source extensions, a *one-time operator-reviewed route picker* can show the same-GPO/scope observed rows; it requires deliberate acknowledgement and re-verifies the selected route in a new native editor. Operator-reviewed navigation does not count as automatically verified source identity or stored/effective policy value. Source credentials and registry policy values are never copied into an automatic route cache. This reviewed binding is not persisted across sessions.
+
+Recognized candidate sections include **Group Policy Preferences** (e.g. Scheduled Tasks, Drive Maps, Files, Folders, Environment, Printers, Local Users and Groups, Services, Power Options), **Kerberos**, **Password Policy**, **Account Lockout Policy**, **Security Options**, **Advanced Audit** children, selected **Public Key** sections and native **ADMX** categories. An ADMX row requires a unique matching ADMX definition and complete native category, not a same-name shortcut. For scripts, ACL XML detail, GPP custom forms, extension-specific controls or incomplete scans, the program deliberately retains SECTION_ONLY/UNSUPPORTED and directs users to the dedicated source view/editor rather than launching a potentially wrong dialog.
+
+**Do not run unattended MMC scans over every GPO at startup on a DC.** The available startup checkbox indexes only new/modified GPMC XML using its per-user cache; it does not launch MMC or claim RSoP. All-GPO native MMC enumeration can take many hours and some snap-ins are unsafe to automate. Run a single-GPO scan with progress/cancel and consult coverage/skipped sections.
+
 ## How to validate on a test DC
 
 1. Use a nonproduction GPO and run **MMC Route Audit (read-only)** from Diagnostics/Advanced tools.

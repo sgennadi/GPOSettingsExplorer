@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Preview 3: add one **Exact MMC Paths** coverage screen for every indexed GPMC row with typed, same-GPO/scope exact native routes, complete section checks, duplicate detection and explicit reasons for unsupported/unscanned policies. An on-demand read-only MMC scan inspects ONE selected GPO; it is never run for every GPO on startup.
+- Reuse exact native row activation for uniquely observed entries across eligible Security Options, Kerberos, Password and Lockout Policy, nested Advanced Audit, SRP Path Rules, matching ADMX categories and registered Group Policy Preferences sections. Unknown third-party policy routes remain not automatically verified.
+- Add a one-time operator-reviewed native-row picker for GPMC entries that cannot be mapped automatically. Requires deliberate confirmation and revalidation of exact tree/row in a new MMC editor; does not claim stored source/value or effective RSoP verification. Add scan-cancel UX from a modal Setting Value window and regression tests for duplicate/other-GPO/wrong-scope routes.
+- Publish v2.1.0-preview.3 portable x64/ARM64 after GitHub Windows Build and version checks; keep v2.1.0-preview.2 and stable v2.0.3 unchanged.
+
 - Preview 2: navigate five explicitly recognized Kerberos Account settings by their **native MMC display names** (e.g., GPMC Account: MaxClockSkew maps to Maximum tolerance for computer clock synchronization). Only a uniquely observed current MMC row can be selected; unknown/duplicate rows remain unverified.
 - Map GPMC SoftwareRestrictionSettings to the documented Computer/User Software Restriction Policies section. Path Rule metadata routes to Additional Rules; only the exact unexpanded, uniquely observed Path target can be selected. No guessing by repeated "Path Rule" titles, substring, environment expansion or lossy character normalization. The GPMC/MMC path match does **not** verify security level or effective RSoP.
 - Add an opt-in per-user **Refresh cached GPMC index on startup** setting. It refreshes only new/changed GPMC XML metadata using the existing incremental cache. It NEVER auto-runs full native MMC scans of every GPO on a domain controller; exact row, stored-value and client RSoP verification remain separate manual/reviewed operations.

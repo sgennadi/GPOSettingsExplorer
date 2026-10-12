@@ -61,20 +61,44 @@ public partial class MainWindow
         }
     }
 
-    private async void ScanMmcInventory_Click(object sender, RoutedEventArgs e)
+    private async void ScanMmcInventory_Click(object sender, RoutedEventArgs e) =>
+        await ScanMmcInventoryAsync();
+
+    private bool HasCurrentMmcInventoryFor(GpoInfo gpo)
+    {
+        if (_domainContext is null)
+            return false;
+        var domain = _domainContext.DomainName;
+        var dc = DomainConnectionState.GetServerFor(domain);
+        return _mmcInventoryResult is not null &&
+            _mmcInventoryScannedGpoId == gpo.Id &&
+            _mmcInventoryScannedDomain.Equals(domain, StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrWhiteSpace(dc) &&
+            _mmcInventoryScannedDc.Equals(dc, StringComparison.OrdinalIgnoreCase) &&
+            _mmcInventoryRows.All(row => row.GpoId == gpo.Id);
+    }
+
+    /// <summary>
+    /// One explicit, cancelable, read-only native scan of one selected GPO.
+    /// It is NEVER invoked on all GPOs at startup.
+    /// </summary>
+    private async Task<bool> ScanMmcInventoryAsync(
+        GpoInfo? targetGpo = null, Window? dialogOwner = null,
+        IProgress<string>? externalProgress = null)
     {
         if (_mmcInventoryCancellation is not null || _domainContext is null)
-            return;
+            return false;
 
-        var gpo = MmcInventoryGpoCombo.SelectedItem as GpoInfo ??
+        var gpo = targetGpo ??
+                  MmcInventoryGpoCombo.SelectedItem as GpoInfo ??
                   GpoGrid.SelectedItem as GpoInfo ??
                   _gpos.FirstOrDefault();
 
         if (gpo is null)
         {
-            MessageBox.Show(this, "Load and select a reference GPO.",
+            MessageBox.Show(dialogOwner ?? this, "Load and select a reference GPO.",
                 "MMC inventory", MessageBoxButton.OK, MessageBoxImage.Information);
-            return;
+            return false;
         }
 
         MmcInventoryGpoCombo.SelectedItem = gpo;
@@ -83,12 +107,12 @@ public partial class MainWindow
         if (string.IsNullOrWhiteSpace(scanDc) ||
             !gpo.DomainName.Equals(scanDomain, StringComparison.OrdinalIgnoreCase))
         {
-            MessageBox.Show(this,
+            MessageBox.Show(dialogOwner ?? this,
                 "A connected and pinned DC matching the chosen GPO is required.",
                 "MMC inventory", MessageBoxButton.OK, MessageBoxImage.Warning);
-            return;
+            return false;
         }
-        var consent = MessageBox.Show(this,
+        var consent = MessageBox.Show(dialogOwner ?? this,
             $"Scan MMC's real tree and right-hand native lists for:\n\n{gpo.DisplayName}\n\n" +
             "This read-only scan may take several minutes. It launches a separate GPO editor " +
             "and leaves it open for manual verification. MMC may contain custom controls " +
@@ -97,7 +121,7 @@ public partial class MainWindow
             "MMC Full Settings Inventory", MessageBoxButton.YesNo,
             MessageBoxImage.Information);
         if (consent != MessageBoxResult.Yes)
-            return;
+            return false;
 
         _mmcInventoryCancellation = new CancellationTokenSource();
         var cancellation = _mmcInventoryCancellation;
@@ -127,6 +151,7 @@ public partial class MainWindow
             {
                 StatusText.Text = message;
                 MmcInventoryCoverageText.Text = message;
+                externalProgress?.Report(message);
             });
             var result = await MmcFullSettingsInventoryService.ScanAsync(
                 gpo, _domainContext.DomainDistinguishedName,
@@ -161,19 +186,22 @@ public partial class MainWindow
             MmcInventoryCoverageText.Foreground =
                 result.IsComplete ? UiStyle.SuccessBrush : UiStyle.WarningBrush;
             StatusText.Text = "MMC inventory: " + result.Coverage;
+            return true;
         }
         catch (OperationCanceledException)
         {
             MmcInventoryCoverageText.Text =
                 "MMC inventory canceled during startup. Previous inventory, if any, is unchanged.";
             StatusText.Text = "MMC inventory canceled";
+            return false;
         }
         catch (Exception ex)
         {
             MmcInventoryCoverageText.Text = "MMC inventory failed: " + ex.Message;
             MmcInventoryCoverageText.Foreground = UiStyle.ErrorBrush;
-            ErrorDialog.Show(this, "MMC Inventory",
+            ErrorDialog.Show(dialogOwner ?? this, "MMC Inventory",
                 "Could not complete the read-only MMC inventory.", ex);
+            return false;
         }
         finally
         {

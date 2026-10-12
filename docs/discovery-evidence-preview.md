@@ -2,6 +2,10 @@
 
 This feature is read-only and does not change Group Policy or SYSVOL. Optional startup **GPMC indexing** uses a per-user preference and the incremental cache; it does not start the native MMC editor for all GPOs. MMC observations, source values and RSoP have distinct statuses; no bulk scanner can truthfully set every Windows policy to VERIFIED without type-specific evidence.
 
+## Exact MMC paths for the complete GPMC index
+
+The **Exact MMC Paths** window lists every indexed GPMC row, whether or not that GPO has been scanned. The candidate section and the exact observed native row have separate fields; a known parent section never means that a specific policy's properties or value is verified. The operator can request a bounded, cancellable read-only MMC scan of only the selected GPO. Exact GPO/scope/native paths are matched by source-aware types, and an unhandled source can receive a one-time, explicitly reviewed native route after revalidation in a newly opened editor. No automatic cross-GPO path inference, no blanket mass MMC scans, no persistent secret-bearing route cache, and no GPO writes.
+
 ## Using the current preview
 
 1. Connect to the domain and load the GPMC settings index.

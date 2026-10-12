@@ -78,6 +78,7 @@ var tests = new (string Name, Action Body)[]
     ("Kerberos GPMC names resolve to correct Security section, not Registry", TestKerberosGpmcRouting),
     ("SRP Path Rule routes to uniquely identified native Additional Rules entry", TestSoftwareRestrictionNavigation),
     ("Background GPMC indexing opt-in is persisted and fails closed", TestGpoStartupIndexPreferences),
+    ("Universal exact MMC resolver requires same GPO/scope/section/native row", TestUniversalExactMmcRoutes),
     ("GPO settings report provides bounded native GPMC hierarchy", TestGpoSettingsReportTree),
     ("Remote AI endpoints and prompts strictly exclude AD/GPO identities", TestRemoteAiBoundary),
     ("Discovery evidence is read-only, fail-closed and spreadsheet-safe", TestDiscoveryEvidence),
@@ -4747,4 +4748,234 @@ static void TestDiscoveryCoverageReport()
         countMismatchRejected = true;
     }
     Assert(countMismatchRejected, "Review statuses must correspond 1:1 with evidence rows.");
+}
+
+
+static void TestUniversalExactMmcRoutes()
+{
+    var gpoId = Guid.NewGuid();
+    const string securityName = "Network security: LAN Manager authentication level";
+    var security = new PolicySettingInfo
+    {
+        GpoId = gpoId, GpoName = "Test GPO", Scope = "Computer",
+        Extension = "SecuritySettings",
+        Category = "Security Settings > Local Policies > Security Options",
+        SettingName = securityName, Value = "Enabled"
+    };
+    var securityPath = GpoPolicySectionRoutes.Resolve(security).ToArray();
+    MmcInventoryEntry Observed(PolicySettingInfo source,
+        IReadOnlyList<string> path, string name) =>
+        new()
+        {
+            GpoId = source.GpoId, Scope = source.Scope,
+            SettingName = name,
+            TreeSegments = path,
+            SectionPath = string.Join(" > ", path),
+            MmcValue = "Enabled", MmcState = "Configured",
+            Navigation = "Exact MMC row candidate"
+        };
+    var native = Observed(security, securityPath, securityName);
+    var noScan = GpoExactMmcRouteResolver.Resolve(
+        security, new[] { security }, null);
+    Assert(noScan.Status == GpoExactMmcRouteResolver.NoInventory &&
+           noScan.Entry is null,
+        "A documented section alone must not be reported as an observed exact row.");
+    var exact = GpoExactMmcRouteResolver.Resolve(
+        security, new[] { security }, new[] { native });
+    Assert(exact.CanOpen && ReferenceEquals(exact.Entry, native) &&
+           exact.Explanation.Contains("NOT verified", StringComparison.OrdinalIgnoreCase),
+        "One same-GPO/scope/native section+name match is an exact observed route only.");
+    Assert(GpoExactMmcRouteResolver.Resolve(
+        security, new[] { security },
+        new[] { native with { GpoId = Guid.NewGuid() } }).Status ==
+        GpoExactMmcRouteResolver.SectionOnly,
+        "MMC rows from a different GPO must be ignored.");
+    Assert(GpoExactMmcRouteResolver.Resolve(
+        security, new[] { security },
+        new[] { native with { Scope = "User" } }).Status ==
+        GpoExactMmcRouteResolver.SectionOnly,
+        "User-scope rows cannot support computer navigation.");
+    Assert(GpoExactMmcRouteResolver.Resolve(
+        security, new[] { security },
+        new[] { native with { TreeSegments = securityPath.SkipLast(1)
+            .Append("User Rights Assignment").ToArray() } }).Status ==
+        GpoExactMmcRouteResolver.SectionOnly,
+        "Exact row name in a different MMC section must not become an edit route.");
+    Assert(GpoExactMmcRouteResolver.Resolve(
+        security, new[] { security, security }, new[] { native }).Status ==
+        GpoExactMmcRouteResolver.SourceAmbiguous,
+        "Duplicate GPMC source identities prevent automatic and manual routing.");
+    Assert(GpoExactMmcRouteResolver.Resolve(
+        security, new[] { security },
+        new[] { native, native with { MmcValue = "Different" } }).Status ==
+        GpoExactMmcRouteResolver.Ambiguous,
+        "Multiple native MMC rows must never be selected by first match.");
+    Assert(!GpoExactMmcRouteResolver.MayReview(
+        security, new[] { security, security }, native, new[] { native }),
+        "Manual review must not bypass duplicate-source safeguards.");
+    Assert(!GpoExactMmcRouteResolver.MayReview(
+        security, new[] { security },
+        native with { MmcValue = "Fabricated" }, new[] { native }),
+        "A forged/stale native row must not be accepted by manual review.");
+    var review = GpoExactMmcRouteResolver.ReviewCandidates(
+        security, new[]
+        {
+            native,
+            native with { GpoId = Guid.NewGuid() },
+            native with { Scope = "User" },
+            native with { TreeSegments = new[]
+            {
+                "Computer Configuration", "Policies", "Windows Settings",
+                "Scripts"
+            } }
+        });
+    Assert(review.Count == 1 && ReferenceEquals(review[0], native) &&
+           GpoExactMmcRouteResolver.MayReview(
+               security, new[] { security }, native, review),
+        "Manual route picker must include only safe, same-GPO/scope observed rows.");
+
+    var account = new PolicySettingInfo
+    {
+        GpoId = gpoId, Scope = "Computer", Extension = "SecuritySettings",
+        Category = "SecuritySettings", SettingName = "Account: LockoutBadCount",
+        Value = "Name=LockoutBadCount; SettingNumber=5; Type=Account Lockout"
+    };
+    var accountTyped = GpoKnownAccountPolicyService.TryDescribe(
+        account, out var accountInfo);
+    Assert(accountTyped &&
+           accountInfo.NativeName == "Account lockout threshold" &&
+           new GpoEditorNavigatorService().CanNavigateExactly(account),
+        "Typed security Account Lockout nodes must map to their native MMC names.");
+    var accountRow = Observed(account,
+        GpoPolicySectionRoutes.Resolve(account),
+        "Account lockout threshold");
+    Assert(GpoExactMmcRouteResolver.Resolve(
+        account, new[] { account }, new[] { accountRow }).CanOpen,
+        "Lockout source name must map to exact native MMC row.");
+    var counterfeit = new PolicySettingInfo
+    {
+        GpoId = gpoId, Scope = "Computer", Extension = "SecuritySettings",
+        Category = "SecuritySettings", SettingName = "Account: LockoutBadCount",
+        Value = "SettingNumber=5; Type=Kerberos"
+    };
+    Assert(!GpoKnownAccountPolicyService.TryDescribe(counterfeit, out _) &&
+           !GpoExactMmcRouteResolver.Resolve(
+                counterfeit, new[] { counterfeit }, new[] { accountRow }).CanOpen,
+        "Wrong source Type cannot silently select an unrelated security policy.");
+    var password = new PolicySettingInfo
+    {
+        GpoId = gpoId, Scope = "Computer", Extension = "SecuritySettings",
+        Category = "SecuritySettings", SettingName = "Account: MinimumPasswordLength",
+        Value = "SettingNumber=12; Type=Password"
+    };
+    var pwOk = GpoKnownAccountPolicyService.TryDescribe(password, out var pw);
+    Assert(pwOk && pw.NativeName == "Minimum password length" &&
+           GpoPolicySectionRoutes.Resolve(password)[^1] == "Password Policy",
+        "Typed Password Policy entries must navigate to the correct MMC category.");
+
+    var admx = new PolicySettingInfo
+    {
+        GpoId = gpoId, Scope = "Computer", Extension = "RegistrySettings",
+        Category = "Administrative Templates", SettingName = "Example setting",
+        RegistryKey = @"Software\Policies\Example", RegistryValue = "Enabled",
+        Value = "1"
+    };
+    var definition = new AdmxPolicyDefinition
+    {
+        AdmxFile = "Example.admx", Name = "ExampleSetting",
+        DisplayName = "Example setting", Category = "System > Test",
+        Scope = "Computer", Key = admx.RegistryKey,
+        ValueName = admx.RegistryValue
+    };
+    var admxMmc = Observed(admx, new[]
+    {
+        "Computer Configuration", "Policies", "Administrative Templates",
+        "System", "Test"
+    }, "Example setting");
+    Assert(GpoExactMmcRouteResolver.Resolve(
+        admx, new[] { admx }, new[] { admxMmc }, new[] { definition }).CanOpen,
+        "Unique ADMX definition and exact nested category must locate its MMC policy-level row.");
+    Assert(GpoExactMmcRouteResolver.Resolve(
+        admx, new[] { admx }, new[] { admxMmc },
+        new[] { definition, definition }).Status ==
+        GpoExactMmcRouteResolver.SectionOnly,
+        "Ambiguous same-registry ADMX definitions must not yield a route.");
+    Assert(GpoExactMmcRouteResolver.Resolve(
+        admx, new[] { admx },
+        new[] { admxMmc with { TreeSegments = new[]
+        {
+            "Computer Configuration", "Policies", "Administrative Templates",
+            "Other", "Test"
+        } } }, new[] { definition }).Status == GpoExactMmcRouteResolver.SectionOnly,
+        "A same-name ADMX setting under another category is not the same policy.");
+
+    var audit = new PolicySettingInfo
+    {
+        GpoId = gpoId, Scope = "Computer", Extension = "AuditSettings",
+        Category = "Security Settings > Advanced Audit Policy Configuration > Audit Policies",
+        SettingName = "Credential Validation", Value = "Success, Failure"
+    };
+    var auditRoot = GpoPolicySectionRoutes.Resolve(audit);
+    var auditRow = Observed(audit,
+        auditRoot.Concat(new[] { "Account Logon" }).ToArray(),
+        "Credential Validation");
+    Assert(GpoExactMmcRouteResolver.Resolve(audit, new[] { audit },
+        new[] { auditRow }).CanOpen,
+        "Nested Advanced Audit Policy rows can be resolved only through exact observed names.");
+    Assert(GpoExactMmcRouteResolver.Resolve(audit, new[] { audit },
+        new[] { auditRow, auditRow with
+        {
+            TreeSegments = auditRoot.Concat(new[] { "Logon/Logoff" }).ToArray()
+        } }).Status == GpoExactMmcRouteResolver.Ambiguous,
+        "Identical Audit Policy names in two branches require operator investigation.");
+
+    var preference = new PolicySettingInfo
+    {
+        GpoId = gpoId, Scope = "User", Extension = "ScheduledTasksSettings",
+        Category = "ScheduledTasksSettings", SettingName = "Deploy task",
+        Value = "Action=Update"
+    };
+    var prefRoot = GpoPolicySectionRoutes.Resolve(preference);
+    Assert(string.Join(" > ", prefRoot) ==
+           "User Configuration > Preferences > Control Panel Settings > Scheduled Tasks",
+        "Known Group Policy Preferences CSE must use Preferences, not Policies.");
+    Assert(GpoPreferencesMmcSections.Resolve(new PolicySettingInfo
+    {
+        GpoId = gpoId, Scope = "Computer", Extension = "DriveMapSettings"
+    }).Count == 0,
+        "User-only GPP Drive Maps must not invent a Computer MMC folder.");
+    var preferenceRow = Observed(preference, prefRoot, "Deploy task");
+    Assert(GpoExactMmcRouteResolver.Resolve(preference, new[] { preference },
+        new[] { preferenceRow }).CanOpen,
+        "Unique exact GPP native list item may be navigated without assuming source-value verification.");
+    Assert(GpoExactMmcRouteResolver.Resolve(preference, new[] { preference },
+        new[] { preferenceRow with { TreeSegments = prefRoot.Take(1)
+            .Concat(new[] { "Policies" }).Concat(prefRoot.Skip(2)).ToArray() } }).Status ==
+        GpoExactMmcRouteResolver.SectionOnly,
+        "GPP item under wrong Policies/Preferences tree cannot match.");
+
+    var technical = new PolicySettingInfo
+    {
+        GpoId = gpoId, Scope = "Computer", Extension = "SecuritySettings",
+        Category = "SecuritySettings", SettingName = "Member: user",
+        Value = "SID=S-1-5-21-...",
+    };
+    Assert(GpoExactMmcRouteResolver.Resolve(technical,
+        new[] { technical }, new[] { native }).Status ==
+        GpoExactMmcRouteResolver.Unsupported,
+        "GPMC nested XML details must not be passed to native policy row editing.");
+
+    var unknown = new PolicySettingInfo
+    {
+        GpoId = gpoId, Scope = "User", Extension = "VendorCustomExtension",
+        Category = "VendorCustomExtension", SettingName = "Named setting"
+    };
+    var observedUnknown = Observed(unknown,
+        new[] { "User Configuration", "Preferences", "Windows Settings",
+            "Vendor Custom" }, "Named setting");
+    Assert(GpoExactMmcRouteResolver.Resolve(unknown, new[] { unknown },
+        new[] { observedUnknown }).Status == GpoExactMmcRouteResolver.NoRow &&
+           GpoExactMmcRouteResolver.ReviewCandidates(
+               unknown, new[] { observedUnknown }).Count == 1,
+        "Unknown CSE may offer explicit manual route review but never automatic first-match.");
 }

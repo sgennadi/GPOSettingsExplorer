@@ -56,10 +56,11 @@ public sealed class GpoEditorNavigatorService
             !string.IsNullOrWhiteSpace(setting.SettingName) &&
             !setting.SettingName.Equals("Security option", StringComparison.OrdinalIgnoreCase);
         var kerberos = KerberosPolicyMetadataService.IsKnownKerberosSetting(setting);
+        var account = GpoKnownAccountPolicyService.TryDescribe(setting, out _);
         var pathRule = SoftwareRestrictionMmcRouteService.TryGetPathRuleTarget(
             setting, out _);
         return HasVerifiedSection(setting) &&
-               (securityOptions || kerberos || pathRule);
+               (securityOptions || kerberos || account || pathRule);
     }
 
     // A GPMC extension name alone does not establish a valid MMC section.
@@ -397,6 +398,7 @@ public sealed class GpoEditorNavigatorService
         // share the generic label "Path Rule" and must match their path.
         var pathRule = SoftwareRestrictionMmcRouteService.IsPathRule(setting);
         var strictFamily = KerberosPolicyMetadataService.IsKnownKerberosSetting(setting) ||
+            GpoKnownAccountPolicyService.TryDescribe(setting, out _) ||
             pathRule;
         if (strictFamily &&
             !TryConfirmUniqueNativeRow(process, NativeRowName(setting), pathRule,
@@ -792,6 +794,8 @@ public sealed class GpoEditorNavigatorService
         if (KerberosPolicyMetadataService.IsKnownKerberosSetting(setting) &&
             KerberosPolicyMetadataService.TryGet(setting.SettingName, out var kerberos))
             return new[] { kerberos.DisplayName };
+        if (GpoKnownAccountPolicyService.TryDescribe(setting, out var account))
+            return new[] { account.NativeName };
 
         var result =
             new List<string>();
@@ -1428,6 +1432,8 @@ public sealed class GpoEditorNavigatorService
         if (KerberosPolicyMetadataService.IsKnownKerberosSetting(setting) &&
             KerberosPolicyMetadataService.TryGet(setting.SettingName, out var descriptor))
             return descriptor.DisplayName;
+        if (GpoKnownAccountPolicyService.TryDescribe(setting, out var account))
+            return account.NativeName;
         return setting.SettingName;
     }
 

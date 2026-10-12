@@ -261,6 +261,8 @@
                         <TextBox x:Name="SettingsSearchBox" Width="460" TextChanged="SettingsSearchBox_TextChanged"/>
                         <Button Content="Rebuild index" Click="BuildSettingsIndex_Click"/>
                         <Button Content="Edit setting" Click="EditSetting_Click"/>
+                        <Button Content="Exact MMC Paths..." Click="OpenExactPaths_Click"
+                                ToolTip="Review every indexed GPMC setting's source-aware native MMC path. Scan one selected GPO on demand; never scan all native snap-ins at startup."/>
                         <Button Content="Open selected GPO" Click="OpenSettingGpo_Click"/>
                         <Button Content="Export CSV" Click="ExportSettingsCsv_Click"/>
                         <TextBlock x:Name="SettingsCountText" Margin="16,0,0,0" VerticalAlignment="Center" Foreground="DimGray"/>
@@ -310,6 +312,8 @@
                                     <Button Content="Open exact in MMC..." Click="OpenMmcInventoryRow_Click"
                                             ToolTip="Open only a uniquely verified literal row in the standard MMC editor. No automatic GPO write."/>
                                     <Button Content="Export CSV..." Click="ExportMmcInventory_Click"/>
+                                    <Button Content="Exact Paths (all indexed)..." Click="OpenExactPaths_Click"
+                                            ToolTip="Review exact MMC navigation coverage for ALL indexed GPMC settings; each unscanned GPO remains not verified."/>
                                     <Button Content="Discovery &amp; Verification..." Click="OpenDiscoveryVerification_Click"
                                             ToolTip="Inspect exact GPMC/MMC/Registry.pol evidence, diagnostics and session-only reviewed unit mappings. No GPO writes."/>
                                     <Button Content="Export discovery evidence..." Click="ExportDiscoveryEvidence_Click"

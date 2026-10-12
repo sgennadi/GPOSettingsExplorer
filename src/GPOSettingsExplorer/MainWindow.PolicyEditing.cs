@@ -78,20 +78,23 @@ public partial class MainWindow
                     !technical && _gpoEditorNavigatorService.CanNavigateExactly(
                         setting);
 
-                var valueWindow =
-                    new SettingValueWindow(
+                SettingValueWindow? valueWindow = null;
+                valueWindow = new SettingValueWindow(
+                    gpo,
+                    setting,
+                    canEditBoolean,
+                    exactNavigationAvailable,
+                    progress => _gpoEditorNavigatorService.OpenAtSettingAsync(
                         gpo,
+                        _domainContext.DomainDistinguishedName,
                         setting,
-                        canEditBoolean,
-                        exactNavigationAvailable,
-                        progress => _gpoEditorNavigatorService.OpenAtSettingAsync(
-                            gpo,
-                            _domainContext.DomainDistinguishedName,
-                            setting,
-                            progress))
-                    {
-                        Owner = this
-                    };
+                        progress),
+                    progress => DiscoverAndOpenExactMmcRouteAsync(
+                        gpo, setting, valueWindow ?? this, progress),
+                    () => _mmcInventoryCancellation?.Cancel())
+                {
+                    Owner = this
+                };
 
                 if (valueWindow.ShowDialog() == true &&
                     canEditBoolean &&

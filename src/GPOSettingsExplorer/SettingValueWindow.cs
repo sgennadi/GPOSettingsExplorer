@@ -19,7 +19,9 @@ public sealed class SettingValueWindow : Window
         PolicySettingInfo setting,
         bool canEditBoolean,
         bool exactNavigationAvailable,
-        Func<IProgress<string>, Task<bool>> openExactGpoEditor)
+        Func<IProgress<string>, Task<bool>> openExactGpoEditor,
+        Func<IProgress<string>, Task<bool>>? discoverExactMmcRoute = null,
+        Action? cancelExactDiscovery = null)
     {
         Title =
             $"Setting Value - {setting.SettingName}";
@@ -38,6 +40,8 @@ public sealed class SettingValueWindow : Window
 
         WindowStartupLocation =
             WindowStartupLocation.CenterOwner;
+
+        UiStyle.ApplyWindowDefaults(this);
 
         var root =
             new DockPanel
@@ -212,6 +216,86 @@ public sealed class SettingValueWindow : Window
         };
 
         footer.Children.Add(open);
+
+        // Every genuine GPMC policy entry can ask for source-aware exact path
+        // discovery. The user must explicitly approve a single-GPO native MMC
+        // read-only scan, and a manual route must be explicitly reviewed.
+        if (discoverExactMmcRoute is not null &&
+            !SecurityXmlEntryClassifier.IsTechnicalDetail(setting))
+        {
+            var discover = new Button
+            {
+                Content = "Find exact MMC path...",
+                ToolTip = "Read-only scan of this GPO only, then open a unique exact " +
+                    "native MMC row or request explicit one-time route review. " +
+                    "No mass MMC scan at startup; this is not RSoP."
+            };
+            var cancelScan = new Button
+            {
+                Content = "Cancel MMC scan",
+                IsEnabled = false,
+                ToolTip = "Cancel the current read-only native inventory of this GPO."
+            };
+            cancelScan.Click += (_, _) =>
+            {
+                cancelExactDiscovery?.Invoke();
+                navigationStatus.Text = "Cancellation requested for the current MMC scan...";
+            };
+            discover.Click += async (_, _) =>
+            {
+                discover.IsEnabled = false;
+                open.IsEnabled = false;
+                cancelScan.IsEnabled = cancelExactDiscovery is not null;
+                var original = discover.Content;
+                discover.Content = "Discovering...";
+                try
+                {
+                    navigationStatus.Foreground = UiStyle.WarningBrush;
+                    navigationStatus.Text = "Checking exact path evidence for the selected GPO...";
+                    var progress = new Progress<string>(message =>
+                    {
+                        navigationStatus.Text = message;
+                        navigationStatus.Foreground = UiStyle.WarningBrush;
+                    });
+                    var succeeded = await discoverExactMmcRoute(progress);
+                    if (succeeded)
+                    {
+                        navigationStatus.Foreground = UiStyle.SuccessBrush;
+                        navigationStatus.Text =
+                            "The selected native MMC row was rechecked in a fresh editor. " +
+                            "Inspect its Properties window. This does NOT verify the stored " +
+                            "policy value or effective RSoP.";
+                    }
+                    else
+                    {
+                        navigationStatus.Foreground = UiStyle.WarningBrush;
+                        navigationStatus.Text =
+                            "No uniquely verified MMC row was opened. See the MMC Inventory " +
+                            "coverage / skipped sections for the exact reason. " +
+                            "No substitute row or GPO value was changed.";
+                    }
+                }
+                catch (Exception ex)
+                {
+                    navigationStatus.Foreground = UiStyle.ErrorBrush;
+                    navigationStatus.Text = "Exact-path discovery failed: " + ex.Message;
+                    CrashLogService.Write("Exact MMC route discovery", ex);
+                }
+                finally
+                {
+                    if (IsLoaded)
+                    {
+                        discover.IsEnabled = true;
+                        discover.Content = original;
+                        open.IsEnabled = true;
+                        cancelScan.IsEnabled = false;
+                    }
+                }
+            };
+            footer.Children.Add(discover);
+            if (cancelExactDiscovery is not null)
+                footer.Children.Add(cancelScan);
+        }
 
         // A raw registry.pol entry has no guaranteed MMC row. Make its real
         // key/value easy to inspect without opening the live local registry.
