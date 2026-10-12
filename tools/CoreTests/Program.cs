@@ -1647,9 +1647,11 @@ static void TestSoftwareRestrictionNavigation()
     };
     const string section = "User Configuration > Policies > Windows Settings > " +
         "Security Settings > Software Restriction Policies > Additional Rules";
+    var pathParsed = SoftwareRestrictionMmcRouteService.TryGetPathRuleTarget(
+        rule, out var path);
     Assert(GpoEditorNavigatorService.NavigationTarget(rule) == section &&
            navigator.CanNavigateExactly(rule) &&
-           SoftwareRestrictionMmcRouteService.TryGetPathRuleTarget(rule, out var path) &&
+           pathParsed &&
            path == @"%systemdrive%\Windows\system32\dsdbutil.exe",
         "User SRP Path Rule must route to Additional Rules and identify its exact path.");
     Assert(SoftwareRestrictionMmcRouteService.MatchesExactPathRule(
