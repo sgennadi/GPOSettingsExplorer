@@ -4016,7 +4016,7 @@ static void TestDiscoveryEvidence()
             SourceStoredValue = "4294967296", MmcObservedValue = "4294967296" } })[0]
         .ValueVerificationStatus == "MATCH_LITERAL_INTEGER",
         "QWORD values may exceed the DWORD range.");
-    var explicitMinutes = numeric with
+    var explicitMinutes = integerCandidate with
     {
         SourceStoredValue = "600", MmcObservedValue = "10 hours",
         SourceUnit = "minutes"
