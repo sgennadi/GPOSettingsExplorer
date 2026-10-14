@@ -5744,41 +5744,31 @@ static void TestGpmcRegistryPreferenceEvidence()
            unknown[0].GppRegistryKeyPath == "",
         "Malformed preferences must remain visible as unverified source without a guessed registry path.");
 
-    // Unrecognized/partial GPP Properties are not generic XML text.
-    // Even when a rogue value attribute is present, neither the index nor
-    // the native report may echo it or manufacture a verified target.
-    var malformedHidden = xml.Replace(
+    // Partial/unknown Registry Properties are still an unverified GPP
+    // item, never an ordinary XML row disclosing a sensitive value.
+    var hiddenXml = xml.Replace(
         "<Properties action='D' hive='HKEY_LOCAL_MACHINE' key='" + key +
-        "' name='pslogging
-        "<GPO>&injected;</GPO>", gpo),
-        "The GPMC settings index parser must refuse DTDs and external XML entities.");
-    ExpectFailure(() => GpmService.ParseXmlSettings(
-        "<GPO><Computer><ExtensionData></Computer>", gpo),
-        "Malformed GPMC XML must be rejected instead of treated as no configured policies.");
-}
-
- type='REG_SZ' value='" + secretValue + "' />",
+        "' name='pslogging$' type='REG_SZ' value='" + secretValue + "' />",
         "<Properties value='" + secretValue + "' />",
         StringComparison.Ordinal);
-    var hiddenRows = GpmService.ParseXmlSettings(malformedHidden, gpo);
+    var hiddenRows = GpmService.ParseXmlSettings(hiddenXml, gpo);
     Assert(hiddenRows.Count == 1 &&
            hiddenRows[0].SettingName == "Registry preference (unparsed)" &&
            hiddenRows[0].GppRegistryKeyPath.Length == 0 &&
            !hiddenRows[0].SearchText.Contains(secretValue, StringComparison.Ordinal),
-        "Incomplete GPP Registry source must fail closed and never disclose raw value data.");
-    var hiddenReport = GpoSettingsReportService.Parse(gpo, malformedHidden);
+        "Invalid Registry/Properties cannot leak values or claim a source target.");
+    var hiddenReport = GpoSettingsReportService.Parse(gpo, hiddenXml);
     var hiddenTree = hiddenReport.Sections.SelectMany(Walk).ToArray();
     Assert(hiddenTree.Any(n => n.Label.Contains("Registry Preference: UNVERIFIED")) &&
            !hiddenTree.Any(n => n.Details.Contains(secretValue, StringComparison.Ordinal) ||
                                 n.RegistryTarget.Length > 0),
-        "Malformed Registry/Properties must not fall through to generic report XML fields.");
+        "Incomplete GPP source must be redacted in the GPMC-style report.");
 
     ExpectFailure(() => GpmService.ParseXmlSettings(
         "<!DOCTYPE GPO [<!ENTITY injected SYSTEM 'file:///C:/windows/win.ini'>]>" +
         "<GPO>&injected;</GPO>", gpo),
-        "The GPMC settings index parser must refuse DTDs and external XML entities.");
+        "GPMC XML index parser must reject DTD and external entities.");
     ExpectFailure(() => GpmService.ParseXmlSettings(
         "<GPO><Computer><ExtensionData></Computer>", gpo),
-        "Malformed GPMC XML must be rejected instead of treated as no configured policies.");
+        "Malformed GPMC XML must be rejected rather than treated as an empty GPO.");
 }
-
