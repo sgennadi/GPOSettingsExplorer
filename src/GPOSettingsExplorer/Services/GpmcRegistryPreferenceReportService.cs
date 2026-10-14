@@ -16,6 +16,10 @@ public static class GpmcRegistryPreferenceReportService
         string DisplayName, string Action, string Hive, string KeyPath,
         string ValueName, string ValueType, string Uid, bool HasFilters)
     {
+        // Original 1-based sibling order in the GPMC XML registry group.
+        // This distinguishes duplicate display names and mirrors native
+        // GPMC's item Order without mistaking it for an applied setting.
+        public int Order { get; init; }
         public string RegistryKey => Hive + "\\" + KeyPath;
         public string RegistryTarget => string.IsNullOrWhiteSpace(ValueName)
             ? RegistryKey : RegistryKey + " / " + ValueName;
@@ -29,6 +33,8 @@ public static class GpmcRegistryPreferenceReportService
             "Key path: " + KeyPath,
             "Value name: " + (ValueName.Length == 0 ? "(key/default item)" : ValueName),
             "Value type: " + (ValueType.Length == 0 ? "Not reported" : ValueType),
+            "Order: " + (Order > 0 ? Order.ToString(System.Globalization.CultureInfo.InvariantCulture) :
+                "Not reported"),
             "UID: " + (Uid.Length == 0 ? "Not reported" : Uid),
             "Item-level targeting filters: " + (HasFilters ? "Present; not evaluated" : "None reported"),
             "Value data: not copied into the index/report detail (may be sensitive)",
@@ -50,17 +56,28 @@ public static class GpmcRegistryPreferenceReportService
         Value = "Action=" + item.Action + "; Hive=" + item.Hive +
             "; Key path=" + item.KeyPath +
             "; Value name=" + item.ValueName +
+            (item.Order > 0 ? "; Order=" + item.Order.ToString(
+                System.Globalization.CultureInfo.InvariantCulture) : "") +
             "; Item targeting=" + (item.HasFilters ? "present" : "not reported") +
             "; source=GPMC GPP Registry (not Registry.pol)",
         GppRegistryHive = item.Hive,
         GppRegistryKeyPath = item.KeyPath,
         GppRegistryValueName = item.ValueName,
         GppRegistryAction = item.Action,
-        GppRegistryUid = item.Uid
+        GppRegistryUid = item.Uid,
+        GppRegistryOrder = item.Order
     };
 
-    public static bool IsCandidate(XElement element) =>
+    // Even malformed Registry/Properties must remain a redacted,
+    // unverified GPP candidate. Otherwise generic XML fallback could
+    // expose a stored 'value' attribute while making up a registry path.
+    public static bool IsStructuralRegistryItem(XElement element) =>
         element.Name.LocalName.Equals("Registry", StringComparison.OrdinalIgnoreCase) &&
+        element.Elements().Any(x => x.Name.LocalName.Equals(
+            "Properties", StringComparison.OrdinalIgnoreCase));
+
+    public static bool IsCandidate(XElement element) =>
+        IsStructuralRegistryItem(element) &&
         element.Elements().Any(x => x.Name.LocalName.Equals(
             "Properties", StringComparison.OrdinalIgnoreCase) &&
             (Has(x, "hive") || Has(x, "key") || Has(x, "action")));

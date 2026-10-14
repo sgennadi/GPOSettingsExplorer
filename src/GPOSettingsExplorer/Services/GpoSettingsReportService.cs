@@ -150,7 +150,7 @@ public static class GpoSettingsReportService
             // different CSE sources. A GPP Registry classification needs
             // concrete Registry/Properties XML, not only a type substring.
             var containsGppRegistry = ext.Descendants()
-                .Any(GpmcRegistryPreferenceReportService.IsCandidate);
+                .Any(GpmcRegistryPreferenceReportService.IsStructuralRegistryItem);
             var group = containsGppRegistry
                 ? "Windows Settings > Registry" : ExtensionSection(type);
             var bucket = containsGppRegistry || IsPreference(type)
@@ -246,7 +246,7 @@ public static class GpoSettingsReportService
                 "Read-only display limit reached; inspect the original GPMC report.",
                 Array.Empty<GpoReportNode>());
         }
-        if (GpmcRegistryPreferenceReportService.IsCandidate(element))
+        if (GpmcRegistryPreferenceReportService.IsStructuralRegistryItem(element))
         {
             if (!GpmcRegistryPreferenceReportService.TryRead(element, out var pref))
                 return new GpoReportNode("Registry Preference: UNVERIFIED",
@@ -254,11 +254,18 @@ public static class GpoSettingsReportService
                     "No registry path or value was inferred.",
                     Array.Empty<GpoReportNode>());
 
-            return new GpoReportNode("Registry Preference: " + Cut(pref.DisplayName, 130) +
-                " [" + pref.Action + "]", pref.Details,
+            // GPMC can show multiple same-named Registry preferences with
+            // different actions. Keep the native sibling order and UID in
+            // the selected details rather than collapsing by display name.
+            var order = element.ElementsBeforeSelf()
+                .Count(x => Eq(x, "Registry")) + 1;
+            var source = pref with { Order = order };
+            return new GpoReportNode("Registry Preference: " + Cut(source.DisplayName, 130) +
+                " (Order " + order.ToString(System.Globalization.CultureInfo.InvariantCulture) +
+                ") [" + source.Action + "]", source.Details,
                 Array.Empty<GpoReportNode>())
             {
-                RegistryTarget = pref.RegistryTarget
+                RegistryTarget = source.RegistryTarget
             };
         }
         if (KerberosPolicyMetadataService.TryDescribeGpmcNode(element, out var kerberos))

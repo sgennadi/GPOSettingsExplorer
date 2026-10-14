@@ -20,7 +20,8 @@ public sealed class PolicySettingInfo
     public string GppRegistryValueName { get; init; } = string.Empty;
     public string GppRegistryAction { get; init; } = string.Empty;
     public string GppRegistryUid { get; init; } = string.Empty;
+    public int GppRegistryOrder { get; init; }
 
     public string SearchText =>
-        $"{GpoName} {Scope} {Extension} {Category} {SettingName} {State} {Value} {RegistryKey} {RegistryValue} {GppRegistryHive} {GppRegistryKeyPath} {GppRegistryValueName} {GppRegistryAction}";
+        $"{GpoName} {Scope} {Extension} {Category} {SettingName} {State} {Value} {RegistryKey} {RegistryValue} {GppRegistryHive} {GppRegistryKeyPath} {GppRegistryValueName} {GppRegistryAction} {GppRegistryUid} {GppRegistryOrder}";
 }

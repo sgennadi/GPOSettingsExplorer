@@ -25,6 +25,8 @@ requests that a client-side Group Policy Preferences Registry CSE remove the
 target on eligible clients. It is not evidence the value currently exists, was
 removed, or that the GPO applied to any particular machine.
 
+Native GPMC may also show multiple identical item names such as `pslogging$ (Order: 1)` and `pslogging$ (Order: 2)`. The preview keeps each item's one-based order and UID so the two operations are distinct; neither name alone is a safe exact editing identity. Unparseable Registry/Properties are labelled **unverified** and never expose the stored value-data attribute.
+
 The GPMC report and the preference XML are separate evidence sources from:
 - Machine/Registry.pol or User/Registry.pol used by many Administrative Templates
 - Security Settings/SecEdit GptTmpl.inf
@@ -41,7 +43,7 @@ Never attach a GPP key to a Registry.pol value merely because the paths match.
    The **Rebuild index** command can be used to force a refresh.
 3. Filter to **Configured (GPMC)** and search by pslogging$, LanmanServer,
    Registry preference or the literal key. Structured items show their
-   GPP Action, Hive, Key path and Value name. No raw GPP value data is added
+   GPP Action, Hive, Key path, Value name, source order and UID. No raw GPP value data is added
    to the search index.
 4. Double-click a configured source row. In **Setting Value**, use
    **View GPMC Settings report...** to open **that row's GPO**, even if the

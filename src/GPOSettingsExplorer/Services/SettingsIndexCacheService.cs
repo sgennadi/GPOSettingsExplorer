@@ -5,7 +5,7 @@ namespace GPOSettingsExplorer.Services;
 
 public sealed class SettingsIndexCacheService
 {
-    public const int CurrentSchemaVersion = 6;
+    public const int CurrentSchemaVersion = 7;
 
     private static readonly JsonSerializerOptions JsonOptions =
         new()

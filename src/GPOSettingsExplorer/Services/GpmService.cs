@@ -1306,9 +1306,7 @@ public sealed class GpmService
             xml.Length > MaxIndexXmlCharacters)
             throw new InvalidDataException("GPMC XML is absent or exceeds the safe parsing limit.");
         using var reader = XmlReader.Create(new StringReader(xml), SafeReportXmlSettings());
-        var document = XDocument.Load(reader, LoadOptions.None);
-        if (document.Root?.Name.LocalName != "GPO")
-            throw new InvalidDataException("Expected GPMC GPO root.");
+        var document = ReadGpmcIndexXml(reader);
         return ParseReportDocument(document, gpo).ToArray();
     }
 
@@ -1320,10 +1318,29 @@ public sealed class GpmService
         MaxCharactersFromEntities = 0
     };
 
+    // Normalize prohibited DTD/entity and malformed XML failures into one
+    // explicit source-read rejection. DtdProcessing stays Prohibit; never
+    // enable resolver or external entity expansion just to satisfy a report.
+    private static XDocument ReadGpmcIndexXml(XmlReader reader)
+    {
+        try
+        {
+            var document = XDocument.Load(reader, LoadOptions.None);
+            if (document.Root?.Name.LocalName != "GPO")
+                throw new InvalidDataException("Expected GPMC GPO root.");
+            return document;
+        }
+        catch (XmlException ex)
+        {
+            throw new InvalidDataException(
+                "GPMC report XML is malformed or contains a prohibited DTD/entity.", ex);
+        }
+    }
+
     private static IEnumerable<PolicySettingInfo> ParseReport(string path, GpoInfo gpo)
     {
         using var reader = XmlReader.Create(path, SafeReportXmlSettings());
-        var document = XDocument.Load(reader, LoadOptions.None);
+        var document = ReadGpmcIndexXml(reader);
         return ParseReportDocument(document, gpo);
     }
 
@@ -1505,7 +1522,7 @@ public sealed class GpmService
         // records. Treat them as preference source, never as Registry.pol,
         // Security Settings KeyName or generic XML fields.
         var gppRegistryNodes = extension.Descendants()
-            .Where(GpmcRegistryPreferenceReportService.IsCandidate).ToArray();
+            .Where(GpmcRegistryPreferenceReportService.IsStructuralRegistryItem).ToArray();
         if (gppRegistryNodes.Length > 0)
         {
             foreach (var candidate in gppRegistryNodes)
@@ -1525,8 +1542,14 @@ public sealed class GpmService
                     continue;
                 }
 
+                // The source report can contain the same visible name and
+                // target more than once. Preserve each item's order and UID;
+                // never silently deduplicate two Delete/Update operations.
+                var order = candidate.ElementsBeforeSelf()
+                    .Count(x => x.Name.LocalName.Equals("Registry",
+                        StringComparison.OrdinalIgnoreCase)) + 1;
                 rows.Add(GpmcRegistryPreferenceReportService.ToPolicySetting(
-                    gpo, scopeName, item));
+                    gpo, scopeName, item with { Order = order }));
             }
             return rows;
         }

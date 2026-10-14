@@ -5635,6 +5635,7 @@ static void TestGpmcRegistryPreferenceEvidence()
            row.GppRegistryHive == "HKEY_LOCAL_MACHINE" &&
            row.GppRegistryKeyPath == key &&
            row.GppRegistryValueName == "pslogging$" &&
+           row.GppRegistryOrder == 1 &&
            row.State.Contains("GPP Delete") &&
            row.Value.Contains("Action=Delete"),
         "GPMC Registry Properties must become a typed preference, including exact action/hive/key/value name.");
@@ -5667,6 +5668,7 @@ static void TestGpmcRegistryPreferenceEvidence()
            target.Details.Contains("Hive: HKEY_LOCAL_MACHINE") &&
            target.Details.Contains("Key path: " + key) &&
            target.Details.Contains("Value name: pslogging$") &&
+           target.Details.Contains("Order: 1") &&
            target.Details.Contains("not Registry.pol") &&
            !target.Details.Contains(secretValue),
         "The GPMC tree must show the Microsoft-style Registry fields without exposing stored value data.");
@@ -5676,6 +5678,34 @@ static void TestGpmcRegistryPreferenceEvidence()
            !nodes.Where(x => x.Label == "Administrative Templates")
                .SelectMany(Walk).Any(x => x.RegistryTarget.Contains("pslogging$")),
         "Registry preference source must be grouped under GPP, not Administrative Templates.");
+
+    // Same-named GPP items are distinct source operations. The displayed
+    // Order and GUID prevent a misleading "first match" edit shortcut.
+    var repeated = xml.Replace("</Registry></Extension>",
+        "</Registry><Registry name='pslogging$' " +
+        "uid='{99999999-8888-7777-6666-555555555555}'>" +
+        "<Properties action='U' hive='HKLM' key='" + key +
+        "' name='pslogging$' type='REG_SZ' value='" + secretValue + "' />" +
+        "</Registry></Extension>", StringComparison.Ordinal);
+    var repeatedRows = GpmService.ParseXmlSettings(repeated, gpo);
+    Assert(repeatedRows.Count == 2 &&
+           repeatedRows[0].GppRegistryOrder == 1 &&
+           repeatedRows[1].GppRegistryOrder == 2 &&
+           repeatedRows[0].GppRegistryUid != repeatedRows[1].GppRegistryUid &&
+           repeatedRows[0].GppRegistryAction == "Delete" &&
+           repeatedRows[1].GppRegistryAction == "Update" &&
+           repeatedRows.All(x => !x.SearchText.Contains(secretValue,
+               StringComparison.Ordinal)),
+        "Duplicate visible GPP Registry names must preserve order/UID/action and redact value data.");
+    var repeatedReport = GpoSettingsReportService.Parse(gpo, repeated);
+    var repeatedDetails = repeatedReport.Sections.SelectMany(Walk)
+        .Where(n => n.RegistryTarget.Contains("pslogging$", StringComparison.Ordinal))
+        .ToArray();
+    Assert(repeatedDetails.Length == 2 &&
+           repeatedDetails[0].Label.Contains("Order 1", StringComparison.Ordinal) &&
+           repeatedDetails[1].Label.Contains("Order 2", StringComparison.Ordinal) &&
+           repeatedDetails[1].Details.Contains("Action: Update", StringComparison.Ordinal),
+        "GPMC-style source report must distinguish same-named items by their original order.");
 
     var item = System.Xml.Linq.XElement.Parse(
         "<r:Registry xmlns:r='urn:group-policy-registry' name='My item'>" +
@@ -5714,9 +5744,41 @@ static void TestGpmcRegistryPreferenceEvidence()
            unknown[0].GppRegistryKeyPath == "",
         "Malformed preferences must remain visible as unverified source without a guessed registry path.");
 
+    // Unrecognized/partial GPP Properties are not generic XML text.
+    // Even when a rogue value attribute is present, neither the index nor
+    // the native report may echo it or manufacture a verified target.
+    var malformedHidden = xml.Replace(
+        "<Properties action='D' hive='HKEY_LOCAL_MACHINE' key='" + key +
+        "' name='pslogging
+        "<GPO>&injected;</GPO>", gpo),
+        "The GPMC settings index parser must refuse DTDs and external XML entities.");
+    ExpectFailure(() => GpmService.ParseXmlSettings(
+        "<GPO><Computer><ExtensionData></Computer>", gpo),
+        "Malformed GPMC XML must be rejected instead of treated as no configured policies.");
+}
+
+ type='REG_SZ' value='" + secretValue + "' />",
+        "<Properties value='" + secretValue + "' />",
+        StringComparison.Ordinal);
+    var hiddenRows = GpmService.ParseXmlSettings(malformedHidden, gpo);
+    Assert(hiddenRows.Count == 1 &&
+           hiddenRows[0].SettingName == "Registry preference (unparsed)" &&
+           hiddenRows[0].GppRegistryKeyPath.Length == 0 &&
+           !hiddenRows[0].SearchText.Contains(secretValue, StringComparison.Ordinal),
+        "Incomplete GPP Registry source must fail closed and never disclose raw value data.");
+    var hiddenReport = GpoSettingsReportService.Parse(gpo, malformedHidden);
+    var hiddenTree = hiddenReport.Sections.SelectMany(Walk).ToArray();
+    Assert(hiddenTree.Any(n => n.Label.Contains("Registry Preference: UNVERIFIED")) &&
+           !hiddenTree.Any(n => n.Details.Contains(secretValue, StringComparison.Ordinal) ||
+                                n.RegistryTarget.Length > 0),
+        "Malformed Registry/Properties must not fall through to generic report XML fields.");
+
     ExpectFailure(() => GpmService.ParseXmlSettings(
         "<!DOCTYPE GPO [<!ENTITY injected SYSTEM 'file:///C:/windows/win.ini'>]>" +
         "<GPO>&injected;</GPO>", gpo),
         "The GPMC settings index parser must refuse DTDs and external XML entities.");
+    ExpectFailure(() => GpmService.ParseXmlSettings(
+        "<GPO><Computer><ExtensionData></Computer>", gpo),
+        "Malformed GPMC XML must be rejected instead of treated as no configured policies.");
 }
 
