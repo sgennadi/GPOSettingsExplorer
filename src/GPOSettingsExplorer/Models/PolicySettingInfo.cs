@@ -13,6 +13,14 @@ public sealed class PolicySettingInfo
     public string RegistryKey { get; init; } = string.Empty;
     public string RegistryValue { get; init; } = string.Empty;
 
+    // GPMC Group Policy Preferences Registry item metadata. Never treated
+    // as Registry.pol or proof of any target machine's live registry.
+    public string GppRegistryHive { get; init; } = string.Empty;
+    public string GppRegistryKeyPath { get; init; } = string.Empty;
+    public string GppRegistryValueName { get; init; } = string.Empty;
+    public string GppRegistryAction { get; init; } = string.Empty;
+    public string GppRegistryUid { get; init; } = string.Empty;
+
     public string SearchText =>
-        $"{GpoName} {Scope} {Extension} {Category} {SettingName} {State} {Value} {RegistryKey} {RegistryValue}";
+        $"{GpoName} {Scope} {Extension} {Category} {SettingName} {State} {Value} {RegistryKey} {RegistryValue} {GppRegistryHive} {GppRegistryKeyPath} {GppRegistryValueName} {GppRegistryAction}";
 }

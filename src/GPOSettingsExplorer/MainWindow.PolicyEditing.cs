@@ -102,7 +102,9 @@ public partial class MainWindow
                         progress),
                     progress => DiscoverAndOpenExactMmcRouteAsync(
                         gpo, setting, (Window?)valueWindow ?? this, progress),
-                    verifyStoredKerberos: kerberosSourceVerifier)
+                    verifyStoredKerberos: kerberosSourceVerifier,
+                    openGpmcReport: () => OpenGpoSettingsReportForGpoAsync(
+                        gpo, (Window?)valueWindow ?? this, setting.SettingName))
                 {
                     Owner = this
                 };

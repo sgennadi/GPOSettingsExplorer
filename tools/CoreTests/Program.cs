@@ -84,6 +84,7 @@ var tests = new (string Name, Action Body)[]
     ("Background GPMC indexing opt-in is persisted and fails closed", TestGpoStartupIndexPreferences),
     ("Universal exact MMC resolver requires same GPO/scope/section/native row", TestUniversalExactMmcRoutes),
     ("GPO settings report provides bounded native GPMC hierarchy", TestGpoSettingsReportTree),
+    ("GPMC GPP Registry exposes exact hive/key/action but not raw value data or Registry.pol proof", TestGpmcRegistryPreferenceEvidence),
     ("Remote AI endpoints and prompts strictly exclude AD/GPO identities", TestRemoteAiBoundary),
     ("Discovery evidence is read-only, fail-closed and spreadsheet-safe", TestDiscoveryEvidence),
     ("Discovery unit review requires unique ADMX/ADML, MMC row, hashes and operator approval", TestDiscoveryUnitReview),
@@ -5604,3 +5605,118 @@ static void TestSrpStoredSourceEvidence()
         GpoSoftwareRestrictionStoredSourceEvidenceService.NotApplicable,
         "A Path Rule source checker must not claim support for other SRP rule families.");
 }
+
+
+static void TestGpmcRegistryPreferenceEvidence()
+{
+    var gpo = new GpoInfo
+    {
+        Id = Guid.NewGuid(),
+        DomainName = "test.example",
+        DisplayName = "Example GPP Registry GPO",
+        ComputerEnabled = true, UserEnabled = true
+    };
+    const string key = @"SYSTEM\CurrentControlSet\Services\LanmanServer\Shares\Security";
+    const string secretValue = "CONFIDENTIAL_REGISTRY_VALUE_NOT_FOR_INDEX_7834";
+    var xml = "<GPO><Computer><ExtensionData><Extension type='RegistrySettings'>" +
+        "<Registry name='pslogging$' uid='{11111111-2222-3333-4444-555555555555}'>" +
+        "<Properties action='D' hive='HKEY_LOCAL_MACHINE' key='" + key +
+        "' name='pslogging$' type='REG_SZ' value='" + secretValue + "' />" +
+        "<Filters><FilterBoolean bool='AND'/></Filters>" +
+        "</Registry></Extension></ExtensionData></Computer>" +
+        "<User/></GPO>";
+
+    var settings = GpmService.ParseXmlSettings(xml, gpo);
+    Assert(settings.Count == 1, "One GPP Registry source must produce exactly one configured indexed item.");
+    var row = settings[0];
+    Assert(row.Extension == "GppRegistry" &&
+           row.Category == "Preferences > Windows Settings > Registry" &&
+           row.GppRegistryAction == "Delete" &&
+           row.GppRegistryHive == "HKEY_LOCAL_MACHINE" &&
+           row.GppRegistryKeyPath == key &&
+           row.GppRegistryValueName == "pslogging$" &&
+           row.State.Contains("GPP Delete") &&
+           row.Value.Contains("Action=Delete"),
+        "GPMC Registry Properties must become a typed preference, including exact action/hive/key/value name.");
+
+    Assert(!GpoSettingSourceProvenance.IsVerifiedRegistryTarget(row) &&
+           string.IsNullOrEmpty(GpoSettingSourceProvenance.RegistryTarget(row)) &&
+           GpoSettingSourceProvenance.DisplayRegistryTarget(row)
+               .Contains(@"HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\LanmanServer\Shares\Security / pslogging$"),
+        "Display-only GPP registry targets must never become Registry.pol evidence or RSoP.");
+    Assert(GpoEditorNavigatorService.NavigationTarget(row).EndsWith(
+               "Preferences > Windows Settings > Registry", StringComparison.Ordinal) &&
+           !new GpoEditorNavigatorService().CanNavigateExactly(row),
+        "GPP source can route only to the native Preferences folder, not an unverified exact item.");
+    Assert(!row.SearchText.Contains(secretValue) &&
+           !row.Value.Contains(secretValue),
+        "Sensitive GPP registry value data must never enter the default settings index.");
+
+    var report = GpoSettingsReportService.Parse(gpo, xml);
+    static IEnumerable<GpoReportNode> Walk(GpoReportNode node)
+    {
+        yield return node;
+        foreach (var child in node.Children)
+            foreach (var nested in Walk(child))
+                yield return nested;
+    }
+    var nodes = report.Sections.SelectMany(Walk).ToArray();
+    var target = nodes.SingleOrDefault(x => x.RegistryTarget.Contains("pslogging$"));
+    Assert(target is not null &&
+           target.Details.Contains("Action: Delete") &&
+           target.Details.Contains("Hive: HKEY_LOCAL_MACHINE") &&
+           target.Details.Contains("Key path: " + key) &&
+           target.Details.Contains("Value name: pslogging$") &&
+           target.Details.Contains("not Registry.pol") &&
+           !target.Details.Contains(secretValue),
+        "The GPMC tree must show the Microsoft-style Registry fields without exposing stored value data.");
+
+    Assert(nodes.Any(x => x.Label == "Preferences (GPP)") &&
+           nodes.Any(x => x.Label == "Windows Settings > Registry") &&
+           !nodes.Where(x => x.Label == "Administrative Templates")
+               .SelectMany(Walk).Any(x => x.RegistryTarget.Contains("pslogging$")),
+        "Registry preference source must be grouped under GPP, not Administrative Templates.");
+
+    var item = System.Xml.Linq.XElement.Parse(
+        "<r:Registry xmlns:r='urn:group-policy-registry' name='My item'>" +
+        "<r:Properties action='Delete' hive='HKLM' key='SOFTWARE\\Example' name='Flag'/>" +
+        "</r:Registry>");
+    Assert(GpmcRegistryPreferenceReportService.TryRead(item, out var typed) &&
+           typed.RegistryTarget == @"HKEY_LOCAL_MACHINE\SOFTWARE\Example / Flag" &&
+           typed.Action == "Delete",
+        "A namespaced Registry preference source should use local names and exact structural evidence.");
+
+    foreach (var properties in new[]
+    {
+        "<Properties action='Delete' key='SOFTWARE\\Example' name='Flag'/>",
+        "<Properties action='Invalid' hive='HKLM' key='SOFTWARE\\Example' name='Flag'/>",
+        "<Properties action='Delete' hive='INVALID' key='SOFTWARE\\Example' name='Flag'/>",
+        "<Properties action='D' hive='HKLM' key='' name='Flag'/>"
+    })
+    {
+        var invalid = System.Xml.Linq.XElement.Parse(
+            "<Registry>" + properties + "</Registry>");
+        Assert(!GpmcRegistryPreferenceReportService.TryRead(invalid, out _),
+            "Unknown actions, hives or missing keys must never be treated as verified GPP registry targets.");
+    }
+
+    Assert(SecurityXmlEntryClassifier.IsTechnicalDetail(new PolicySettingInfo
+    {
+        Extension = "SoftwareInstallationSettings", SettingName = "Applicability"
+    }) && !SecurityXmlEntryClassifier.IsTechnicalDetail(row),
+        "MSI Applicability is package descriptor metadata; an exact GPP Registry item is not.");
+
+    var malformed = xml.Replace("action='D'", "action='INVALID'");
+    var unknown = GpmService.ParseXmlSettings(malformed, gpo);
+    Assert(unknown.Count == 1 &&
+           unknown[0].SettingName == "Registry preference (unparsed)" &&
+           unknown[0].RegistryKey == "" &&
+           unknown[0].GppRegistryKeyPath == "",
+        "Malformed preferences must remain visible as unverified source without a guessed registry path.");
+
+    ExpectFailure(() => GpmService.ParseXmlSettings(
+        "<!DOCTYPE GPO [<!ENTITY injected SYSTEM 'file:///C:/windows/win.ini'>]>" +
+        "<GPO>&injected;</GPO>", gpo),
+        "The GPMC settings index parser must refuse DTDs and external XML entities.");
+}
+

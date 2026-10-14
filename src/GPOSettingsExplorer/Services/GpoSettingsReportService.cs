@@ -11,7 +11,12 @@ namespace GPOSettingsExplorer.Services;
 /// XML entities/DTDs are forbidden and tree node counts are bounded.
 /// </summary>
 public sealed record GpoReportNode(
-    string Label, string Details, IReadOnlyList<GpoReportNode> Children);
+    string Label, string Details, IReadOnlyList<GpoReportNode> Children)
+{
+    // Only typed GPMC GPP Registry items populate this. Generic XML names
+    // cannot create a path or silently authorize registry editing.
+    public string RegistryTarget { get; init; } = string.Empty;
+}
 
 public sealed record GpoSettingsReport(
     string GpoName, DateTimeOffset CapturedUtc,
@@ -141,8 +146,15 @@ public static class GpoSettingsReportService
                 type = type[(type.LastIndexOf(':') + 1)..];
             if (type.Length == 0)
                 type = ext.Name.NamespaceName.Split('/').LastOrDefault() ?? "Other";
-            var group = ExtensionSection(type);
-            var bucket = IsPreference(type) ? preferenceBuckets : policyBuckets;
+            // GPMC may use a RegistrySettings-like extension name for
+            // different CSE sources. A GPP Registry classification needs
+            // concrete Registry/Properties XML, not only a type substring.
+            var containsGppRegistry = ext.Descendants()
+                .Any(GpmcRegistryPreferenceReportService.IsCandidate);
+            var group = containsGppRegistry
+                ? "Windows Settings > Registry" : ExtensionSection(type);
+            var bucket = containsGppRegistry || IsPreference(type)
+                ? preferenceBuckets : policyBuckets;
             if (!bucket.TryGetValue(group, out var sections))
                 bucket[group] = sections = new List<GpoReportNode>();
 
@@ -152,8 +164,14 @@ public static class GpoSettingsReportService
             {
                 if (ext.Elements().Skip(200).Any())
                     budget.Limited = true;
-                sections.Add(new GpoReportNode(Display(type),
-                    "GPMC source extension: " + type + ". Values are stored GPO source, not RSoP.",
+                sections.Add(new GpoReportNode(containsGppRegistry
+                        ? "Registry Preferences" : Display(type),
+                    "GPMC source extension: " + type +
+                    ". Values are stored GPO source, not RSoP." +
+                    (containsGppRegistry
+                        ? " GPP Registry items are not Registry.pol policies; " +
+                          "value data is intentionally omitted from this report."
+                        : ""),
                     ext.Elements().Take(200).Select(node =>
                         XmlNode(node, budget, 0)).ToArray()));
             }
@@ -227,6 +245,21 @@ public static class GpoSettingsReportService
             return new GpoReportNode("[additional nested data omitted]",
                 "Read-only display limit reached; inspect the original GPMC report.",
                 Array.Empty<GpoReportNode>());
+        }
+        if (GpmcRegistryPreferenceReportService.IsCandidate(element))
+        {
+            if (!GpmcRegistryPreferenceReportService.TryRead(element, out var pref))
+                return new GpoReportNode("Registry Preference: UNVERIFIED",
+                    "GPMC Registry Properties are invalid, incomplete or unsupported. " +
+                    "No registry path or value was inferred.",
+                    Array.Empty<GpoReportNode>());
+
+            return new GpoReportNode("Registry Preference: " + Cut(pref.DisplayName, 130) +
+                " [" + pref.Action + "]", pref.Details,
+                Array.Empty<GpoReportNode>())
+            {
+                RegistryTarget = pref.RegistryTarget
+            };
         }
         if (KerberosPolicyMetadataService.TryDescribeGpmcNode(element, out var kerberos))
             return new GpoReportNode(kerberos.DisplayName, XmlDetails(element),
@@ -302,7 +335,9 @@ public static class GpoSettingsReportService
 
     private static bool IsPreference(string type) =>
         type.Contains("Preference", StringComparison.OrdinalIgnoreCase) ||
-        type is "Drives" or "Folders" or "Files" or "Shortcuts" or
+        type is "Registry" or "RegistryPreference" or
+            "RegistryPreferencesSettings" or "PreferencesRegistrySettings" or
+            "Drives" or "Folders" or "Files" or "Shortcuts" or
             "Printers" or "ScheduledTasks" or "Services" or "EnvironmentVariables" or
             "LocalUsersAndGroups";
 

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Preview 10: Microsoft-style GPMC Settings/source view.** Parse uniquely structured GPP Registry/Properties report items as typed GPMC preference entries with exact action, hive, registry key path, value name, type and UID (not Registry.pol). Show them in All Settings and a searchable native report tree with Copy registry target. Keep stored raw registry value data out of general indexing/report details. Unknown/invalid GPP attributes remain explicitly unverified; never infer applied client state or silently open local Regedit.
+- Reclassify Software Installation `Applicability` and package Trustee XML as technical report metadata, hidden from the default configured view but available under Show XML details / GPMC Settings report. The selected-setting report action carries its own GPO identity, independent of which other GPO is selected in the main grid.
+- Bump settings-index cache schema for safe regeneration of typed GPP rows. Add structured GPMC XML fixture tests (including the `LanmanServer\\Shares\\Security / pslogging# Changelog
+
+ Delete preference), unknown source, DTD rejection, redaction and preference-vs-Administrative Templates routing. Publish v2.1.0-preview.10 portable x64 and ARM64.
+
 - **Preview 9: typed saved SRP Path Rule comparison.** Read only one selected GPO's User/Computer Registry.pol on the pinned DC when the operator clicks **Check SRP Registry.pol...** in Exact MMC Paths. Compare the cached GPMC SecurityLevel (Disallowed/Unrestricted) and literal Path against exactly one typed REG_SZ/REG_EXPAND_SZ Safer\\CodeIdentifiers\\0|262144\\Paths\\{GUID} ItemData record. Require one GPMC path, exact GPO/domain/DC/scope/file path, full parse, SHA-256 bound file/record and a unique source path. Different saved levels return a distinct stored-value difference; missing, duplicate, unsupported or partial evidence blocks, never upgrades to verified.
 - Add a scope-restricted `registryOnly` source reader mode, preserve all existing Kerberos checks, and show separate SRP and Kerberos stored-evidence counts. Saved path+level agreement is not full SRP rule agreement, cross-GPO precedence, live native MMC value or effective client RSoP. No source writes or bulk MMC scans. Extend binary Registry.pol, ambiguity, missing/wrong DC, wrong level, wrong type and malformed metadata tests.
 

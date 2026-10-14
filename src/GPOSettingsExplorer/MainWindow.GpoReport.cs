@@ -40,6 +40,16 @@ public partial class MainWindow
             return;
         }
 
+        await OpenGpoSettingsReportForGpoAsync(selected, this);
+    }
+
+    // A detail window may describe a different GPO than the main grid's
+    // current selection. Never silently reuse GpoGrid.SelectedItem here.
+    private async Task OpenGpoSettingsReportForGpoAsync(
+        GpoInfo selected, Window owner, string? initialSearch = null)
+    {
+        if (_domainContext is null)
+            return;
         var context = _domainContext;
         SetBusy(true, "Reading a GPMC XML report for the selected GPO...");
         try
@@ -52,9 +62,10 @@ public partial class MainWindow
                 GpoSettingsReportService.Parse(selected, xml));
 
             var viewer = new GpoSettingsReportWindow(selected, report, () =>
-                _gpmService.OpenEditor(selected, context.DomainDistinguishedName))
+                _gpmService.OpenEditor(selected, context.DomainDistinguishedName),
+                initialSearch)
             {
-                Owner = this
+                Owner = owner
             };
             SetBusy(false);
             viewer.ShowDialog();
@@ -63,7 +74,7 @@ public partial class MainWindow
         catch (Exception ex)
         {
             CrashLogService.Write("GPO Settings report viewer", ex);
-            ErrorDialog.Show(this, "GPO Settings",
+            ErrorDialog.Show(owner, "GPO Settings",
                 "Cannot display the selected GPO's GPMC XML report. " +
                 "The domain GPO was not modified.", ex);
             StatusText.Text = "Could not open GPO Settings report";

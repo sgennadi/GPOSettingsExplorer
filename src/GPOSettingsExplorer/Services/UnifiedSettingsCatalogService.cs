@@ -84,14 +84,18 @@ public static class UnifiedSettingsCatalogService
                     : admx is not null && IsDirectAdmxSupported(admx)
                         ? "ADMX editor (guarded)"
                         : "View / supported editor",
-                RegistryTarget = GpoSettingSourceProvenance.RegistryTarget(setting),
+                RegistryTarget = GpoSettingSourceProvenance.DisplayRegistryTarget(setting),
                 Explanation = technical
                     ? "This is a nested GPMC XML description, not an independent policy row. " +
                       "Its full original value remains available in View details. " +
                       "MMC can open only a related section; exact editing is not verified."
-                    : "GPMC XML/index reports this configured setting. " +
-                      "Its effective application requires independent RSoP/WMI/Security evaluation." +
-                      (observed is null ? "" : " MMC value is a separate observation."),
+                    : GpoSettingSourceProvenance.IsGppRegistrySource(setting)
+                        ? "GPMC XML identifies one GPP Registry preference item: exact stored " +
+                          "hive/key/value and action. This is NOT Registry.pol, local Regedit, " +
+                          "native MMC row verification or effective client RSoP."
+                        : "GPMC XML/index reports this configured setting. " +
+                          "Its effective application requires independent RSoP/WMI/Security evaluation." +
+                          (observed is null ? "" : " MMC value is a separate observation."),
                 Kind = technical ? "GPMC detail" : "Configured",
                 IsTechnicalDetail = technical,
                 Configured = setting,

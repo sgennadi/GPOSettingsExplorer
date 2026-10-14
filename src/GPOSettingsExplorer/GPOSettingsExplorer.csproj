@@ -10,10 +10,10 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <AssemblyName>GPOSettingsExplorer</AssemblyName>
     <RootNamespace>GPOSettingsExplorer</RootNamespace>
-    <Version>2.1.0-preview.9</Version>
+    <Version>2.1.0-preview.10</Version>
     <FileVersion>2.1.0.0</FileVersion>
     <AssemblyVersion>2.1.0.0</AssemblyVersion>
-    <InformationalVersion>2.1.0-preview.9</InformationalVersion>
+    <InformationalVersion>2.1.0-preview.10</InformationalVersion>
     <PublishSingleFile>true</PublishSingleFile>
     <SelfContained>false</SelfContained>
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>

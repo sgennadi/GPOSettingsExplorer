@@ -12,6 +12,13 @@ namespace GPOSettingsExplorer;
 public sealed class GpoSettingsReportWindow : Window
 {
     private readonly TreeView _tree = new();
+    private readonly TextBox _findText = new() { MinWidth = 150, Width = 260 };
+    private readonly TextBlock _findStatus = new()
+    {
+        VerticalAlignment = VerticalAlignment.Center,
+        TextWrapping = TextWrapping.Wrap
+    };
+    private Button? _copyRegistryTarget;
     private readonly TextBox _details = new()
     {
         IsReadOnly = true,
@@ -22,7 +29,8 @@ public sealed class GpoSettingsReportWindow : Window
     };
 
     public GpoSettingsReportWindow(
-        GpoInfo gpo, GpoSettingsReport report, Action openNativeGpoEditor)
+        GpoInfo gpo, GpoSettingsReport report, Action openNativeGpoEditor,
+        string? initialSearch = null)
     {
         ArgumentNullException.ThrowIfNull(gpo);
         ArgumentNullException.ThrowIfNull(report);
@@ -80,6 +88,17 @@ public sealed class GpoSettingsReportWindow : Window
             if (!string.IsNullOrWhiteSpace(_details.Text))
                 Clipboard.SetText(_details.Text);
         };
+        var copyRegistry = Button("Copy registry target");
+        copyRegistry.IsEnabled = false;
+        copyRegistry.ToolTip = "Only available for a structurally parsed GPP Registry source. " +
+            "This does not open local Regedit or confirm applied policy.";
+        _copyRegistryTarget = copyRegistry;
+        copyRegistry.Click += (_, _) =>
+        {
+            if (_tree.SelectedItem is TreeViewItem { Tag: GpoReportNode node } &&
+                !string.IsNullOrWhiteSpace(node.RegistryTarget))
+                Clipboard.SetText(node.RegistryTarget);
+        };
         var editor = Button("Open GPO editor...");
         editor.Click += (_, _) =>
         {
@@ -94,7 +113,26 @@ public sealed class GpoSettingsReportWindow : Window
         toolbar.Children.Add(expand);
         toolbar.Children.Add(collapse);
         toolbar.Children.Add(copy);
+        toolbar.Children.Add(copyRegistry);
         toolbar.Children.Add(editor);
+        toolbar.Children.Add(new TextBlock
+        {
+            Text = "Find in report:", VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(8, 0, 4, 0)
+        });
+        toolbar.Children.Add(_findText);
+        var findNext = Button("Find next");
+        findNext.Click += (_, _) => FindNextMatch();
+        _findText.KeyDown += (_, args) =>
+        {
+            if (args.Key == System.Windows.Input.Key.Enter)
+            {
+                FindNextMatch();
+                args.Handled = true;
+            }
+        };
+        toolbar.Children.Add(findNext);
+        toolbar.Children.Add(_findStatus);
         top.Children.Add(toolbar);
         DockPanel.SetDock(top, Dock.Top);
         root.Children.Add(top);
@@ -133,8 +171,13 @@ public sealed class GpoSettingsReportWindow : Window
             _tree, ScrollBarVisibility.Auto);
         _tree.SelectedItemChanged += (_, _) =>
         {
-            if (_tree.SelectedItem is TreeViewItem item && item.Tag is string value)
-                _details.Text = value;
+            if (_tree.SelectedItem is TreeViewItem { Tag: GpoReportNode node })
+            {
+                _details.Text = node.Details;
+                if (_copyRegistryTarget is not null)
+                    _copyRegistryTarget.IsEnabled =
+                        !string.IsNullOrWhiteSpace(node.RegistryTarget);
+            }
         };
         foreach (var section in report.Sections)
             _tree.Items.Add(CreateItem(section, depth: 0));
@@ -157,6 +200,59 @@ public sealed class GpoSettingsReportWindow : Window
         root.Children.Add(grid);
 
         Content = root;
+        if (!string.IsNullOrWhiteSpace(initialSearch))
+            Loaded += (_, _) =>
+            {
+                _findText.Text = initialSearch;
+                FindNextMatch();
+            };
+    }
+
+    /// <summary>
+    /// Find exact source/report information without opening MMC, modifying
+    /// a GPO or guessing which registry key matches an arbitrary XML field.
+    /// Search only the already bounded native GPMC report tree.
+    /// </summary>
+    private void FindNextMatch()
+    {
+        var query = _findText.Text.Trim();
+        if (query.Length == 0)
+        {
+            _findStatus.Text = "Enter a setting, key path or value name.";
+            return;
+        }
+
+        var matches = new List<(TreeViewItem Item, TreeViewItem[] Parents)>();
+        void Walk(TreeViewItem item, List<TreeViewItem> ancestors)
+        {
+            if (item.Tag is GpoReportNode node &&
+                (node.Label.Contains(query, StringComparison.CurrentCultureIgnoreCase) ||
+                 node.Details.Contains(query, StringComparison.CurrentCultureIgnoreCase)))
+                matches.Add((item, ancestors.ToArray()));
+            ancestors.Add(item);
+            foreach (var child in item.Items.OfType<TreeViewItem>())
+                Walk(child, ancestors);
+            ancestors.RemoveAt(ancestors.Count - 1);
+        }
+
+        foreach (var item in _tree.Items.OfType<TreeViewItem>())
+            Walk(item, new List<TreeViewItem>());
+
+        if (matches.Count == 0)
+        {
+            _findStatus.Text = "No matching source row (" + query + ").";
+            return;
+        }
+
+        var last = matches.FindIndex(m => ReferenceEquals(m.Item, _tree.SelectedItem));
+        var next = (last + 1) % matches.Count;
+        var selected = matches[next];
+        foreach (var parent in selected.Parents)
+            parent.IsExpanded = true;
+        selected.Item.IsSelected = true;
+        selected.Item.BringIntoView();
+        _findStatus.Text = "Match " + (next + 1) + "/" + matches.Count +
+            " (stored GPMC source; not RSoP).";
     }
 
     private static Button Button(string name) => new()
@@ -177,7 +273,7 @@ public sealed class GpoSettingsReportWindow : Window
                 TextWrapping = TextWrapping.Wrap,
                 MaxWidth = 550
             },
-            Tag = node.Details,
+            Tag = node,
             IsExpanded = depth < 2,
             ToolTip = node.Details.Length > 500
                 ? node.Details[..500] + "..."

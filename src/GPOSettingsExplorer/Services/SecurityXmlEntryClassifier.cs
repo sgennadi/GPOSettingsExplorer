@@ -41,6 +41,17 @@ public static class SecurityXmlEntryClassifier
 
     public static bool IsTechnicalDetail(PolicySettingInfo setting)
     {
+        // Package descriptor fields are not independent editable settings.
+        // Keep them accessible via Show XML details and the full GPMC report.
+        if (setting.Extension.Equals("SoftwareInstallationSettings",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            var title = setting.SettingName.Trim();
+            return title.Equals("Applicability", StringComparison.OrdinalIgnoreCase) ||
+                title.StartsWith("Trustee ", StringComparison.OrdinalIgnoreCase) ||
+                title.Equals("Security Descriptor", StringComparison.OrdinalIgnoreCase);
+        }
+
         if (!setting.Extension.Equals("SecuritySettings",
                 StringComparison.OrdinalIgnoreCase))
             return false;
@@ -57,6 +68,9 @@ public static class SecurityXmlEntryClassifier
         if (!IsTechnicalDetail(setting))
             return setting.Value;
 
+        if (setting.Extension.Equals("SoftwareInstallationSettings",
+                StringComparison.OrdinalIgnoreCase))
+            return "Package installation or security descriptor metadata; inspect the source GPMC report, not a standalone policy.";
         if (setting.SettingName.StartsWith("Member:", StringComparison.OrdinalIgnoreCase))
             return "Restricted-group membership XML detail - inspect source for SID and member name.";
 

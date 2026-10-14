@@ -24,7 +24,8 @@ public sealed class SettingValueWindow : Window
         Action? cancelExactDiscovery = null,
         Func<IProgress<string>, CancellationToken,
             Task<GpoKerberosStoredSourceEvidenceService.Result>>?
-            verifyStoredKerberos = null)
+            verifyStoredKerberos = null,
+        Func<Task>? openGpmcReport = null)
     {
         Title =
             $"Setting Value - {setting.SettingName}";
@@ -414,6 +415,32 @@ public sealed class SettingValueWindow : Window
             footer.Children.Add(cancelVerify);
         }
 
+        // The official GPMC Settings view is generated from the source XML.
+        // Open the report for this setting's GPO, not the possibly unrelated
+        // GPO currently selected in the main grid.
+        if (openGpmcReport is not null)
+        {
+            var sourceReport = new Button
+            {
+                Content = "View GPMC Settings report...",
+                ToolTip = "Show stored GPO source hierarchy including exact GPP Registry " +
+                    "Hive/Key path/Value name/Action when present. Never edits local registry."
+            };
+            sourceReport.Click += async (_, _) =>
+            {
+                sourceReport.IsEnabled = false;
+                try { await openGpmcReport(); }
+                catch (Exception ex)
+                {
+                    CrashLogService.Write("GPMC Settings report", ex);
+                    ErrorDialog.Show(this, "GPMC Settings report",
+                        "Unable to display this GPO's original report.", ex);
+                }
+                finally { if (IsLoaded) sourceReport.IsEnabled = true; }
+            };
+            footer.Children.Add(sourceReport);
+        }
+
         // A raw registry.pol entry has no guaranteed MMC row. Make its real
         // key/value easy to inspect without opening the live local registry.
         if (GpoSettingSourceProvenance.IsVerifiedRegistryTarget(setting))
@@ -433,6 +460,30 @@ public sealed class SettingValueWindow : Window
             var copyValueName = new Button { Content = "Copy value name" };
             copyValueName.Click += (_, _) => Clipboard.SetText(setting.RegistryValue);
             footer.Children.Add(copyValueName);
+        }
+
+        if (GpoSettingSourceProvenance.IsGppRegistrySource(setting))
+        {
+            var copyGppKey = new Button
+            {
+                Content = "Copy GPP registry key",
+                ToolTip = "Copy the stored preference Hive + Key path. " +
+                    "Does not read or modify local registry."
+            };
+            copyGppKey.Click += (_, _) => Clipboard.SetText(
+                setting.GppRegistryHive + "\\" + setting.GppRegistryKeyPath);
+            footer.Children.Add(copyGppKey);
+            if (!string.IsNullOrWhiteSpace(setting.GppRegistryValueName))
+            {
+                var copyGppValue = new Button
+                {
+                    Content = "Copy GPP value name",
+                    ToolTip = "Value name only; not a verified live client value."
+                };
+                copyGppValue.Click += (_, _) =>
+                    Clipboard.SetText(setting.GppRegistryValueName);
+                footer.Children.Add(copyGppValue);
+            }
         }
 
         if (canEditBoolean &&
@@ -515,6 +566,24 @@ public sealed class SettingValueWindow : Window
 
         panel.Children.Add(Meta("Source type",
             GpoSettingSourceProvenance.SourceType(setting)));
+        if (GpoSettingSourceProvenance.IsGppRegistrySource(setting))
+        {
+            panel.Children.Add(Meta("GPP Action", setting.GppRegistryAction));
+            panel.Children.Add(Meta("Hive", setting.GppRegistryHive));
+            panel.Children.Add(Meta("Key path", setting.GppRegistryKeyPath));
+            panel.Children.Add(Meta("Value name",
+                string.IsNullOrEmpty(setting.GppRegistryValueName)
+                    ? "(key/default item)" : setting.GppRegistryValueName));
+            panel.Children.Add(new TextBlock
+            {
+                Text = "Stored GPMC GPP Registry preference. The action describes " +
+                    "policy intent, not an already modified client registry. " +
+                    "Neither Registry.pol nor effective client RSoP has been checked.",
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = UiStyle.WarningBrush,
+                Margin = new Thickness(4, 5, 4, 6)
+            });
+        }
         if (SoftwareRestrictionMmcRouteService.IsSoftwareRestriction(setting))
             panel.Children.Add(new TextBlock
             {

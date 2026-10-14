@@ -27,6 +27,7 @@ public static class GpoPreferencesMmcSections
             ["NetworkSharesSettings"] = new("Windows Settings", "Network Shares",
                 ComputerOnly: true),
             ["RegistryPreferencesSettings"] = new("Windows Settings", "Registry"),
+            ["GppRegistry"] = new("Windows Settings", "Registry"),
             ["PreferencesRegistrySettings"] = new("Windows Settings", "Registry"),
             ["ScheduledTasksSettings"] = new("Control Panel Settings", "Scheduled Tasks"),
             ["PrintersSettings"] = new("Control Panel Settings", "Printers"),
