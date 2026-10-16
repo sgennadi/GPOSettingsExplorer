@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Preview 13: unified source-first GPO navigation.** Merge prior Preview 12 exact GPP Registry UID/order/action/hive/key lookup with a separate no-scan Open GPO editor (manual) action. Exact MMC row access uses previously captured same-GPO/DC observations and does not launch native MMC full inventory from an individual setting.
+- **Preview 13: GPMC and ADMX source paths.** Show Registry.pol/GptTmpl.inf/audit.csv/GPP Registry.xml source hints and separately labeled unique ADMX-declared registry key/value targets. Copy source locations on request without raw setting-value payloads. Preserve typed report navigation and do not mistake stored GPO source for client effective RSoP.
+- **Preview 13: Advanced Audit pinned CSV verifier.** Compare unique typed GPMC System Audit SubcategoryGuid/SettingValue=0..4 with one exact SHA-256-bound selected-GPO pinned-DC Audit/audit.csv record. Partial/duplicate/missing/wrong-DC/user-SID evidence blocks. Read-only and no client auditpol assertions.
+- **Release maintenance.** Single project Version drives x64/ARM64 EXE verification and immutable prerelease tag selection; Preview 12 stays published unchanged.
+
 - **Preview 12: exact GPMC Registry report locator.** Resolve one typed source item in the newly generated GPMC report by same GPO identity, Computer/User scope, UID, order, action and full hive/key/value target; reject missing, duplicate or stale metadata without selecting a similarly named row. Does not verify Registry.pol, live client registry or RSoP.
 - **Preview 12: source-aware GPMC settings grid.** The legacy Configured GPMC list displays typed GPP source hive/key/value names, while package Applicability and other technical XML details require an explicit Show XML metadata opt-in. The full hierarchy remains available in the native read-only source report, with no raw GPP registry value data copied into the index.
 - Add exact lookup regression coverage for duplicate names, UID collisions, changed order/action/key, cross-GPO selection, Computer/User scope and technical Software Installation metadata. Ship preview.12 x64/ARM64 separately from stable 2.0.3.
