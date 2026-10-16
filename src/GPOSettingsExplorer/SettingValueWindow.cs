@@ -25,7 +25,8 @@ public sealed class SettingValueWindow : Window
         Func<IProgress<string>, CancellationToken,
             Task<GpoKerberosStoredSourceEvidenceService.Result>>?
             verifyStoredKerberos = null,
-        Func<Task>? openGpmcReport = null)
+        Func<Task>? openGpmcReport = null,
+        Action? openManualGpoEditor = null)
     {
         Title =
             $"Setting Value - {setting.SettingName}";
@@ -220,6 +221,35 @@ public sealed class SettingValueWindow : Window
         };
 
         footer.Children.Add(open);
+
+        // Manual GPO editor: no implicit native MMC inventory or row guess.
+        if (openManualGpoEditor is not null)
+        {
+            var manual = new Button
+            {
+                Content = "Open GPO editor (manual)",
+                ToolTip = "Launch selected GPO at its root without scanning native MMC. " +
+                    "Manual changes in MMC may modify this domain GPO."
+            };
+            manual.Click += (_, _) =>
+            {
+                try
+                {
+                    openManualGpoEditor();
+                    navigationStatus.Foreground = UiStyle.WarningBrush;
+                    navigationStatus.Text =
+                        "Native GPO editor opened at its root. Select a policy manually. " +
+                        "Exact row, stored source value and effective client RSoP are NOT verified.";
+                }
+                catch (Exception ex)
+                {
+                    navigationStatus.Foreground = UiStyle.ErrorBrush;
+                    navigationStatus.Text = "Manual GPO editor failed: " + ex.Message;
+                    CrashLogService.Write("Manual GPO editor from Setting Value", ex);
+                }
+            };
+            footer.Children.Add(manual);
+        }
 
         // One GPMC policy may recheck existing, non-aborted MMC evidence.
         // Never start a full native MMC traversal from this small value dialog:
