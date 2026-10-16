@@ -632,6 +632,23 @@ public sealed class SettingValueWindow : Window
         }
 
         if (setting.Extension.Equals("SoftwareInstallationSettings", StringComparison.OrdinalIgnoreCase) &&
+            setting.SettingName.Equals("Applicability", StringComparison.OrdinalIgnoreCase))
+        {
+            panel.Children.Add(new TextBlock
+            {
+                Text = "GPMC Applicability is package metadata, not a Registry key. " +
+                    "The parent package identity is not present in this flattened entry. " +
+                    "Use the GPO report to identify the exact package under Computer/User " +
+                    "Configuration > Policies > Software Settings > Software installation. " +
+                    "Its applicability flags cannot be opened as an independent policy dialog. " +
+                    "The source report does not establish any registry path.",
+                Foreground = UiStyle.WarningBrush,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(4, 8, 4, 4)
+            });
+        }
+
+        if (setting.Extension.Equals("SoftwareInstallationSettings", StringComparison.OrdinalIgnoreCase) &&
             (setting.SettingName.Contains("Trustee ", StringComparison.OrdinalIgnoreCase) ||
              setting.SettingName.Contains("Applicability", StringComparison.OrdinalIgnoreCase)))
         {
