@@ -548,11 +548,13 @@ public partial class MainWindow
                 sourceExplanation = audit.Explanation;
             }
 
+            var declaredAdmx = GpoSourcePathPresentationService.DescribeAdmxDeclaration(
+                setting, _admxPolicies);
             result.Add(new GpoExactPathsWindow.RouteRow(setting,
                 setting.GpoName, setting.Scope, setting.Extension,
                 setting.SettingName, hint, decision.Status,
                 observedPath, decision.Explanation,
-                sourceStatus, sourceExplanation));
+                sourceStatus, sourceExplanation, declaredAdmx));
         }
         return result;
     }
