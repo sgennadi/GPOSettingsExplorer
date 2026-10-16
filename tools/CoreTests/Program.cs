@@ -42,6 +42,8 @@ var tests = new (string Name, Action Body)[]
     ("Registry.pol known security namespaces are labeled without claiming applied CSE", TestRegistrySourceClassification),
     ("Security-template parser reports source values and invalid encodings safely", TestRealSettingsSecurityTemplate),
     ("Typed Kerberos GPMC and pinned SecEdit snapshots fail closed on identity, hashes and duplicates", TestKerberosStoredSourceEvidence),
+    ("Password and lockout stored SecEdit values require pinned source, type and canonical literal", TestAccountStoredSourceEvidence),
+    ("GPP Registry source metadata is typed, redacted, SHA-256-bound and never value verified", TestGppRegistryPinnedSourceMetadata),
     ("Typed SRP Path Rules require unique SHA-256-bound ItemData and security-level identity", TestSrpStoredSourceEvidence),
     ("Unified catalog never interprets source-file values as effective RSoP", TestRealSettingsUnifiedEvidence),
     ("Cross-DC GPO version evidence refuses aliases and incomplete comparisons", TestCrossDcVersionEvidence),
@@ -5256,6 +5258,237 @@ static void TestUniversalExactMmcRoutes()
         "Unknown CSE may offer explicit manual route review but never automatic first-match.");
 }
 
+
+
+static void TestAccountStoredSourceEvidence()
+{
+    var gpo = Guid.NewGuid();
+    const string domain = "example.local";
+    const string dc = "dc01.example.local";
+    var path = Path.Combine($@"\\{dc}\SYSVOL\{domain}", "Policies",
+        gpo.ToString("B"), "Machine", "Microsoft", "Windows NT",
+        "SecEdit", "GptTmpl.inf");
+    var inf = "[Unicode]\r\nUnicode=yes\r\n[System Access]\r\n" +
+              "MinimumPasswordLength = 14\r\nPasswordComplexity = 1\r\n" +
+              "LockoutBadCount = 5\r\nLockoutDuration = 30\r\n";
+    var bytes = System.Text.Encoding.Unicode.GetPreamble()
+        .Concat(System.Text.Encoding.Unicode.GetBytes(inf)).ToArray();
+    var sha = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes));
+    var parsed = SecurityTemplateSourceReader.Parse(bytes, gpo, "test", path, sha);
+    Assert(parsed.IsComplete && parsed.Rows.Count >= 4,
+        "Fixture must parse actual typed [System Access] INF records.");
+    var source = new RealSettingsScanResult(gpo, "test", domain, dc, DateTimeOffset.UtcNow,
+        parsed.Rows, new[] { new RealSettingsFileEvidence(path, "Read",
+            parsed.Rows.Count, sha, "Test bounded source") });
+
+    PolicySettingInfo Item(string name, string type, string field, string number) => new()
+    {
+        GpoId = gpo, Scope = "Computer", Extension = "SecuritySettings",
+        Category = "SecuritySettings", SettingName = "Account: " + name,
+        Value = "Name=" + name + "; " + field + "=" + number + "; Type=" + type
+    };
+    var length = Item("MinimumPasswordLength", "Password", "SettingNumber", "14");
+    GpoAccountStoredSourceEvidenceService.Result Compare(
+        PolicySettingInfo value, RealSettingsScanResult? snapshot,
+        IReadOnlyList<PolicySettingInfo>? indexed = null,
+        string? pinned = null) =>
+        GpoAccountStoredSourceEvidenceService.Compare(value,
+            indexed ?? new[] { value }, snapshot, domain, pinned ?? dc);
+    Assert(Compare(length, source).Status == GpoAccountStoredSourceEvidenceService.Match &&
+           Compare(length, source).SourceSha256 == sha,
+        "MinimumPasswordLength must agree with the pinned, complete SecEdit System Access key.");
+
+    var mismatch = Item("MinimumPasswordLength", "Password", "SettingNumber", "15");
+    Assert(Compare(mismatch, source).Status == GpoAccountStoredSourceEvidenceService.Mismatch,
+        "Stored GPMC/INF numeric differences must be reported, not automatically corrected.");
+    Assert(Compare(Item("PasswordComplexity", "Password", "SettingBoolean", "true"), source)
+           .Status == GpoAccountStoredSourceEvidenceService.Match,
+        "Boolean true must map to INF 1 for the known password complexity key.");
+    Assert(Compare(Item("PasswordComplexity", "Password", "SettingBoolean", "false"), source)
+           .Status == GpoAccountStoredSourceEvidenceService.Mismatch,
+        "Boolean mismatch must not be hidden by generic strings.");
+    Assert(Compare(Item("LockoutBadCount", "Account Lockout", "SettingNumber", "5"), source)
+           .Status == GpoAccountStoredSourceEvidenceService.Match &&
+           Compare(Item("LockoutDuration", "Account Lockout", "SettingNumber", "30"), source)
+           .Status == GpoAccountStoredSourceEvidenceService.Match,
+        "Only typed known Account Lockout fields map to System Access.");
+    Assert(Compare(length, null).Status == GpoAccountStoredSourceEvidenceService.NoSnapshot,
+        "An unscanned account policy is NOT Not Configured.");
+    Assert(Compare(length, source, pinned: "other.example.local").Status ==
+           GpoAccountStoredSourceEvidenceService.WrongSnapshot,
+        "A source from another pinned DC cannot verify the selected GPO.");
+    Assert(Compare(length, source with { GpoId = Guid.NewGuid() }).Status ==
+           GpoAccountStoredSourceEvidenceService.WrongSnapshot,
+        "Cross-GPO security template cannot verify this policy.");
+    Assert(Compare(length, source, new[] { length, length }).Status ==
+           GpoAccountStoredSourceEvidenceService.GpmcAmbiguous,
+        "Two GPMC rows for one typed account setting cannot verify the first match.");
+    Assert(Compare(length, source with { Files =
+        new[] { source.Files[0] with { Status = "Partial" } } }).Status ==
+           GpoAccountStoredSourceEvidenceService.FileIncomplete,
+        "Even a valid first INF row from partial parsing cannot be considered verified.");
+    Assert(Compare(length, source with { Files =
+        new[] { source.Files[0], source.Files[0] } }).Status ==
+           GpoAccountStoredSourceEvidenceService.FileAmbiguous,
+        "Duplicate file evidence must block.");
+    Assert(Compare(length, source with { Rows =
+        parsed.Rows.Concat(parsed.Rows.Where(r => r.SettingName == "MinimumPasswordLength")).ToArray() })
+        .Status == GpoAccountStoredSourceEvidenceService.SourceAmbiguous,
+        "Duplicate exact System Access keys must block.");
+    Assert(Compare(length, source with { Rows = parsed.Rows.Select(r =>
+        r.SettingName == "MinimumPasswordLength"
+            ? r with { SourceSha256 = new string('D', 64) } : r).ToArray() })
+        .Status == GpoAccountStoredSourceEvidenceService.SourceUntrusted,
+        "Row/source hash mismatches must fail closed.");
+    Assert(Compare(length, source with { Rows = parsed.Rows.Where(r =>
+        r.SettingName != "MinimumPasswordLength").ToArray() })
+        .Status == GpoAccountStoredSourceEvidenceService.SourceMissing,
+        "Missing [System Access] row must not be called Not Configured.");
+    foreach (var invalid in new[]
+    {
+        "Name=MinimumPasswordLength; SettingNumber=014; Type=Password",
+        "Name=MinimumPasswordLength; SettingNumber=-1; Type=Password",
+        "Name=MinimumPasswordLength; SettingNumber=14; SettingNumber=14; Type=Password",
+        "Name=MinimumPasswordLength; SettingNumber=14; Type=Kerberos",
+        "Name=MaximumPasswordAge; SettingNumber=14; Type=Password",
+        "Name=MinimumPasswordLength; SettingBoolean=true; Type=Password",
+        "Name=MinimumPasswordLength; SettingNumber=14; Type=Password; Type=Password"
+    })
+    {
+        var malformed = new PolicySettingInfo
+        {
+            GpoId = gpo, Scope = "Computer", Extension = "SecuritySettings",
+            Category = "SecuritySettings", SettingName = length.SettingName,
+            Value = invalid
+        };
+        var result = Compare(malformed, source);
+        Assert(result.Status is GpoAccountStoredSourceEvidenceService.GpmcUntyped
+            or GpoAccountStoredSourceEvidenceService.NotApplicable,
+            "Malformed or contradictory Account GPMC metadata must never compare.");
+    }
+}
+
+static void TestGppRegistryPinnedSourceMetadata()
+{
+    var id = Guid.NewGuid();
+    const string domain = "example.test";
+    const string dc = "dc01.example.test";
+    const string privateValue = "CONFIDENTIAL_GPP_VALUE_DO_NOT_EXPORT_81";
+    const string privateFilter = "PRIVATE_TARGET_NAME_DO_NOT_EXPORT_88";
+    var uid = Guid.NewGuid().ToString("B");
+    const string key = @"SOFTWARE\Example\Flags";
+
+    string SourceXml(string action = "U", string type = "REG_DWORD") =>
+        "<RegistrySettings><Registry name='Example flag' uid='" + uid + "'>" +
+        "<Properties action='" + action + "' hive='HKLM' key='" + key +
+        "' name='Enabled' type='" + type + "' value='" + privateValue + "'/>" +
+        "<Filters><FilterComputer name='" + privateFilter + "'/></Filters>" +
+        "</Registry></RegistrySettings>";
+    var raw = System.Text.Encoding.UTF8.GetBytes(SourceXml());
+    var parsed = GpoGppRegistrySourceEvidenceService.Parse(raw);
+    Assert(parsed.Status == "Read" && parsed.Sha256.Length == 64 &&
+           parsed.Items.Count == 1 && parsed.Items[0].Order == 1,
+        "A valid one-item bounded source must preserve the exact UID/order/type.");
+    var json = System.Text.Json.JsonSerializer.Serialize(parsed);
+    foreach (var value in new[] { privateValue, privateFilter, "value='" + privateValue })
+        Assert(!json.Contains(value, StringComparison.Ordinal),
+            "GPP Registry stored-source snapshot must never retain value data or targeting contents.");
+    var gpo = new GpoInfo
+    {
+        Id = id, DomainName = domain, DisplayName = "GPP example",
+        ComputerEnabled = true, UserEnabled = true
+    };
+    var report = "<GPO><Computer><ExtensionData><Extension type='RegistrySettings'>" +
+        SourceXml().Replace("<RegistrySettings>", "")
+                   .Replace("</RegistrySettings>", "") +
+        "</Extension></ExtensionData></Computer><User/></GPO>";
+    var policy = GpmService.ParseXmlSettings(report, gpo).Single();
+    Assert(policy.GppRegistryValueType == "REG_DWORD" &&
+           policy.GppRegistryHasFilters &&
+           policy.GppRegistryUid.Length > 0 &&
+           !policy.SearchText.Contains(privateValue),
+        "Typed GPMC index must preserve safe Registry metadata but redact value data.");
+
+    var path = Path.Combine($@"\\{dc}\SYSVOL\{domain}", "Policies",
+        id.ToString("B"), "Machine", "Preferences", "Registry", "Registry.xml");
+    var snapshot = new GpoGppRegistrySourceEvidenceService.Snapshot(
+        id, "Computer", domain, dc, path, "Read", parsed.Sha256, parsed.Items,
+        DateTimeOffset.UtcNow);
+
+    GpoGppRegistrySourceEvidenceService.Result Compare(
+        PolicySettingInfo setting, GpoGppRegistrySourceEvidenceService.Snapshot? src,
+        IReadOnlyList<PolicySettingInfo>? indexed = null,
+        string? dcOverride = null) =>
+        GpoGppRegistrySourceEvidenceService.Compare(setting, indexed ?? new[] { setting },
+            src, domain, dcOverride ?? dc);
+    var agreement = Compare(policy, snapshot);
+    Assert(agreement.Status == GpoGppRegistrySourceEvidenceService.Match &&
+           agreement.Explanation.Contains("NOT verified", StringComparison.Ordinal) &&
+           !agreement.Explanation.Contains(privateValue),
+        "Exact GPMC UID/order/type/action/hive/key/filter metadata match is NOT value/RSoP verification.");
+    var changed = parsed.Items[0] with { ValueType = "REG_SZ" };
+    Assert(Compare(policy, snapshot with { Items = new[] { changed } }).Status ==
+           GpoGppRegistrySourceEvidenceService.Mismatch,
+        "Changed source type must show metadata difference.");
+    Assert(Compare(policy, snapshot with { Items = new[] {
+        parsed.Items[0] with { KeyPath = "SOFTWARE\\Other" }
+    } }).Status == GpoGppRegistrySourceEvidenceService.Mismatch,
+        "Changed GPP Registry key must show a stored metadata difference.");
+    Assert(Compare(policy, null).Status == GpoGppRegistrySourceEvidenceService.NoSnapshot,
+        "Unscanned Registry.xml is not Not Configured.");
+    Assert(Compare(policy, snapshot with { DomainController = "other.example.test" }).Status ==
+           GpoGppRegistrySourceEvidenceService.WrongSnapshot &&
+           Compare(policy, snapshot, dcOverride: "other.example.test").Status ==
+           GpoGppRegistrySourceEvidenceService.WrongSnapshot,
+        "Wrong pinned DC must be rejected even if the SHA-256 is identical.");
+    Assert(Compare(policy, snapshot with { SourceFile = path.Replace("dc01", "dc02") }).Status ==
+           GpoGppRegistrySourceEvidenceService.WrongSnapshot,
+        "A same-suffix Registry.xml on another DC must never verify this setting.");
+    Assert(Compare(policy, snapshot with { Status = "Partial" }).Status ==
+           GpoGppRegistrySourceEvidenceService.FileIncomplete,
+        "Partial Registry.xml cannot verify metadata.");
+    Assert(Compare(policy, snapshot with { FileSha256 = "" }).Status ==
+           GpoGppRegistrySourceEvidenceService.FileIncomplete,
+        "Missing source SHA-256 must block.");
+    Assert(Compare(policy, snapshot with { Items = parsed.Items.Concat(parsed.Items).ToArray() })
+        .Status == GpoGppRegistrySourceEvidenceService.SourceAmbiguous,
+        "Duplicate pinned source UIDs cannot select the first.");
+    Assert(Compare(policy, snapshot with { Items = Array.Empty<GpmcRegistryPreferenceReportService.Item>() })
+        .Status == GpoGppRegistrySourceEvidenceService.SourceMissing,
+        "Missing UID must stay unverified.");
+    Assert(Compare(policy, snapshot, new[] { policy, policy }).Status ==
+           GpoGppRegistrySourceEvidenceService.AmbiguousGpmc,
+        "Duplicate typed GPMC UID must fail closed.");
+    Assert(Compare(new PolicySettingInfo
+    {
+        GpoId = id, Scope = "Computer", Extension = "GppRegistry",
+        GppRegistryHive = "HKLM", GppRegistryKeyPath = key,
+        GppRegistryAction = "Update", GppRegistryOrder = 1
+    }, snapshot).Status == GpoGppRegistrySourceEvidenceService.UntrustedGpmc,
+        "Missing GPMC UID must never verify a source item.");
+
+    foreach (var invalid in new[]
+    {
+        "<!DOCTYPE RegistrySettings [<!ENTITY x SYSTEM 'file:///C:/Windows/win.ini'>]>" +
+        "<RegistrySettings>&x;</RegistrySettings>",
+        "<RegistrySettings><Collection/><Registry name='Example' uid='" + uid +
+        "'><Properties action='U' hive='HKLM' key='" + key + "'/></Registry></RegistrySettings>",
+        "<RegistrySettings><Registry uid='" + uid + "'>" +
+        "<Properties action='U' hive='HKLM' key='" + key + "'/></Registry>" +
+        "<Registry uid='" + uid + "'><Properties action='U' hive='HKLM' key='" + key +
+        "'/></Registry></RegistrySettings>",
+        "<RegistrySettings><Registry name='Bad' uid='" + uid +
+        "'><Properties action='UNKNOWN' hive='HKLM' key='" + key +
+        "' value='" + privateValue + "'/></Registry></RegistrySettings>"
+    })
+    {
+        var bad = GpoGppRegistrySourceEvidenceService.Parse(
+            System.Text.Encoding.UTF8.GetBytes(invalid));
+        Assert(bad.Status == "Invalid" && bad.Items.Count == 0 &&
+               !System.Text.Json.JsonSerializer.Serialize(bad).Contains(privateValue),
+            "GPP source parser must fail closed on malformed, duplicate or unsupported XML.");
+    }
+}
 
 static void TestKerberosStoredSourceEvidence()
 {

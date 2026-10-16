@@ -64,6 +64,8 @@ public static class GpmcRegistryPreferenceReportService
         GppRegistryKeyPath = item.KeyPath,
         GppRegistryValueName = item.ValueName,
         GppRegistryAction = item.Action,
+        GppRegistryValueType = item.ValueType,
+        GppRegistryHasFilters = item.HasFilters,
         GppRegistryUid = item.Uid,
         GppRegistryOrder = item.Order
     };

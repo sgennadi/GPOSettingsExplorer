@@ -1,5 +1,13 @@
 # GPMC source-to-MMC route verification (v2.1 preview)
 
+## Preview 11: Password / Lockout and GPP Registry saved-source evidence
+
+**Exact MMC Paths → Check selected stored source...** supports:
+- Typed Account 'Type=Password' or 'Type=Account Lockout': one Computer GPMC Account row must match a unique SHA-256-backed [System Access] key in the same GPO's Machine/Microsoft/Windows NT/SecEdit/GptTmpl.inf. Canonical integers and explicit Booleans yield stored-snapshot match, difference or blocker. Effective account-policy precedence and client RSoP are not proven.
+- GPP Registry: selected GPO/scope Registry.xml on pinned DC is read on demand. Complete, bounded and unique UID/order/action/hive/key/value name/type/targeting-filter presence are compared against cached GPMC metadata. **GPP value data, filters' predicates, client GPP execution and live registry values remain NOT VERIFIED.** Neither value nor targeting content is retained in this source-verification snapshot.
+- Nonstandard nested GPP Collections, duplicate UIDs, wrong GPO/domain/DC, partial reads, missing sources, DTD XML and unsupported formats fail closed. Native MMC scans remain manual per selected GPO.
+
+
 ## Why this matters
 
 GPMC XML includes both actual configured policies and *metadata* (permissions, certificate details, task/service attributes, GPP preferences, and package details). Those XML nodes do **not** all live under **Security Settings** or **Registry**. The older generic fallback routed unfamiliar extensions to the Security Settings root, which looked like a successful open but did not identify the actual setting.

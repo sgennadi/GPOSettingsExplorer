@@ -109,7 +109,7 @@ jobs:
         run: |
           [xml]$project = Get-Content -LiteralPath 'src/GPOSettingsExplorer/GPOSettingsExplorer.csproj'
           $projectVersion = [string]$project.Project.PropertyGroup.Version
-          if ($projectVersion -ne '2.1.0-preview.10') {
+          if ($projectVersion -ne '2.1.0-preview.11') {
             throw "Unexpected preview version: $projectVersion"
           }
           foreach ($runtime in @('win-x64', 'win-arm64')) {
@@ -118,7 +118,7 @@ jobs:
             if ($info.FileVersion -ne '2.1.0.0') {
               throw "Wrong $runtime FileVersion: $($info.FileVersion)"
             }
-            if (!$info.ProductVersion.StartsWith('2.1.0-preview.10', [StringComparison]::OrdinalIgnoreCase)) {
+            if (!$info.ProductVersion.StartsWith('2.1.0-preview.11', [StringComparison]::OrdinalIgnoreCase)) {
               throw "Wrong $runtime ProductVersion: $($info.ProductVersion)"
             }
             Write-Host "$runtime : FileVersion=$($info.FileVersion); ProductVersion=$($info.ProductVersion)"
@@ -130,7 +130,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = 'v2.1.0-preview.10'
+          $tag = 'v2.1.0-preview.11'
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) {
             $existingTarget = gh release view $tag --json targetCommitish --jq '.targetCommitish'
@@ -141,11 +141,13 @@ jobs:
             exit 0
           }
           $notes = @'
-          TEST PREVIEW - GPO Settings Explorer 2.1.0 Preview 10.
+          TEST PREVIEW - GPO Settings Explorer 2.1.0 Preview 11.
 
           Includes the Discovery & Verification interface, explicit unit reviews, and prior Preview 6 MMC crash safeguards. Preview 7 adds an explicit per-GPO, read-only Kerberos GptTmpl.inf security source check in Exact MMC Paths. It compares one typed GPMC Account value with one complete, SHA-256-bound SecEdit [Kerberos Policy] record on the pinned DC. Preview 8 adds an explicit, cancellable Verify stored Kerberos source action in individual GPMC setting value windows. It only reads the selected pinned-DC GptTmpl.inf and shares its snapshot with Exact MMC Paths. Stored agreement is not native MMC or client RSoP. Preview 10 adds a typed, scope-specific, on-demand SRP Registry.pol ItemData path and Safer security level comparison in Exact MMC Paths. It requires one GPO, same pinned DC, full source SHA-256 and unique GPMC/SRP GUID path identity. Only saved path and level are compared; enforcement, other flags and effective RSoP remain unverified. No all-GPO MMC scan or policy write is initiated. Other SRP rule families remain unsupported.
 
           Preview 10 adds typed GPMC Group Policy Preferences Registry item indexing and searchable source report details (Action/Hive/Key path/Value name). It separates GPP from Registry.pol, does not index raw value data, and classifies Software Installation Applicability as source metadata rather than a standalone setting. No GPO changes, local Regedit, bulk MMC scans, or effective client RSoP claims.
+
+          Preview 11 adds typed, pinned-DC GptTmpl.inf [System Access] stored-source number/boolean comparisons for known Password Policy and Account Lockout records. It also adds a redacted, bounded, one-GPO/scope GPP Registry.xml source metadata check: UID, order, action, hive, registry key, value name, type and targeting-filter presence, with file SHA-256. GPP VALUE DATA and item-level targeting decisions are deliberately not compared, captured into indexed text or presented as verified. Unknown/duplicate UID, unsupported layouts, changed files, wrong DC, missing/partial sources and malformed XML are blocked. Never claim MMC, client RSoP, effective account precedence or native policy writes.
 
           Full MMC inventory must be started manually for one selected GPO and may still encounter vendor or OS snap-in defects. Review skipped/partial coverage and test on a nonproduction DC first.
 
@@ -153,7 +155,7 @@ jobs:
 
           Download the win-x64 ZIP for Intel/AMD Windows or win-arm64 for Windows ARM64, unzip it, and run GPOSettingsExplorer.exe.
           '@
-          gh release create $tag 'artifacts/GPOSettingsExplorer-win-x64-portable.zip' 'artifacts/GPOSettingsExplorer-win-arm64-portable.zip' --target $env:GITHUB_SHA --title 'GPO Settings Explorer v2.1.0 Preview 10' --prerelease --notes $notes
+          gh release create $tag 'artifacts/GPOSettingsExplorer-win-x64-portable.zip' 'artifacts/GPOSettingsExplorer-win-arm64-portable.zip' --target $env:GITHUB_SHA --title 'GPO Settings Explorer v2.1.0 Preview 11' --prerelease --notes $notes
           if ($LASTEXITCODE -ne 0) {
             throw "Creating or uploading GitHub 2.1 preview release failed."
           }

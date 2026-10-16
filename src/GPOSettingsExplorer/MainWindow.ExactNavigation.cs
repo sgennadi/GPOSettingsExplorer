@@ -139,16 +139,19 @@ public partial class MainWindow
     private bool _kerberosSourceBusy;
     private RealSettingsScanResult? _srpSourceSnapshot;
     private bool _srpSourceBusy;
+    private GpoGppRegistrySourceEvidenceService.Snapshot? _gppRegistrySourceSnapshot;
+    private bool _gppRegistrySourceBusy;
 
     /// <summary>
     /// Explicit one-GPO, one-source read only. This never walks the domain or
     /// launches MMC and is distinct from the GPMC index / exact-row status.
     /// </summary>
-    private async Task<bool> CheckKerberosSourceAsync(
+    private async Task<bool> CheckSecurityTemplateSourceAsync(
         PolicySettingInfo setting, Window dialogOwner, IProgress<string>? progress)
     {
         if (_kerberosSourceBusy || _domainContext is null ||
-            !KerberosPolicyMetadataService.IsKnownKerberosSetting(setting))
+            !(KerberosPolicyMetadataService.IsKnownKerberosSetting(setting) ||
+              GpoKnownAccountPolicyService.TryDescribe(setting, out _)))
             return false;
         var gpo = _gpos.FirstOrDefault(item => item.Id == setting.GpoId);
         var domain = _domainContext.DomainName;
@@ -175,15 +178,15 @@ public partial class MainWindow
                     "Connection changed during the source check. Snapshot discarded.");
 
             _kerberosSourceSnapshot = captured;
-            progress?.Report("GptTmpl.inf capture finished. " +
-                "The exact Kerberos keys and SHA-256 will be compared against typed " +
-                "GPMC records in the coverage grid. Stored snapshots are NOT live client RSoP.");
+            progress?.Report("GptTmpl.inf capture finished. Typed Kerberos or [System Access] " +
+                "values can now be compared against exact SHA-256-bound GPMC records. " +
+                "Stored agreement is NOT native MMC or effective client RSoP.");
             return true;
         }
         catch (Exception ex)
         {
             CrashLogService.Write("Kerberos pinned security source", ex);
-            progress?.Report("Kerberos source read failed: " + ex.Message);
+            progress?.Report("Security template source read failed: " + ex.Message);
             return false;
         }
         finally
@@ -250,11 +253,74 @@ public partial class MainWindow
         }
     }
 
+    /// <summary>
+    /// One selected GPP Registry.xml only, parsed into metadata without
+    /// storing the original value=, filter payload or private attributes.
+    /// This is not a client-registry read or an effective GPP CSE check.
+    /// </summary>
+    private async Task<bool> CheckGppRegistrySourceAsync(
+        PolicySettingInfo setting, Window dialogOwner, IProgress<string>? progress)
+    {
+        if (_gppRegistrySourceBusy || _domainContext is null ||
+            !setting.Extension.Equals("GppRegistry", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        var gpo = _gpos.FirstOrDefault(item => item.Id == setting.GpoId);
+        var domain = _domainContext.DomainName;
+        var dc = DomainConnectionState.GetServerFor(domain);
+        if (gpo is null || string.IsNullOrWhiteSpace(dc) ||
+            !gpo.DomainName.Equals(domain, StringComparison.OrdinalIgnoreCase))
+        {
+            progress?.Report("A same-GPO connected domain and pinned DC are required.");
+            return false;
+        }
+
+        _gppRegistrySourceBusy = true;
+        try
+        {
+            progress?.Report("Reading only " + setting.Scope + " Preferences/Registry/Registry.xml " +
+                "on pinned DC (no raw value data retained, no GPO writes)...");
+            var captured = await Task.Run(() =>
+                GpoGppRegistrySourceEvidenceService.Capture(gpo, setting.Scope));
+
+            if (_domainContext is null ||
+                !captured.Domain.Equals(domain, StringComparison.OrdinalIgnoreCase) ||
+                !captured.DomainController.Equals(dc, StringComparison.OrdinalIgnoreCase) ||
+                captured.GpoId != gpo.Id ||
+                !DomainConnectionState.GetServerFor(_domainContext.DomainName)
+                    .Equals(dc, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException(
+                    "Connection changed during GPP source capture; snapshot discarded.");
+
+            // Keep one per-scope snapshot only. Previous GPO/scope mismatches
+            // remain blocked until the corresponding source is reread.
+            _gppRegistrySourceSnapshot = captured;
+            progress?.Report(captured.Status == "Read"
+                ? "Pinned GPP Registry.xml metadata captured with SHA-256. " +
+                  "Stored value data and client registry/RSoP were NOT compared."
+                : "GPP Registry.xml was not captured completely (" + captured.Status +
+                  "). No verified GPP metadata match is possible.");
+            return captured.Status == "Read";
+        }
+        catch (Exception ex)
+        {
+            CrashLogService.Write("Pinned GPP Registry.xml source", ex);
+            progress?.Report("GPP Registry source capture blocked: " + ex.Message);
+            return false;
+        }
+        finally
+        {
+            _gppRegistrySourceBusy = false;
+        }
+    }
+
     private Task<bool> CheckSupportedStoredSourceAsync(
         PolicySettingInfo setting, Window dialogOwner, IProgress<string> progress) =>
-        SoftwareRestrictionMmcRouteService.IsPathRule(setting)
-            ? CheckSrpSourceAsync(setting, dialogOwner, progress)
-            : CheckKerberosSourceAsync(setting, dialogOwner, progress);
+        setting.Extension.Equals("GppRegistry", StringComparison.OrdinalIgnoreCase)
+            ? CheckGppRegistrySourceAsync(setting, dialogOwner, progress)
+            : SoftwareRestrictionMmcRouteService.IsPathRule(setting)
+                ? CheckSrpSourceAsync(setting, dialogOwner, progress)
+                : CheckSecurityTemplateSourceAsync(setting, dialogOwner, progress);
 
     private async void OpenExactPaths_Click(object sender, RoutedEventArgs e)
     {
@@ -347,6 +413,9 @@ public partial class MainWindow
 
             var isSrp = SoftwareRestrictionMmcRouteService.IsPathRule(setting);
             var isKerberos = KerberosPolicyMetadataService.IsKnownKerberosSetting(setting);
+            var isAccount = GpoKnownAccountPolicyService.TryDescribe(setting, out _);
+            var isGppRegistry = setting.Extension.Equals(
+                "GppRegistry", StringComparison.OrdinalIgnoreCase);
             var scopeFolder = setting.Scope.Equals("User", StringComparison.OrdinalIgnoreCase)
                 ? "User" : "Machine";
 
@@ -359,7 +428,7 @@ public partial class MainWindow
                     ? file.SourceFile.Replace('/', '\\').EndsWith(
                         "\\" + scopeFolder + "\\Registry.pol",
                         StringComparison.OrdinalIgnoreCase)
-                    : isKerberos &&
+                    : (isKerberos || isAccount) &&
                       file.SourceFile.Replace('/', '\\').EndsWith(
                           "\\SecEdit\\GptTmpl.inf",
                           StringComparison.OrdinalIgnoreCase)));
@@ -379,6 +448,21 @@ public partial class MainWindow
                     setting, byGpo[setting.GpoId], storedSource, domain, dc);
                 sourceStatus = kerberos.Status;
                 sourceExplanation = kerberos.Explanation;
+            }
+            else if (isAccount)
+            {
+                var account = GpoAccountStoredSourceEvidenceService.Compare(
+                    setting, byGpo[setting.GpoId], storedSource, domain, dc);
+                sourceStatus = account.Status;
+                sourceExplanation = account.Explanation;
+            }
+            else if (isGppRegistry)
+            {
+                var gpp = GpoGppRegistrySourceEvidenceService.Compare(
+                    setting, byGpo[setting.GpoId],
+                    _gppRegistrySourceSnapshot, domain, dc);
+                sourceStatus = gpp.Status;
+                sourceExplanation = gpp.Explanation;
             }
 
             result.Add(new GpoExactPathsWindow.RouteRow(setting,

@@ -19,9 +19,11 @@ public sealed class PolicySettingInfo
     public string GppRegistryKeyPath { get; init; } = string.Empty;
     public string GppRegistryValueName { get; init; } = string.Empty;
     public string GppRegistryAction { get; init; } = string.Empty;
+    public string GppRegistryValueType { get; init; } = string.Empty;
+    public bool GppRegistryHasFilters { get; init; }
     public string GppRegistryUid { get; init; } = string.Empty;
     public int GppRegistryOrder { get; init; }
 
     public string SearchText =>
-        $"{GpoName} {Scope} {Extension} {Category} {SettingName} {State} {Value} {RegistryKey} {RegistryValue} {GppRegistryHive} {GppRegistryKeyPath} {GppRegistryValueName} {GppRegistryAction} {GppRegistryUid} {GppRegistryOrder}";
+        $"{GpoName} {Scope} {Extension} {Category} {SettingName} {State} {Value} {RegistryKey} {RegistryValue} {GppRegistryHive} {GppRegistryKeyPath} {GppRegistryValueName} {GppRegistryAction} {GppRegistryValueType} {GppRegistryUid} {GppRegistryOrder}";
 }

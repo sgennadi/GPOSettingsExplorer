@@ -1,5 +1,12 @@
 # Discovery evidence (2.1 development)
 
+## Preview 11: typed Password/Lockout and GPP Registry source checks
+
+Open **Exact MMC Paths**, select a typed **Password Policy** or **Account Lockout** GPMC setting and choose **Check Password/Lockout GptTmpl.inf...**. It reads one GPO's GptTmpl.inf from pinned DC and compares exact [System Access] numbers/booleans with canonical typed GPMC values. A stored match/difference is separate from native MMC route, effective domain account policy and client RSoP.
+
+For a GPMC **GPP Registry** item choose **Check GPP Registry.xml metadata...**. Read only that GPO's Computer or User Registry.xml from pinned DC; compare UID, order, action, hive, key, name, type and targeting-filter presence. Missing/partial/unknown XML remains blocked. Raw value/password/filter details are not retained: **GPP_STORED_METADATA_MATCH is NOT a value check**, GPP client execution or live client registry verification.
+
+
 This feature is read-only and does not change Group Policy or SYSVOL. Optional startup **GPMC indexing** uses a per-user preference and the incremental cache; it does not start the native MMC editor for all GPOs. MMC observations, source values and RSoP have distinct statuses; no bulk scanner can truthfully set every Windows policy to VERIFIED without type-specific evidence.
 
 ## Preview 9: SRP stored source path and level comparison
