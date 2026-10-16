@@ -203,7 +203,17 @@ public sealed class GpoExactPathsWindow : Window
             {
                 Header = caption, Binding = new Binding(binding),
                 IsReadOnly = true,
-                Width = new DataGridLength(weight, DataGridLengthUnitType.Star)
+                MinWidth = caption == "Scope" ? 75 : 130,
+                Width = new DataGridLength(weight, DataGridLengthUnitType.Star),
+                ElementStyle = new Style(typeof(TextBlock))
+                {
+                    Setters =
+                    {
+                        new Setter(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis),
+                        new Setter(TextBlock.TextWrappingProperty, TextWrapping.NoWrap),
+                        new Setter(FrameworkElement.ToolTipProperty, new Binding(binding))
+                    }
+                }
             });
         }
         Column("GPO", nameof(RouteRow.Gpo), 1.45);
