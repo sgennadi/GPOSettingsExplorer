@@ -6159,4 +6159,48 @@ static void TestSourcePathPresentation()
         RegistryKey = @"SOFTWARE\Confusing"
     }).ReportedTarget == "(no verified registry target)",
         "Unsupported GPMC extensions must not infer a path from arbitrary XML attributes.");
+
+    // GPMC may omit the registry Key even when a unique, same-category
+    // ADMX policy declares it. Show the declaration, not a stored-source claim.
+    var noRegistryInGpmc = new PolicySettingInfo {
+        GpoName = "Windows Update", Scope = "Computer",
+        Extension = "RegistrySettings",
+        Category = "Windows Components > Windows Update",
+        SettingName = "Select the target Feature Update version",
+        Value = confidential
+    };
+    var admx = new AdmxPolicyDefinition {
+        AdmxFile = "WindowsUpdate.admx",
+        DisplayName = noRegistryInGpmc.SettingName,
+        Scope = "Machine", Category = noRegistryInGpmc.Category,
+        Key = @"SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate",
+        ValueName = "TargetReleaseVersionInfo",
+        Elements = new[] {
+            new AdmxElementDefinition {
+                Id = "TargetProductVersion", Type = AdmxElementType.Text,
+                Key = @"SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate",
+                ValueName = "ProductVersion"
+            }
+        }
+    };
+    var declaration = GpoSourcePathPresentationService.DescribeAdmxDeclaration(
+        noRegistryInGpmc, new[] { admx });
+    Assert(declaration.Contains(@"HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate",
+               StringComparison.Ordinal) &&
+           declaration.Contains("TargetReleaseVersionInfo", StringComparison.Ordinal) &&
+           declaration.Contains("ProductVersion", StringComparison.Ordinal) &&
+           declaration.Contains("NOT stored-source verified", StringComparison.Ordinal) &&
+           !declaration.Contains(confidential, StringComparison.Ordinal),
+        "A unique ADMX declaration gives registry key paths but is not proof of saved policy values.");
+    Assert(GpoSourcePathPresentationService.DescribeAdmxDeclaration(
+        noRegistryInGpmc, new[] { admx, admx }) == string.Empty,
+        "Duplicate same-category ADMX definitions may not select a first target.");
+    Assert(GpoSourcePathPresentationService.DescribeAdmxDeclaration(
+        noRegistryInGpmc, Array.Empty<AdmxPolicyDefinition>()) == string.Empty,
+        "Missing ADMX definitions cannot be guessed from policy name.");
+    var sourceCopy = GpoSourcePathPresentationService.CopyLocationText(
+        noRegistryInGpmc, declaration);
+    Assert(sourceCopy.Contains("ADMX reference", StringComparison.Ordinal) &&
+           !sourceCopy.Contains(confidential, StringComparison.Ordinal),
+        "Copying an ADMX-declared target must not copy actual GPMC setting values.");
 }
