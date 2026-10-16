@@ -1,5 +1,15 @@
 # Discovery evidence (2.1 development)
 
+## Preview 13: merged source-first verification and safe manual navigation
+
+Preview 13 retains Preview 12's exact GPMC Registry lookup (same GPO/scope, UID, item order, action and typed hive/key/value name from a fresh report). The separate **Exact MMC Paths** window now also shows a source-file/path column and a **Copy source / registry path** action. Displayed source paths are typed hints (Registry.pol, GptTmpl.inf, audit.csv and GPP Registry.xml). Where GPMC lacks a registry target, a *uniquely matched* ADMX policy can independently declare several registry key/value targets; this is clearly labeled an **ADMX declaration**, not a verified saved value. Copied source/path metadata omits raw policy values, but can still include confidential GPO and registry identifiers.
+
+The separate **Open GPO editor (manual)** action opens exactly the selected GPO at the editor root without an MMC inventory. Click-to-open an exact native row requires previously captured, non-aborted, same-GPO/DC MMC evidence. A broad native MMC inventory is never silently invoked from one setting. The dedicated MMC Full Settings Inventory's single-GPO, operator-requested scan remains optional and can encounter OS or vendor snap-in faults.
+
+For a typed Computer `AuditSettings` System subcategory, **Check Advanced Audit audit.csv...** reads only `Machine/Microsoft/Windows NT/Audit/audit.csv` from the selected GPO on the pinned DC. It requires a unique same-GPO GPMC `PolicyTarget=System`, literal `SubcategoryGuid`, canonical `SettingValue=0..4` and a complete unique corresponding CSV `Policy Target=System` row with full-file and row SHA-256. Per-user SID targets, unknown values, missing/partial CSV, duplicated GUIDs or wrong GPO/DC cannot yield a match. These are **saved-source snapshots only**, not client auditpol, current MMC value, cross-GPO precedence, replication or effective RSoP.
+
+For safe testing, run Preview13 on a nonproduction GPO/DC before trusting exact MMC row navigation; no automatic policy writes are initiated by these new inspections.
+
 ## Preview 12: exact GPMC Registry preference lookup
 
 The **Setting Value** window for a typed GPP Registry item offers **Locate exact GPP item in GPMC report...**. The new read-only report must belong to the same GPO, and one item must match the Computer/User scope, UID, original order, action and full hive/key/value target. If the GPMC index is stale, refresh it; do not select the first similar name. The advanced GPMC list shows source registry key/value columns and hides Software Installation Applicability until **Show XML metadata** is enabled. See [source navigation](gpmc-exact-registry-source.md).
