@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Windows.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -54,7 +55,18 @@ public sealed class GpoExactPathsWindow : Window
         EnableRowVirtualization = true,
         HorizontalScrollBarVisibility = ScrollBarVisibility.Auto
     };
-    private readonly TextBox _search = new() { MinWidth = 250 };
+    private readonly TextBox _search = new() { MinWidth = 250,
+        ToolTip = "Search GPO, setting name, extension, source file, registry path and route status." };
+    private readonly ComboBox _scopeFilter = new()
+    {
+        Width = 125,
+        IsEditable = false,
+        ToolTip = "Filter by Computer or User scope without changing GPO settings."
+    };
+    private readonly DispatcherTimer _searchDelay = new()
+    {
+        Interval = TimeSpan.FromMilliseconds(250)
+    };
     private readonly TextBlock _summary = new()
     {
         TextWrapping = TextWrapping.Wrap,
@@ -167,16 +179,34 @@ public sealed class GpoExactPathsWindow : Window
             VerticalAlignment = VerticalAlignment.Center
         });
         controls.Children.Add(_search);
+        _scopeFilter.Items.Add("All scopes");
+        _scopeFilter.Items.Add("Computer");
+        _scopeFilter.Items.Add("User");
+        _scopeFilter.SelectedIndex = 0;
+        controls.Children.Add(_scopeFilter);
         controls.Children.Add(_refreshButton);
         controls.Children.Add(_openSelected);
         controls.Children.Add(_manualEditor);
         controls.Children.Add(_securitySource);
         controls.Children.Add(_copyLocation);
-        _search.TextChanged += (_, _) =>
+        _searchDelay.Tick += (_, _) =>
         {
+            _searchDelay.Stop();
             _view?.Refresh();
             UpdateSummary();
         };
+        _search.TextChanged += (_, _) =>
+        {
+            _searchDelay.Stop();
+            _searchDelay.Start();
+        };
+        _scopeFilter.SelectionChanged += (_, _) =>
+        {
+            _searchDelay.Stop();
+            _view?.Refresh();
+            UpdateSummary();
+        };
+        Closed += (_, _) => _searchDelay.Stop();
         _refreshButton.Click += (_, _) => RefreshRows();
         _grid.SelectionChanged += (_, _) => UpdateSelection();
         _grid.MouseDoubleClick += async (_, _) => await OpenSelectedAsync();
@@ -240,7 +270,10 @@ public sealed class GpoExactPathsWindow : Window
         _view.Filter = row => row is RouteRow route &&
             (string.IsNullOrWhiteSpace(_search.Text) ||
              route.SearchText.Contains(_search.Text.Trim(),
-                 StringComparison.CurrentCultureIgnoreCase));
+                 StringComparison.CurrentCultureIgnoreCase)) &&
+            (_scopeFilter.SelectedIndex == 0 ||
+             string.Equals(route.Scope, _scopeFilter.SelectedItem as string,
+                 StringComparison.OrdinalIgnoreCase));
         _grid.ItemsSource = _view;
         _grid.SelectedItem = rows.FirstOrDefault(row =>
             ReferenceEquals(row.Source, selected));
