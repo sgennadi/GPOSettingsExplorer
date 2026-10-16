@@ -6043,9 +6043,11 @@ static void TestGpmcExactRegistryReportLookup()
     var b = entries.Single(e => e.Scope == "Computer" && e.GppRegistryOrder == 2);
     var user = entries.Single(e => e.Scope == "User");
 
-    Assert(GpmcRegistryReportLocator.TryCreate(a, out var aReference) &&
-           GpmcRegistryReportLocator.TryCreate(b, out var bReference) &&
-           GpmcRegistryReportLocator.TryCreate(user, out var userReference),
+    var aCreated = GpmcRegistryReportLocator.TryCreate(a, out var aReference);
+    var bCreated = GpmcRegistryReportLocator.TryCreate(b, out var bReference);
+    var userCreated = GpmcRegistryReportLocator.TryCreate(
+        user, out var userReference);
+    Assert(aCreated && bCreated && userCreated,
         "Only typed GPP Registry rows with UID, order and full target are eligible.");
 
     var resultA = GpmcRegistryReportLocator.Locate(report, aReference);
