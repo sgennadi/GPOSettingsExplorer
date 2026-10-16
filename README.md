@@ -16,6 +16,10 @@ Download the latest portable build from:
 
 Current stable release: **v2.0.3**.
 
+**Test Preview 12 (not production-validated):** [v2.1.0-preview.12 downloads](https://github.com/sgennadi/GPOSettingsExplorer/releases/tag/v2.1.0-preview.12), with x64 and ARM64 portable ZIPs after Windows CI publishes the prerelease. This version adds a no-scan manual GPO editor action, searchable GPMC-reported source/registry paths, value-free location copying and a pinned single-GPO read-only Advanced Audit System `audit.csv` check. See PR #66 and [operator guide](docs/discovery-evidence-preview.md).
+
+
+
 **New in Preview 11:** **Exact MMC Paths → Check selected stored source...** now supports **Password Policy / Account Lockout** (typed GPMC numbers/booleans versus unique pinned GptTmpl.inf [System Access]) and **GPP Registry** (pinned Registry.xml metadata, including UID/order/action/hive/key/value name/type/targeting-filter presence). Each selected GPO/scope read is opt-in, bounded, SHA-256-bound and read-only. GPP raw value data is never included in the source-check report or persistent GPMC index. **GPP_METADATA_MATCH does not mean value verification.** Neither comparison is effective client RSoP or domain account-policy precedence.
 
 **New in Preview 10:** The **All Settings** GPMC index identifies structured **GPP Registry** preferences separately from Registry.pol and shows `Action`, `Hive`, `Key path`, and `Value name`. Package `Applicability`/Trustee XML metadata is hidden from the primary configured view by default (use **Show XML details** to inspect it). From a Setting Value window select **View GPMC Settings report...** to see the correct GPO's own source tree; the report is searchable and supports **Copy registry target** for an exact typed GPP item. The cached GPMC index schema is updated, so the first refresh can reindex GPOs; raw preference value data is not added to search results. All these are stored GPO-source facts, not proof of local registry state, effective client RSoP or verified MMC row activation.
