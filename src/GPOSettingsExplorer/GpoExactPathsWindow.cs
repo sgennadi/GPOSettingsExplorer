@@ -18,14 +18,17 @@ public sealed class GpoExactPathsWindow : Window
         PolicySettingInfo Source,
         string Gpo, string Scope, string Extension, string Setting,
         string SectionHint, string Status, string ObservedExactPath,
-        string Reason, string SourceStatus = "", string SourceExplanation = "")
+        string Reason, string SourceStatus = "", string SourceExplanation = "",
+        string AdmxDeclaration = "")
     {
         public string SourcePathLabel
         {
             get
             {
                 var source = GpoSourcePathPresentationService.Describe(Source);
-                return source.GpoRelativeFile + " | " + source.ReportedTarget;
+                return source.GpoRelativeFile + " | " + source.ReportedTarget +
+                    (string.IsNullOrWhiteSpace(AdmxDeclaration)
+                        ? "" : " | " + AdmxDeclaration);
             }
         }
 
@@ -33,7 +36,8 @@ public sealed class GpoExactPathsWindow : Window
         {
             Gpo, Scope, Extension, Setting, SectionHint,
             Status, ObservedExactPath, Reason, SourceStatus, SourceExplanation,
-            GpoSourcePathPresentationService.Describe(Source).SearchText
+            GpoSourcePathPresentationService.Describe(Source).SearchText,
+            AdmxDeclaration
         });
     }
 
@@ -304,6 +308,8 @@ public sealed class GpoExactPathsWindow : Window
               "\nGPMC source: " + GpoSourcePathPresentationService.Describe(row.Source).Family +
               "\nGPO-relative file: " + GpoSourcePathPresentationService.Describe(row.Source).GpoRelativeFile +
               "\nGPMC target: " + GpoSourcePathPresentationService.Describe(row.Source).ReportedTarget +
+              "\nADMX target: " + (string.IsNullOrWhiteSpace(row.AdmxDeclaration)
+                  ? "(not uniquely resolved)" : row.AdmxDeclaration) +
               "\nLimits: " + GpoSourcePathPresentationService.Describe(row.Source).Limitations +
               (string.IsNullOrWhiteSpace(row.ObservedExactPath)
                   ? "" : "\nObserved: " + row.ObservedExactPath) +
@@ -386,7 +392,7 @@ public sealed class GpoExactPathsWindow : Window
             return;
         try
         {
-            Clipboard.SetText(GpoSourcePathPresentationService.CopyLocationText(row.Source));
+            Clipboard.SetText(GpoSourcePathPresentationService.CopyLocationText(row.Source, row.AdmxDeclaration));
             _detail.Text = "Copied reported GPO source/target metadata without raw setting " +
                 "values. The clipboard may contain confidential GPO names and paths.";
         }
