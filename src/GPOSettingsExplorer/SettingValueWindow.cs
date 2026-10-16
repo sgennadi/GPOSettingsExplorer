@@ -638,10 +638,13 @@ public sealed class SettingValueWindow : Window
             {
                 Text = "GPMC Applicability is package metadata, not a Registry key. " +
                     "The parent package identity is not present in this flattened entry. " +
-                    "Use the GPO report to identify the exact package under Computer/User " +
-                    "Configuration > Policies > Software Settings > Software installation. " +
+                    "Use View / open section > GPMC report tree to inspect the parent " +
+                    "software deployment package and its XML properties. " +
                     "Its applicability flags cannot be opened as an independent policy dialog. " +
-                    "The source report does not establish any registry path.",
+                    "This is not a Registry.pol or GPP Registry item and has no registry path. " +
+                    "GPMC's Settings report can show Registry hive/key/value details for a " +
+                    "DIFFERENT GPP Registry preference in the same GPO; those values must " +
+                    "be read from that Registry item's Properties, not inferred here.",
                 Foreground = UiStyle.WarningBrush,
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(4, 8, 4, 4)
