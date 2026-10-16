@@ -78,20 +78,52 @@ public partial class MainWindow
                     !technical && _gpoEditorNavigatorService.CanNavigateExactly(
                         setting);
 
-                var valueWindow =
-                    new SettingValueWindow(
+                // Explicit opt-in per row. The comparison reads only the
+                // selected pinned-DC GptTmpl.inf when its button is clicked;
+                // startup/index navigation never triggers a security scan.
+                Func<IProgress<string>, CancellationToken,
+                    Task<GpoKerberosStoredSourceEvidenceService.Result>>?
+                    kerberosSourceVerifier =
+                    !technical && KerberosPolicyMetadataService.IsKnownKerberosSetting(setting)
+                        ? (progress, token) => VerifyKerberosStoredSourceAsync(
+                            gpo, setting, progress, token)
+                        : null;
+
+                SettingValueWindow? valueWindow = null;
+                valueWindow = new SettingValueWindow(
+                    gpo,
+                    setting,
+                    canEditBoolean,
+                    exactNavigationAvailable,
+                    progress => _gpoEditorNavigatorService.OpenAtSettingAsync(
                         gpo,
+                        _domainContext.DomainDistinguishedName,
                         setting,
-                        canEditBoolean,
-                        exactNavigationAvailable,
-                        progress => _gpoEditorNavigatorService.OpenAtSettingAsync(
-                            gpo,
-                            _domainContext.DomainDistinguishedName,
-                            setting,
-                            progress))
+                        progress),
+                    progress => DiscoverAndOpenExactMmcRouteAsync(
+                        gpo, setting, (Window?)valueWindow ?? this, progress),
+                    verifyStoredKerberos: kerberosSourceVerifier,
+                    openGpmcReport: () => OpenGpoSettingsReportForGpoAsync(
+                        gpo, (Window?)valueWindow ?? this, setting.SettingName,
+                        setting),
+                    openManualGpoEditor: () =>
                     {
-                        Owner = this
-                    };
+                        var context = DomainConnectionState.Context;
+                        if (_domainContext is null || context is null ||
+                            !_gpos.Any(item => item.Id == gpo.Id) ||
+                            !gpo.DomainName.Equals(_domainContext.DomainName,
+                                StringComparison.OrdinalIgnoreCase) ||
+                            !context.DomainName.Equals(gpo.DomainName,
+                                StringComparison.OrdinalIgnoreCase) ||
+                            !context.ConnectedServer.Equals(_domainContext.ConnectedServer,
+                                StringComparison.OrdinalIgnoreCase))
+                            throw new InvalidOperationException(
+                                "GPO/domain/pinned DC changed; reconnect before opening MMC.");
+                        _gpmService.OpenEditor(gpo, _domainContext.DomainDistinguishedName);
+                    })
+                {
+                    Owner = this
+                };
 
                 if (valueWindow.ShowDialog() == true &&
                     canEditBoolean &&

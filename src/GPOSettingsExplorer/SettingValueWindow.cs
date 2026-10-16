@@ -19,7 +19,14 @@ public sealed class SettingValueWindow : Window
         PolicySettingInfo setting,
         bool canEditBoolean,
         bool exactNavigationAvailable,
-        Func<IProgress<string>, Task<bool>> openExactGpoEditor)
+        Func<IProgress<string>, Task<bool>> openExactGpoEditor,
+        Func<IProgress<string>, Task<bool>>? discoverExactMmcRoute = null,
+        Action? cancelExactDiscovery = null,
+        Func<IProgress<string>, CancellationToken,
+            Task<GpoKerberosStoredSourceEvidenceService.Result>>?
+            verifyStoredKerberos = null,
+        Func<Task>? openGpmcReport = null,
+        Action? openManualGpoEditor = null)
     {
         Title =
             $"Setting Value - {setting.SettingName}";
@@ -38,6 +45,8 @@ public sealed class SettingValueWindow : Window
 
         WindowStartupLocation =
             WindowStartupLocation.CenterOwner;
+
+        UiStyle.ApplyWindowDefaults(this);
 
         var root =
             new DockPanel
@@ -73,7 +82,8 @@ public sealed class SettingValueWindow : Window
             {
                 Text =
                     exactNavigationAvailable
-                        ? $"Exact MMC target: {verifiedSectionPath}"
+                        ? $"Known MMC section: {verifiedSectionPath}. " +
+                          "A unique native row must be observed when opening Properties."
                         : !hasVerifiedSection
                             ? "No verified MMC section is mapped for this GPMC source. " +
                               "The full GPO editor can be opened for manual inspection."
@@ -152,7 +162,8 @@ public sealed class SettingValueWindow : Window
                 {
                     navigationStatus.Foreground = UiStyle.SuccessBrush;
                     navigationStatus.Text =
-                        "Verified exact policy opened in MMC. This value window remains available.";
+                        "A unique MMC policy row was selected and its Properties were requested. " +
+                        "Check whether the native MMC dialog appeared; no GPO change was made.";
                     return;
                 }
 
@@ -176,7 +187,11 @@ public sealed class SettingValueWindow : Window
                         "RegistrySettings",
                         StringComparison.OrdinalIgnoreCase)
                         ? "A raw registry.pol entry cannot be opened as a Group Policy Preferences item. The corresponding ADMX definition may be missing. The value remains visible in this window."
-                        : "The GPO editor opened the correct Security Options category, but the requested policy name could not be verified in MMC. No unrelated policy was opened. If the list cannot be inspected, try launching this program and MMC at the same elevation. The diagnostic log is stored in %LOCALAPPDATA%\\GPOSettingsExplorer\\Logs.",
+                        : "The expected MMC section was opened, but a unique exact native row could not be confirmed or activated. " +
+                          "For Kerberos, the typed GPMC Account name must match the native policy label; " +
+                          "for an SRP Path Rule, the exact Path value must match exactly one Additional Rules row. " +
+                          "No substitute row was selected. Check permissions, snap-in availability and the navigation log in " +
+                          "%LOCALAPPDATA%\\GPOSettingsExplorer\\Logs.",
                     "GPO Editor Navigation",
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
@@ -207,6 +222,260 @@ public sealed class SettingValueWindow : Window
 
         footer.Children.Add(open);
 
+
+
+        // Manual GPO editor: no implicit native MMC inventory or row guess.
+        if (openManualGpoEditor is not null)
+        {
+            var manual = new Button
+            {
+                Content = "Open GPO editor (manual)",
+                ToolTip = "Launch selected GPO at its root without scanning native MMC. " +
+                    "Manual changes in MMC may modify this domain GPO."
+            };
+            manual.Click += (_, _) =>
+            {
+                try
+                {
+                    openManualGpoEditor();
+                    navigationStatus.Foreground = UiStyle.WarningBrush;
+                    navigationStatus.Text =
+                        "Native GPO editor opened at its root. Select a policy manually. " +
+                        "Exact row, stored source value and effective client RSoP are NOT verified.";
+                }
+                catch (Exception ex)
+                {
+                    navigationStatus.Foreground = UiStyle.ErrorBrush;
+                    navigationStatus.Text = "Manual GPO editor failed: " + ex.Message;
+                    CrashLogService.Write("Manual GPO editor from Setting Value", ex);
+                }
+            };
+            footer.Children.Add(manual);
+        }
+
+        // One GPMC policy may recheck existing, non-aborted MMC evidence.
+        // Never start a full native MMC traversal from this small value dialog:
+        // an unrelated snap-in can crash while looking for the selected item.
+        if (discoverExactMmcRoute is not null &&
+            !SecurityXmlEntryClassifier.IsTechnicalDetail(setting))
+        {
+            var discover = new Button
+            {
+                Content = "Check captured MMC route...",
+                ToolTip = "Uses only a previously captured, non-aborted MMC snapshot " +
+                    "for this same GPO/DC. To capture, close this value window and " +
+                    "run Scan MMC (read-only) from MMC Full Settings Inventory. " +
+                    "No hidden broad snap-in scan and no RSoP inference."
+            };
+            var cancelScan = new Button
+            {
+                Content = "Cancel MMC scan",
+                IsEnabled = false,
+                ToolTip = "Cancel the current read-only native inventory of this GPO."
+            };
+            cancelScan.Click += (_, _) =>
+            {
+                cancelExactDiscovery?.Invoke();
+                navigationStatus.Text = "Cancellation requested for the current MMC scan...";
+            };
+            discover.Click += async (_, _) =>
+            {
+                discover.IsEnabled = false;
+                open.IsEnabled = false;
+                cancelScan.IsEnabled = cancelExactDiscovery is not null;
+                var original = discover.Content;
+                discover.Content = "Discovering...";
+                try
+                {
+                    navigationStatus.Foreground = UiStyle.WarningBrush;
+                    navigationStatus.Text = "Checking existing safe MMC evidence for this GPO. " +
+                        "No background native inventory will be started.";
+                    var progress = new Progress<string>(message =>
+                    {
+                        navigationStatus.Text = message;
+                        navigationStatus.Foreground = UiStyle.WarningBrush;
+                    });
+                    var succeeded = await discoverExactMmcRoute(progress);
+                    if (succeeded)
+                    {
+                        navigationStatus.Foreground = UiStyle.SuccessBrush;
+                        navigationStatus.Text =
+                            "The selected native MMC row was rechecked in a fresh editor. " +
+                            "Inspect its Properties window. This does NOT verify the stored " +
+                            "policy value or effective RSoP.";
+                    }
+                    else
+                    {
+                        navigationStatus.Foreground = UiStyle.WarningBrush;
+                        navigationStatus.Text =
+                            "No uniquely verified MMC row was opened. See the MMC Inventory " +
+                            "coverage / skipped sections for the exact reason. " +
+                            "No substitute row or GPO value was changed.";
+                    }
+                }
+                catch (Exception ex)
+                {
+                    navigationStatus.Foreground = UiStyle.ErrorBrush;
+                    navigationStatus.Text = "Exact-path discovery failed: " + ex.Message;
+                    CrashLogService.Write("Exact MMC route discovery", ex);
+                }
+                finally
+                {
+                    if (IsLoaded)
+                    {
+                        discover.IsEnabled = true;
+                        discover.Content = original;
+                        open.IsEnabled = true;
+                        cancelScan.IsEnabled = false;
+                    }
+                }
+            };
+            footer.Children.Add(discover);
+            if (cancelExactDiscovery is not null)
+                footer.Children.Add(cancelScan);
+        }
+
+        // On-demand, read-only typed Kerberos source verification. This is
+        // intentionally distinct from exact MMC navigation: agreement of
+        // two stored snapshots must never be labeled as applied client RSoP,
+        // a verified native MMC value, or an authorized policy change.
+        TextBlock? kerberosSourceStatus = null;
+        if (verifyStoredKerberos is not null)
+        {
+            var verifier = verifyStoredKerberos;
+            kerberosSourceStatus = new TextBlock
+            {
+                Text = "Stored Kerberos source: NOT CHECKED. " +
+                    "Click Verify to read only this GPO's pinned-DC GptTmpl.inf " +
+                    "and compare its typed value with the cached GPMC report.",
+                Foreground = UiStyle.WarningBrush,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(4, 8, 4, 8)
+            };
+            var sourceStatus = kerberosSourceStatus;
+            var verifyButton = new Button
+            {
+                Content = "Verify stored Kerberos source...",
+                ToolTip = "On demand: read-only, single-GPO, pinned-DC SecEdit " +
+                    "GptTmpl.inf SHA-256 comparison. Does not start MMC, " +
+                    "write a GPO or establish effective RSoP."
+            };
+            var cancelVerify = new Button
+            {
+                Content = "Cancel source check",
+                IsEnabled = false
+            };
+            CancellationTokenSource? activeRead = null;
+            Closed += (_, _) => activeRead?.Cancel();
+            cancelVerify.Click += (_, _) =>
+            {
+                activeRead?.Cancel();
+                if (IsLoaded)
+                    sourceStatus.Text = "Cancelling the security-template source read...";
+            };
+            verifyButton.Click += async (_, _) =>
+            {
+                if (activeRead is not null)
+                    return;
+                var operation = new CancellationTokenSource();
+                activeRead = operation;
+                var reading = true;
+                verifyButton.IsEnabled = false;
+                cancelVerify.IsEnabled = true;
+                open.IsEnabled = false;
+                sourceStatus.Foreground = UiStyle.WarningBrush;
+                sourceStatus.Text = "Reading pinned Kerberos security-template source (read-only)...";
+                try
+                {
+                    var progress = new Progress<string>(message =>
+                    {
+                        if (IsLoaded && reading)
+                            sourceStatus.Text = message;
+                    });
+                    var result = await verifier(progress, operation.Token);
+                    reading = false;
+                    if (!IsLoaded)
+                        return;
+                    sourceStatus.Foreground =
+                        result.Status == GpoKerberosStoredSourceEvidenceService.Match
+                            ? UiStyle.SuccessBrush : UiStyle.WarningBrush;
+                    var literals = result.IsCompared
+                        ? " Cached GPMC literal: " + result.GpmcLiteral +
+                          "; pinned GptTmpl.inf literal: " + result.InfLiteral + "."
+                        : string.Empty;
+                    sourceStatus.Text = "Stored Kerberos source: " + result.Status +
+                        ". " + result.Explanation + literals +
+                        " This is NOT native MMC value verification or client RSoP.";
+                }
+                catch (OperationCanceledException)
+                {
+                    reading = false;
+                    if (IsLoaded)
+                    {
+                        sourceStatus.Foreground = UiStyle.WarningBrush;
+                        sourceStatus.Text =
+                            "Stored Kerberos source: CANCELED. No stored-value " +
+                            "agreement was established.";
+                    }
+                }
+                catch (Exception ex)
+                {
+                    reading = false;
+                    CrashLogService.Write("Read-only Kerberos source check", ex);
+                    if (IsLoaded)
+                    {
+                        sourceStatus.Foreground = UiStyle.ErrorBrush;
+                        sourceStatus.Text = "Stored Kerberos source: READ_FAILED. " +
+                            ex.GetType().Name + ": " + ex.Message +
+                            ". No source value was verified.";
+                    }
+                }
+                finally
+                {
+                    reading = false;
+                    if (IsLoaded)
+                    {
+                        verifyButton.IsEnabled = true;
+                        cancelVerify.IsEnabled = false;
+                        open.IsEnabled = true;
+                    }
+                    activeRead = null;
+                    operation.Dispose();
+                }
+            };
+            footer.Children.Add(verifyButton);
+            footer.Children.Add(cancelVerify);
+        }
+
+        // The official GPMC Settings view is generated from the source XML.
+        // Open the report for this setting's GPO, not the possibly unrelated
+        // GPO currently selected in the main grid.
+        if (openGpmcReport is not null)
+        {
+            var sourceReport = new Button
+            {
+                Content = GpmcRegistryReportLocator.TryCreate(setting, out _)
+                    ? "Locate exact GPP item in GPMC report..."
+                    : "View GPMC Settings report...",
+                ToolTip = "Show the source hierarchy for this exact GPO. Known Registry " +
+                    "items are located by UID/order/action/hive/key/value; " +
+                    "never guess by display name. No local registry edits."
+            };
+            sourceReport.Click += async (_, _) =>
+            {
+                sourceReport.IsEnabled = false;
+                try { await openGpmcReport(); }
+                catch (Exception ex)
+                {
+                    CrashLogService.Write("GPMC Settings report", ex);
+                    ErrorDialog.Show(this, "GPMC Settings report",
+                        "Unable to display this GPO's original report.", ex);
+                }
+                finally { if (IsLoaded) sourceReport.IsEnabled = true; }
+            };
+            footer.Children.Add(sourceReport);
+        }
+
         // A raw registry.pol entry has no guaranteed MMC row. Make its real
         // key/value easy to inspect without opening the live local registry.
         if (GpoSettingSourceProvenance.IsVerifiedRegistryTarget(setting))
@@ -226,6 +495,30 @@ public sealed class SettingValueWindow : Window
             var copyValueName = new Button { Content = "Copy value name" };
             copyValueName.Click += (_, _) => Clipboard.SetText(setting.RegistryValue);
             footer.Children.Add(copyValueName);
+        }
+
+        if (GpoSettingSourceProvenance.IsGppRegistrySource(setting))
+        {
+            var copyGppKey = new Button
+            {
+                Content = "Copy GPP registry key",
+                ToolTip = "Copy the stored preference Hive + Key path. " +
+                    "Does not read or modify local registry."
+            };
+            copyGppKey.Click += (_, _) => Clipboard.SetText(
+                setting.GppRegistryHive + "\\" + setting.GppRegistryKeyPath);
+            footer.Children.Add(copyGppKey);
+            if (!string.IsNullOrWhiteSpace(setting.GppRegistryValueName))
+            {
+                var copyGppValue = new Button
+                {
+                    Content = "Copy GPP value name",
+                    ToolTip = "Value name only; not a verified live client value."
+                };
+                copyGppValue.Click += (_, _) =>
+                    Clipboard.SetText(setting.GppRegistryValueName);
+                footer.Children.Add(copyGppValue);
+            }
         }
 
         if (canEditBoolean &&
@@ -276,6 +569,8 @@ public sealed class SettingValueWindow : Window
 
         panel.Children.Add(
             navigationStatus);
+        if (kerberosSourceStatus is not null)
+            panel.Children.Add(kerberosSourceStatus);
 
         panel.Children.Add(
             new TextBlock
@@ -306,6 +601,37 @@ public sealed class SettingValueWindow : Window
 
         panel.Children.Add(Meta("Source type",
             GpoSettingSourceProvenance.SourceType(setting)));
+        if (GpoSettingSourceProvenance.IsGppRegistrySource(setting))
+        {
+            panel.Children.Add(Meta("GPP Action", setting.GppRegistryAction));
+            panel.Children.Add(Meta("Hive", setting.GppRegistryHive));
+            panel.Children.Add(Meta("Key path", setting.GppRegistryKeyPath));
+            panel.Children.Add(Meta("Value name",
+                string.IsNullOrEmpty(setting.GppRegistryValueName)
+                    ? "(key/default item)" : setting.GppRegistryValueName));
+            panel.Children.Add(new TextBlock
+            {
+                Text = "Stored GPMC GPP Registry preference. The action describes " +
+                    "policy intent, not an already modified client registry. " +
+                    "Neither Registry.pol nor effective client RSoP has been checked.",
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = UiStyle.WarningBrush,
+                Margin = new Thickness(4, 5, 4, 6)
+            });
+        }
+        if (SoftwareRestrictionMmcRouteService.IsSoftwareRestriction(setting))
+            panel.Children.Add(new TextBlock
+            {
+                Text = "Software Restriction Policies: an exact Additional Rules " +
+                    "path confirms only native MMC row identity. To compare the " +
+                    "saved rule path and security level, open Exact MMC Paths and " +
+                    "choose Check SRP Registry.pol (read-only) for this GPO. " +
+                    "That comparison does NOT verify other SRP flags, rule precedence " +
+                    "or effective client application.",
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = UiStyle.WarningBrush,
+                Margin = new Thickness(4, 6, 4, 6)
+            });
         panel.Children.Add(Meta("MMC section",
             hasVerifiedSection ? verifiedSectionPath :
                 "UNMAPPED - full editor supports manual navigation only"));
@@ -334,6 +660,26 @@ public sealed class SettingValueWindow : Window
                     "security descriptor, or registry ACL rather than an independently " +
                     "editable setting. MMC opens only a related section. The original " +
                     "full value is preserved below for inspection.",
+                Foreground = UiStyle.WarningBrush,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(4, 8, 4, 4)
+            });
+        }
+
+        if (setting.Extension.Equals("SoftwareInstallationSettings", StringComparison.OrdinalIgnoreCase) &&
+            setting.SettingName.Equals("Applicability", StringComparison.OrdinalIgnoreCase))
+        {
+            panel.Children.Add(new TextBlock
+            {
+                Text = "GPMC Applicability is package metadata, not a Registry key. " +
+                    "The parent package identity is not present in this flattened entry. " +
+                    "Use View / open section > GPMC report tree to inspect the parent " +
+                    "software deployment package and its XML properties. " +
+                    "Its applicability flags cannot be opened as an independent policy dialog. " +
+                    "This is not a Registry.pol or GPP Registry item and has no registry path. " +
+                    "GPMC's Settings report can show Registry hive/key/value details for a " +
+                    "DIFFERENT GPP Registry preference in the same GPO; those values must " +
+                    "be read from that Registry item's Properties, not inferred here.",
                 Foreground = UiStyle.WarningBrush,
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(4, 8, 4, 4)

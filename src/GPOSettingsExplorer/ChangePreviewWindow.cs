@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using GPOSettingsExplorer.Services;
 
 namespace GPOSettingsExplorer;
@@ -28,6 +29,8 @@ public sealed class ChangePreviewWindow : Window
 
         WindowStartupLocation =
             WindowStartupLocation.CenterOwner;
+        Cursor = Cursors.Arrow;
+        UiStyle.ApplyWindowDefaults(this);
 
         var root =
             new DockPanel
@@ -100,6 +103,16 @@ public sealed class ChangePreviewWindow : Window
                 });
         }
 
+        header.Children.Add(new TextBlock
+        {
+            Text = "Review the before/after values. Cancel or close this window " +
+                "to keep the current settings unchanged. Approval is required " +
+                "before the write begins.",
+            Foreground = UiStyle.WarningBrush,
+            TextWrapping = TextWrapping.Wrap,
+            Margin = new Thickness(0, 8, 0, 2)
+        });
+
         var footer =
             new WrapPanel
             {
@@ -117,7 +130,10 @@ public sealed class ChangePreviewWindow : Window
                 Content =
                     "Cancel",
                 IsCancel =
-                    true
+                    true,
+                MinWidth = 100,
+                Padding = new Thickness(12, 7, 12, 7),
+                ToolTip = "Decline this change; no GPO/script data will be written."
             };
 
         var apply =
@@ -126,7 +142,10 @@ public sealed class ChangePreviewWindow : Window
                 Content =
                     request.ActionText,
                 IsDefault =
-                    true
+                    true,
+                MinWidth = 130,
+                Padding = new Thickness(12, 7, 12, 7),
+                ToolTip = "Confirm the displayed changes and continue the protected save."
             };
 
         apply.Click +=
@@ -138,6 +157,12 @@ public sealed class ChangePreviewWindow : Window
                 DialogResult =
                     true;
             };
+
+        cancel.Click += (_, _) =>
+        {
+            Approved = false;
+            DialogResult = false;
+        };
 
         footer.Children.Add(
             cancel);

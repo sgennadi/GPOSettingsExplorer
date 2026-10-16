@@ -8,6 +8,7 @@ var tests = new (string Name, Action Body)[]
     ("AvalonEdit BAT and PowerShell syntax definitions load", TestScriptHighlighting),
     ("PowerShell syntax parser reports malformed code without running it", TestPowerShellSyntaxDiagnostics),
     ("Script searches distinguish content and file metadata", TestScriptSearchModes),
+    ("Script search results separate unique files by GPO and preserve every hit", TestGpoScriptSearchPresentation),
     ("Identical GPO script copies resolve without implicit mass edit", TestGpoScriptCopyResolution),
     ("Public Key, NRPT and MSI metadata route to the right MMC sections", TestExtendedMmcSectionRouting),
     ("Security XML registry and restricted-group details remain read-only", TestSecurityXmlClassificationAndRoutes),
@@ -40,10 +41,17 @@ var tests = new (string Name, Action Body)[]
     ("Registry.pol binary parser preserves exact source values and flags malformed data", TestRealSettingsRegistryPol),
     ("Registry.pol known security namespaces are labeled without claiming applied CSE", TestRegistrySourceClassification),
     ("Security-template parser reports source values and invalid encodings safely", TestRealSettingsSecurityTemplate),
+    ("Typed Kerberos GPMC and pinned SecEdit snapshots fail closed on identity, hashes and duplicates", TestKerberosStoredSourceEvidence),
+    ("Password and lockout stored SecEdit values require pinned source, type and canonical literal", TestAccountStoredSourceEvidence),
+    ("Advanced Audit System source is same-GPO/DC pinned SHA256 typed GUID and canonical numeric", TestAdvancedAuditStoredSourceEvidence),
+    ("GPMC/ADMX source path hints never claim verified values or leak policy data", TestSourcePathPresentation),
+    ("GPP Registry source metadata is typed, redacted, SHA-256-bound and never value verified", TestGppRegistryPinnedSourceMetadata),
+    ("Typed SRP Path Rules require unique SHA-256-bound ItemData and security-level identity", TestSrpStoredSourceEvidence),
     ("Unified catalog never interprets source-file values as effective RSoP", TestRealSettingsUnifiedEvidence),
     ("Cross-DC GPO version evidence refuses aliases and incomplete comparisons", TestCrossDcVersionEvidence),
     ("GPP XML evidence is bounded, redacted and never interpreted as effective policy", TestGppXmlEvidence),
     ("Mandatory Security Settings preview cannot run headlessly or be disabled", TestRequiredSecurityPreviewGuard),
+    ("Preview Cancel remains a typed non-error and never authorizes a write", TestChangePreviewCancellationContract),
     ("Legacy security boolean edit rejects absent and ambiguous DWORD values", TestSafeRegistryBooleanSecurityEdit),
     ("Comprehensive evidence ZIP contains manifests, source hashes and safe CSV", TestGpoEvidenceArchive),
     ("Selective recovery requires same GPO, intact backup and supported key", TestSelectiveSecurityRecovery),
@@ -76,8 +84,17 @@ var tests = new (string Name, Action Body)[]
     ("GPMC restore never disguises a failed or missing status as success", TestGpmRestoreStatus),
     ("Semantic XML diff ignores report timestamps and finds setting changes", TestSemanticXmlDiff),
     ("Kerberos GPMC names resolve to correct Security section, not Registry", TestKerberosGpmcRouting),
+    ("SRP Path Rule routes to uniquely identified native Additional Rules entry", TestSoftwareRestrictionNavigation),
+    ("Background GPMC indexing opt-in is persisted and fails closed", TestGpoStartupIndexPreferences),
+    ("Universal exact MMC resolver requires same GPO/scope/section/native row", TestUniversalExactMmcRoutes),
     ("GPO settings report provides bounded native GPMC hierarchy", TestGpoSettingsReportTree),
-    ("Remote AI endpoints and prompts strictly exclude AD/GPO identities", TestRemoteAiBoundary)
+    ("GPMC GPP Registry exposes exact hive/key/action but not raw value data or Registry.pol proof", TestGpmcRegistryPreferenceEvidence),
+    ("Exact GPMC report jump binds GPO scope UID order action and key without trusting names", TestGpmcExactRegistryReportLookup),
+    ("Remote AI endpoints and prompts strictly exclude AD/GPO identities", TestRemoteAiBoundary),
+    ("Discovery evidence is read-only, fail-closed and spreadsheet-safe", TestDiscoveryEvidence),
+    ("Discovery unit review requires unique ADMX/ADML, MMC row, hashes and operator approval", TestDiscoveryUnitReview),
+    ("Discovery source re-read rejects stale, partial and wrong-DC Registry.pol evidence", TestDiscoverySourceFreshness),
+    ("Redacted discovery coverage shows actionable counts without leaking GPO evidence", TestDiscoveryCoverageReport)
 };
 
 var failures = new List<string>();
@@ -960,6 +977,23 @@ static void TestMmcInventorySnapinSafety()
     Assert(MmcInventorySafetyRules.ShouldSkipNode(logon, out _),
         "User logon/logoff Scripts snap-in must also be excluded.");
 
+    var userRights = new[]
+    {
+        "Example GPO", "Computer Configuration", "Policies",
+        "Windows Settings", "Security Settings", "Local Policies",
+        "User Rights Assignment"
+    };
+    Assert(MmcInventorySafetyRules.ShouldSkipNode(userRights, out var rightsReason) &&
+           rightsReason.Contains("snap-in error", StringComparison.OrdinalIgnoreCase),
+        "User Rights Assignment must be skipped BEFORE Expand/Select after the observed DC snap-in dialog.");
+    var unrelatedRights = new[]
+    {
+        "Example GPO", "Computer Configuration", "Policies",
+        "Administrative Templates", "User Rights Assignment"
+    };
+    Assert(!MmcInventorySafetyRules.ShouldSkipNode(unrelatedRights, out _),
+        "An identically named Administrative Templates node must not be excluded.");
+
     var unrelated = new[]
     {
         "Example GPO", "Computer Configuration", "Policies",
@@ -995,8 +1029,35 @@ static void TestMmcInventorySnapinSafety()
         CompletionReason = "MMC modal dialog was detected"
     };
     Assert(modalAbort.Failures == 1 && !modalAbort.IsComplete &&
-           modalAbort.Coverage.Contains("modal", StringComparison.OrdinalIgnoreCase),
-        "A modal MMC error must never be reported as a complete scan.");
+           modalAbort.Coverage.Contains("modal", StringComparison.OrdinalIgnoreCase) &&
+           !modalAbort.HasReusableRowEvidence,
+        "A modal MMC error must never be reported as complete/reusable evidence.");
+
+    var validPartiallySkipped = result with
+    {
+        Rows = new[] { new MmcInventoryEntry
+        {
+            GpoId = Guid.NewGuid(), Scope = "Computer",
+            SectionPath = "Computer Configuration > Policies > Administrative Templates",
+            SettingName = "Known explicit MMC row",
+            Navigation = "Exact MMC row candidate"
+        } }
+    };
+    Assert(!validPartiallySkipped.IsComplete && validPartiallySkipped.HasReusableRowEvidence,
+        "An unrelated deliberately skipped snap-in does not invalidate separately observed exact rows.");
+    Assert(!(validPartiallySkipped with
+        {
+            Interrupted = true,
+            CompletionReason = "Canceled during MMC modal error"
+        }).HasReusableRowEvidence,
+        "A canceled native MMC scan must not authorize exact route discovery.");
+    Assert(!(validPartiallySkipped with
+        {
+            Sections = validPartiallySkipped.Sections.Append(
+                new MmcInventorySection("User Rights Assignment", "Scan aborted", 0,
+                    "MMC exception")).ToArray()
+        }).HasReusableRowEvidence,
+        "An aborted section invalidates the whole native scan even if Interrupted flag was incorrect.");
 }
 
 static void TestMmcFullInventoryReconciliation()
@@ -1193,11 +1254,191 @@ static void TestScriptSearchModes()
             collidingContent, "bat", mode: GpoScriptSearchMode.FileNamesAndPaths);
         Assert(fileMatches.Count == 1 && fileMatches[0].FileName == "sample.bat",
             "Metadata search showed a different filename with identical script contents.");
+
+        // Live search groups identical contents by hash to avoid repeated
+        // SYSVOL decoding. The presentation MUST expand those raw rows to
+        // separate GPO/file identities, and projection must do no file I/O.
+        var identicalBody = service.SearchContent(
+            collidingContent, "hello", mode: GpoScriptSearchMode.ContentOnly);
+        var liveProjection = GpoScriptSearchPresentationService.Project(
+            identicalBody, GpoScriptSearchViewMode.UniqueFilesPerGpo);
+        Assert(liveProjection.UniqueFileCount == 2 &&
+               liveProjection.GpoCount == 2 &&
+               liveProjection.Rows.Any(row =>
+                   row.FilePath.Equals(nameMatch, StringComparison.OrdinalIgnoreCase)) &&
+               liveProjection.Rows.Any(row =>
+                   row.FilePath.Equals(otherNameSameBody, StringComparison.OrdinalIgnoreCase)),
+            "Identical bytes in separate GPO scripts must display as independent files.");
+
+        File.Delete(otherNameSameBody);
+        var cachedProjection = GpoScriptSearchPresentationService.Project(
+            identicalBody, GpoScriptSearchViewMode.EveryMatchingLine);
+        Assert(cachedProjection.UniqueFileCount == liveProjection.UniqueFileCount,
+            "Changing results layout must never reread a removed/stale SYSVOL file.");
     }
     finally
     {
         Directory.Delete(root, recursive: true);
     }
+}
+
+
+static void TestGpoScriptSearchPresentation()
+{
+    var gpoA = Guid.NewGuid();
+    var gpoB = Guid.NewGuid();
+    var pathA = @"\\dc\SYSVOL\domain\Policies\A\Machine\Scripts\startup.cmd";
+    var pathA2 = @"\\dc\SYSVOL\domain\Policies\A\User\Scripts\logon.cmd";
+    var pathB = @"\\dc\SYSVOL\domain\Policies\B\Machine\Scripts\startup.cmd";
+
+    var first = new GpoScriptInfo
+    {
+        GpoId = gpoA, GpoName = "Same visible GPO name",
+        Scope = "Computer", FileName = "startup.cmd",
+        FullPath = pathA, Exists = true, Referenced = true,
+        EventName = "Startup"
+    };
+    var repeatedAssignment = new GpoScriptInfo
+    {
+        GpoId = gpoA, GpoName = first.GpoName,
+        Scope = "Computer", FileName = "startup.cmd",
+        FullPath = pathA.ToUpperInvariant(), Exists = true,
+        Referenced = true, EventName = "Shutdown"
+    };
+    var secondFileSameGpo = new GpoScriptInfo
+    {
+        GpoId = gpoA, GpoName = first.GpoName,
+        Scope = "User", FileName = "logon.cmd",
+        FullPath = pathA2, Exists = true, Referenced = true
+    };
+    var otherGpo = new GpoScriptInfo
+    {
+        GpoId = gpoB, GpoName = first.GpoName, // identical display NAME, separate GPO ID
+        Scope = "Computer", FileName = "startup.cmd",
+        FullPath = pathB, Exists = true, Referenced = true
+    };
+    var copies = new[]
+    {
+        first, repeatedAssignment, secondFileSameGpo, otherGpo
+    };
+    // SearchContent intentionally emits ONE row per content hash/line with
+    // several physical copies. The projector must ungroup these per GPO.
+    var raw = new[]
+    {
+        new GpoScriptSearchResult
+        {
+            Scripts = copies, Identity = "same-content-sha",
+            LineNumber = 2, LineText = "echo hello",
+            MatchType = "Content"
+        },
+        new GpoScriptSearchResult
+        {
+            Scripts = copies, Identity = "same-content-sha",
+            LineNumber = 9, LineText = "echo hello again",
+            MatchType = "Content"
+        },
+        new GpoScriptSearchResult
+        {
+            Scripts = new[] { first, repeatedAssignment },
+            Identity = "metadata-first", LineNumber = 0,
+            LineText = "File name: startup.cmd", MatchType = "File name"
+        }
+    };
+
+    var unique = GpoScriptSearchPresentationService.Project(
+        raw, GpoScriptSearchViewMode.UniqueFilesPerGpo);
+    Assert(unique.UniqueFileCount == 3 && unique.GpoCount == 2 &&
+           unique.Rows.Count == 3 && unique.ContentLineCount == 6 &&
+           unique.MetadataMatchCount == 1,
+        "Unique files must be grouped by (GPO ID, physical path), not the SHA, " +
+        "file name or one of several script assignments.");
+
+    var gpoAStartups = unique.Rows.Where(item =>
+        item.GpoId == gpoA &&
+        item.FilePath.Equals(pathA, StringComparison.OrdinalIgnoreCase)).ToArray();
+    Assert(gpoAStartups.Length == 1 &&
+           gpoAStartups[0].LineNumber == 2 &&
+           gpoAStartups[0].ContentLineCount == 2 &&
+           gpoAStartups[0].MetadataMatchCount == 1 &&
+           gpoAStartups[0].Occurrences.Select(match => match.LineNumber)
+               .SequenceEqual(new[] { 2, 9, 0 }),
+        "Several matching lines and a metadata hit in one GPO file " +
+        "must produce ONE row with a full drill-down to every original line.");
+
+    Assert(unique.Rows.Count(item => item.FileName == "startup.cmd") == 2 &&
+           unique.Rows.Select(item => item.GpoHeader).Distinct().Count() == 2 &&
+           unique.Rows.Where(item => item.FileName == "startup.cmd")
+               .Select(item => item.GpoId).Distinct().Count() == 2,
+        "An identically named/content script in another GPO must remain distinct.");
+
+    var lines = GpoScriptSearchPresentationService.Project(
+        raw, GpoScriptSearchViewMode.EveryMatchingLine);
+    Assert(lines.Rows.Count == 7 &&
+           lines.UniqueFileCount == unique.UniqueFileCount &&
+           lines.ContentLineCount == unique.ContentLineCount &&
+           lines.Rows.Count(row => row.GpoId == gpoA &&
+               row.FilePath.Equals(pathA, StringComparison.OrdinalIgnoreCase)) == 3 &&
+           lines.Rows.Count(row => row.GpoId == gpoB) == 2,
+        "All-lines view must repeat each match for each physical GPO file and " +
+        "retain its own file/group identity.");
+    Assert(lines.Rows.Count(row => row.LineNumber == 0) == 1 &&
+           lines.Rows.Where(row => row.LineNumber == 9).All(row =>
+               row.Preview == "echo hello again"),
+        "Metadata and exact content line numbers must survive layout switching.");
+    Assert(lines.Rows.All(row => row.HasMatches &&
+           row.Occurrences.Count >= 2),
+        "Any displayed hit must retain the file's complete drill-down list.");
+
+    var metadataOnly = GpoScriptSearchPresentationService.Project(
+        new[]
+        {
+            new GpoScriptSearchResult
+            {
+                Scripts = new[] { first }, LineNumber = 0,
+                MatchType = "File name", LineText = "startup.cmd"
+            }
+        }, GpoScriptSearchViewMode.UniqueFilesPerGpo);
+    Assert(metadataOnly.Rows.Count == 1 &&
+           metadataOnly.Rows[0].LineNumber == 0 &&
+           metadataOnly.Rows[0].MatchesLabel == "File / path",
+        "Metadata-only search must open the actual file, without inventing a line hit.");
+
+    var noHits = GpoScriptSearchPresentationService.Project(
+        Array.Empty<GpoScriptSearchResult>(),
+        GpoScriptSearchViewMode.UniqueFilesPerGpo);
+    Assert(noHits.Rows.Count == 0 && noHits.UniqueFileCount == 0 &&
+           noHits.TotalMatches == 0,
+        "No matches must not produce stale GPO file results.");
+
+    // Even when the same physical path is reported from separate GPO IDs,
+    // the identity tuple must not silently erase an independent GPO.
+    var aliasedAcrossGpos = GpoScriptSearchPresentationService.Project(
+        new[]
+        {
+            new GpoScriptSearchResult
+            {
+                Scripts = new[]
+                {
+                    first,
+                    new GpoScriptInfo
+                    {
+                        GpoId = gpoB, GpoName = "Another GPO",
+                        FullPath = pathA, FileName = first.FileName,
+                        Exists = true
+                    }
+                },
+                LineNumber = 4,
+                MatchType = "Content",
+                LineText = "matching"
+            }
+        }, GpoScriptSearchViewMode.UniqueFilesPerGpo);
+    Assert(aliasedAcrossGpos.Rows.Count == 2 &&
+           aliasedAcrossGpos.GpoCount == 2,
+        "GPO IDs must remain part of result identity, even across alias paths.");
+
+    Assert(raw[0].Scripts.Count == 4 &&
+           raw[0].Identity == "same-content-sha",
+        "Projection must not rewrite the raw content-hash search cache.");
 }
 
 static void TestGpoScriptCopyResolution()
@@ -1391,11 +1632,10 @@ static void TestUnmappedGpmcFailClosed()
 {
     var unknown = new[]
     {
-        "ScheduledTasksSettings", "Scripts", "DriveMapSettings",
-        "PowerOptionsSettings", "WindowsFirewallSettings",
-        "FoldersSettings", "FolderRedirectionSettings",
+        "Scripts", "WindowsFirewallSettings",
+        "FolderRedirectionSettings",
         "LugsSettings", "Policy", "ThirdPartyUnknown",
-        "SoftwareRestrictionSettings", "ServiceSettings"
+        "ServiceSettings"
     };
     foreach (var extension in unknown)
     {
@@ -1410,6 +1650,24 @@ static void TestUnmappedGpmcFailClosed()
         Assert(!GpoEditorNavigatorService.HasVerifiedSection(setting) &&
                GpoEditorNavigatorService.NavigationTarget(setting).Length == 0,
             "An unhandled source must not open an unrelated Security Settings node: " +
+            extension);
+    }
+
+    // Known GPP CSEs now have documented section hints; a section hint
+    // alone must never enable exact automatic row activation.
+    foreach (var extension in new[]
+    {
+        "ScheduledTasksSettings", "PowerOptionsSettings", "FoldersSettings"
+    })
+    {
+        var gpp = new PolicySettingInfo
+        {
+            GpoId = Guid.NewGuid(), Scope = "Computer",
+            Extension = extension, SettingName = "Metadata with generic label"
+        };
+        Assert(GpoPolicySectionRoutes.Resolve(gpp).Count > 0 &&
+               !new GpoEditorNavigatorService().CanNavigateExactly(gpp),
+            "GPP folder route does not prove a unique editable native MMC item: " +
             extension);
     }
 
@@ -1624,6 +1882,165 @@ static void TestMmcNavigationRouting()
            target.Contains("Administrative Templates", StringComparison.Ordinal) &&
            !target.Contains("Preferences", StringComparison.Ordinal),
         "registry.pol was incorrectly routed to GPP Preferences.");
+}
+
+static void TestSoftwareRestrictionNavigation()
+{
+    var navigator = new GpoEditorNavigatorService();
+    var rule = new PolicySettingInfo
+    {
+        GpoId = Guid.NewGuid(), Scope = "User",
+        Extension = "SoftwareRestrictionSettings",
+        Category = "SoftwareRestrictionSettings",
+        SettingName = "Path Rule",
+        State = "Configured",
+        Value = "SecurityLevel=Disallowed; ModificationTime=2021-10-27T16:47:31Z; " +
+                @"Path=%systemdrive%\Windows\system32\dsdbutil.exe"
+    };
+    const string section = "User Configuration > Policies > Windows Settings > " +
+        "Security Settings > Software Restriction Policies > Additional Rules";
+    var pathParsed = SoftwareRestrictionMmcRouteService.TryGetPathRuleTarget(
+        rule, out var path);
+    Assert(GpoEditorNavigatorService.NavigationTarget(rule) == section &&
+           navigator.CanNavigateExactly(rule) &&
+           pathParsed &&
+           path == @"%systemdrive%\Windows\system32\dsdbutil.exe",
+        "User SRP Path Rule must route to Additional Rules and identify its exact path.");
+    Assert(SoftwareRestrictionMmcRouteService.MatchesExactPathRule(
+        rule, section, @"%SYSTEMDRIVE%\Windows\system32\dsdbutil.exe"),
+        "Native row must agree on the literal path in the complete MMC section.");
+    Assert(!SoftwareRestrictionMmcRouteService.MatchesExactPathRule(
+        rule, section, @"%systemdrive%\Windows\system32\wrong.exe") &&
+           !SoftwareRestrictionMmcRouteService.MatchesExactPathRule(
+        rule, section.Replace("User Configuration", "Computer Configuration"),
+        @"%systemdrive%\Windows\system32\dsdbutil.exe"),
+        "A different path or policy scope must remain unverified.");
+
+    var row = new MmcInventoryEntry
+    {
+        GpoId = rule.GpoId, Scope = "User", SettingName = path,
+        SectionPath = section, TreeSegments = section.Split(" > "),
+        Navigation = "Exact MMC row candidate"
+    };
+    var linked = MmcInventoryReconciliation.Reconcile(row, new[] { rule }, null);
+    Assert(linked.GpmcMatch.Contains("SRP Path Rule candidate") &&
+           linked.GpmcMatch.Contains("NOT VERIFIED") &&
+           linked.AdmxMatch.Contains("Not an ADMX policy"),
+        "Native SRP path linkage is not a security-level or effective-RSoP verification.");
+
+    var parent = new PolicySettingInfo
+    {
+        Extension = "SoftwareRestrictionSettings", Scope = "Computer",
+        Category = "SoftwareRestrictionSettings", SettingName = "Unknown setting"
+    };
+    Assert(GpoEditorNavigatorService.NavigationTarget(parent) ==
+           "Computer Configuration > Policies > Windows Settings > " +
+           "Security Settings > Software Restriction Policies" &&
+           !navigator.CanNavigateExactly(parent),
+        "Unknown SRP content may only open the documented parent MMC section.");
+
+    var duplicate = new PolicySettingInfo
+    {
+        GpoId = rule.GpoId, Scope = rule.Scope, Extension = rule.Extension,
+        Category = rule.Category, SettingName = rule.SettingName,
+        Value = rule.Value
+    };
+    var ambiguous = MmcInventoryReconciliation.Reconcile(row, new[] { rule, duplicate }, null);
+    Assert(ambiguous.GpmcMatch.Contains("Ambiguous"),
+        "Identical Path Rules must never be marked uniquely verified.");
+
+    foreach (var value in new[]
+    {
+        "Path=one.exe; Path=two.exe",
+        "Path=one.exe; SecurityLevel=Disallowed",
+        "SecurityLevel=Disallowed",
+        "SecurityLevel=Disallowed; Path=",
+        "Path=some;file.exe",
+        "Path=\"quoted.exe\"",
+        "Path=hello\nworld.exe"
+    })
+    {
+        var malformed = new PolicySettingInfo
+        {
+            Extension = rule.Extension, Scope = rule.Scope,
+            SettingName = rule.SettingName, Value = value
+        };
+        Assert(!SoftwareRestrictionMmcRouteService.TryGetPathRuleTarget(malformed, out _) &&
+               !navigator.CanNavigateExactly(malformed),
+            "Ambiguous/untrusted SRP Path= metadata must not produce an exact target.");
+        Assert(GpoEditorNavigatorService.NavigationTarget(malformed) == section,
+            "Malformed SRP PathRule may still open its documented folder manually.");
+    }
+
+    const string pathWithAmpersand = @"C:\Test\A&B.exe";
+    Assert(!SoftwareRestrictionMmcRouteService.ExactPath(
+            @"C:\Test\AB.exe", pathWithAmpersand) &&
+           SoftwareRestrictionMmcRouteService.ExactPath(
+            @"c:\test\a&b.exe", pathWithAmpersand),
+        "Native SRP matching must preserve literal ampersands.");
+    var special = new PolicySettingInfo
+    {
+        Extension = rule.Extension, Scope = "Computer",
+        SettingName = "Path Rule",
+        Value = "SecurityLevel=Disallowed; Path=" + pathWithAmpersand
+    };
+    Assert(SoftwareRestrictionMmcRouteService.TryGetPathRuleTarget(special, out var target) &&
+           target == pathWithAmpersand && navigator.CanNavigateExactly(special),
+        "Literal Path Rule identity must survive native row selection.");
+}
+
+static void TestGpoStartupIndexPreferences()
+{
+    var dir = Path.Combine(Path.GetTempPath(),
+        "GPOSE-startup-index-" + Guid.NewGuid().ToString("N"));
+    try
+    {
+        Directory.CreateDirectory(dir);
+        Assert(!GpoStartupIndexPreferences.Load(dir),
+            "Bulk GPMC indexing must never run automatically before opt-in.");
+        GpoStartupIndexPreferences.Save(true, dir);
+        Assert(GpoStartupIndexPreferences.Load(dir),
+            "A user opt-in to background cached GPMC indexing must persist.");
+        GpoStartupIndexPreferences.Save(false, dir);
+        Assert(!GpoStartupIndexPreferences.Load(dir),
+            "Disabling the background index must persist.");
+        File.WriteAllText(Path.Combine(dir, "gpmc-index-startup.json"), "{corrupt");
+        Assert(!GpoStartupIndexPreferences.Load(dir),
+            "Corrupt preferences must fail closed without starting a domain scan.");
+    }
+    finally
+    {
+        Directory.Delete(dir, recursive: true);
+    }
+}
+
+static void TestChangePreviewCancellationContract()
+{
+    // Pure gate test. It cannot auto-approve or display a native WPF dialog
+    // in CI and must never write a real GPO or SYSVOL.
+    ChangePreviewGuard.RequireApprovedResult(true);
+
+    var canceled = false;
+    try
+    {
+        ChangePreviewGuard.RequireApprovedResult(false);
+    }
+    catch (ChangePreviewCanceledException ex)
+    {
+        canceled = true;
+        Assert(ex is OperationCanceledException &&
+               ex.Message.Contains("canceled in the preview", StringComparison.OrdinalIgnoreCase),
+            "Preview Cancel needs its own harmless exception type, not an IOException.");
+    }
+    Assert(canceled, "A canceled preview must not authorize the protected writer.");
+
+    // Unrelated cancellation and real write failures must not be disguised
+    // as a preview decline by the editor.
+    Assert(typeof(ChangePreviewCanceledException).IsSubclassOf(
+               typeof(OperationCanceledException)) &&
+           !typeof(IOException).IsAssignableFrom(
+               typeof(ChangePreviewCanceledException)),
+        "Only the explicit operator decline is treated as a neutral cancel.");
 }
 
 static void TestBatchSyntaxDiagnostics()
@@ -3764,8 +4181,8 @@ static void TestKerberosGpmcRouting()
         "Security Settings > Account Policies > Kerberos Policy";
     Assert(KerberosPolicyMetadataService.IsKnownKerberosSetting(setting) &&
            GpoEditorNavigatorService.NavigationTarget(setting) == expected &&
-           !new GpoEditorNavigatorService().CanNavigateExactly(setting),
-        "Kerberos must open the correct MMC section without guessing a fake registry value or exact item.");
+           new GpoEditorNavigatorService().CanNavigateExactly(setting),
+        "Typed known Kerberos account records permit an exact native-row probe without guessing values.");
     Assert(SecurityXmlEntryClassifier.InferCategory(node) ==
            KerberosPolicyMetadataService.Category,
         "GPMC Account SecuritySettings XML must be classified as Kerberos Policy.");
@@ -3874,4 +4291,2054 @@ static void TestRemoteAiBoundary()
            prompt.Contains("Security checked: False") &&
            prompt.Contains("Unknown"),
         "Remote prompt must explicitly mark unverified sources and use counts only.");
+}
+
+static void TestDiscoveryEvidence()
+{
+    var id = Guid.NewGuid();
+    var settings = new[]
+    {
+        new PolicySettingInfo
+        {
+            GpoId = id, Scope = "Computer", Extension = "SecuritySettings",
+            Category = "Security Settings > Account Policies > Kerberos Policy",
+            SettingName = "Account: MaxTicketAge", Value = "Type=Kerberos"
+        },
+        new PolicySettingInfo
+        {
+            GpoId = id, Scope = "User", Extension = "ScheduledTasksSettings",
+            Category = "Unknown", SettingName = "=HYPERLINK(\"bad\")",
+            RegistryKey = @"SOFTWARE\\Fake", RegistryValue = "Name"
+        }
+    };
+    var rows = GpoDiscoveryEvidenceService.Build(settings);
+    Assert(rows.Count == 2, "Discovery must retain both input records.");
+    Assert(rows[0].NavigationStatus == "SECTION_CANDIDATE",
+        "Known section is a candidate, not exact row verified.");
+    Assert(rows[1].NavigationStatus == "SECTION_CANDIDATE" &&
+           rows[1].MmcSection.EndsWith("Preferences > Control Panel Settings > Scheduled Tasks") &&
+           string.IsNullOrEmpty(rows[1].RegistryTarget),
+        "Known GPP extension may expose a DOCUMENTED MMC section hint but must not invent Registry.pol metadata or claim a native row.");
+    Assert(rows[0].IdentityHash.Length == 64 &&
+           rows[0].IdentityHash == GpoDiscoveryEvidenceService.Build(settings)[0].IdentityHash,
+        "Identity hashes must be stable SHA-256.");
+    var observed = new[]
+    {
+        new MmcInventoryEntry
+        {
+            GpoId = id, Scope = "Computer", SettingName = "Account: MaxTicketAge",
+            TreeSegments = rows[0].MmcSection.Split(" > "),
+            Navigation = "Exact MMC row candidate"
+        }
+    };
+    Assert(GpoDiscoveryEvidenceService.CorrelateMmc(rows,
+        new[] { observed[0] with { Navigation = "Section only / ambiguous" } })[0]
+        .NavigationStatus == "SECTION_CANDIDATE",
+        "Even a matching name and section must not verify a row that MMC cannot navigate exactly.");
+    var verified = GpoDiscoveryEvidenceService.CorrelateMmc(rows, observed);
+    Assert(verified[0].ValueVerificationStatus == "MMC_OBSERVED_SOURCE_NOT_COMPARED",
+        "An MMC row must not claim source-value verification.");
+    Assert(verified[0].MmcObservedState == "Not reported" &&
+           string.IsNullOrEmpty(verified[0].MmcObservedValue),
+        "Native MMC state and value must remain distinct from configured source values.");
+    var observedValue = GpoDiscoveryEvidenceService.CorrelateMmc(rows,
+        new[] { observed[0] with { MmcState = "Enabled", MmcValue = "10 hours" } });
+    Assert(observedValue[0].MmcObservedValue == "10 hours" &&
+           observedValue[0].ValueVerificationStatus == "MMC_OBSERVED_SOURCE_NOT_COMPARED",
+        "An observed MMC value must be exported without claiming SYSVOL agreement.");
+    Assert(GpoDiscoveryEvidenceService.ExportTsv(observedValue).Contains("10 hours"),
+        "Observed MMC value must be included in evidence TSV.");
+    Assert(verified[0].NavigationStatus == "MMC_ROW_OBSERVED",
+        "A single exact MMC row may be marked observed, not value-verified.");
+    Assert(verified[1].NavigationStatus == "SECTION_CANDIDATE",
+        "A known GPP SECTION hint must not be promoted to native row evidence by unrelated MMC entries.");
+    var ambiguous = GpoDiscoveryEvidenceService.CorrelateMmc(rows,
+        new[] { observed[0], observed[0] });
+    Assert(ambiguous[0].NavigationStatus == "AMBIGUOUS",
+        "Duplicate native MMC observations must fail closed.");
+    var otherGpo = GpoDiscoveryEvidenceService.CorrelateMmc(rows,
+        new[] { observed[0] with { GpoId = Guid.NewGuid() } });
+    Assert(otherGpo[0].NavigationStatus == "SECTION_CANDIDATE",
+        "MMC observations from another GPO must never verify this GPO.");
+    var registrySetting = new PolicySettingInfo
+    {
+        GpoId = id, Scope = "Computer", Extension = "RegistrySettings",
+        Category = "Administrative Templates", SettingName = "Example policy",
+        RegistryKey = @"Software\\Policies\\Example", RegistryValue = "Enabled"
+    };
+    var registryEvidence = GpoDiscoveryEvidenceService.Build(new[] { registrySetting });
+    var registrySource = new RealSettingRecord
+    {
+        GpoId = id, Scope = "Computer",
+        RegistryKey = @"Software\\Policies\\Example", RegistryValue = "Enabled",
+        SourceFile = @"Machine\\Registry.pol", Value = "1"
+    };
+    var located = GpoDiscoveryEvidenceService.CorrelateRegistrySource(
+        registryEvidence, new[] { registrySource });
+    Assert(located[0].SourceStatus == "REGISTRY_SOURCE_LOCATED" &&
+           located[0].ValueVerificationStatus == "SOURCE_RECORD_LOCATED_VALUE_NOT_COMPARED",
+        "Unique Registry.pol target may be located but not value-verified.");
+    var typedSource = GpoDiscoveryEvidenceService.CorrelateRegistrySource(
+        registryEvidence, new[] { registrySource with
+        {
+            Value = "1", ValueType = "REG_DWORD", SourceSha256 = new string('A', 64)
+        } });
+    Assert(typedSource[0].SourceStoredValue == "1" &&
+           typedSource[0].SourceStoredType == "REG_DWORD" &&
+           typedSource[0].SourceFileHash.Length == 64,
+        "Discovery must preserve source value, registry type and file hash.");
+    Assert(typedSource[0].ValueVerificationStatus ==
+           "SOURCE_RECORD_LOCATED_VALUE_NOT_COMPARED",
+        "Typed source evidence alone does not prove MMC/source value equality.");
+    var typedExport = GpoDiscoveryEvidenceService.ExportTsv(typedSource);
+    Assert(typedExport.Contains("SourceStoredType", StringComparison.Ordinal) &&
+           typedExport.Contains("REG_DWORD", StringComparison.Ordinal),
+        "Discovery TSV must include typed source evidence.");
+    var literalCandidate = typedSource[0] with
+    {
+        NavigationStatus = "MMC_ROW_OBSERVED", MmcObservedValue = "alpha",
+        SourceStoredValue = "alpha", SourceStoredType = "REG_SZ"
+    };
+    var literalMatch = GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(
+        new[] { literalCandidate })[0];
+    Assert(literalMatch.ValueVerificationStatus == "MATCH_LITERAL_REG_SZ",
+        "Exact REG_SZ text can match when native row and source are unique.");
+    var literalMismatch = GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(
+        new[] { literalCandidate with { MmcObservedValue = "beta" } })[0];
+    Assert(literalMismatch.ValueVerificationStatus == "MISMATCH_LITERAL_REG_SZ",
+        "Different literal REG_SZ text must be reported as mismatch.");
+    var numericUnverified = GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(
+        new[] { literalCandidate with { SourceStoredType = "REG_DWORD", MmcObservedValue = "10 hours" } })[0];
+    Assert(numericUnverified.ValueVerificationStatus ==
+           "SOURCE_RECORD_LOCATED_VALUE_NOT_COMPARED",
+        "Numeric values with MMC units must remain unverified.");
+    var integerCandidate = literalCandidate with
+    {
+        SourceStoredType = "REG_DWORD", SourceStoredValue = "600",
+        MmcObservedValue = "600"
+    };
+    Assert(GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(
+        new[] { integerCandidate })[0].ValueVerificationStatus == "MATCH_LITERAL_INTEGER",
+        "Canonical decimal DWORD values should match.");
+    Assert(GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(
+        new[] { integerCandidate with { MmcObservedValue = "601" } })[0]
+        .ValueVerificationStatus == "MISMATCH_LITERAL_INTEGER",
+        "Different canonical DWORD values should mismatch.");
+    foreach (var unsafeDisplay in new[] { "600 minutes", "0600", "0x258", "-1", "600.0" })
+        Assert(GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(
+            new[] { integerCandidate with { MmcObservedValue = unsafeDisplay } })[0]
+            .ValueVerificationStatus == "SOURCE_RECORD_LOCATED_VALUE_NOT_COMPARED",
+            "Formatted or ambiguous numeric MMC values must remain unverified.");
+    Assert(GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(
+        new[] { integerCandidate with { SourceStoredValue = "4294967296" } })[0]
+        .ValueVerificationStatus == "SOURCE_RECORD_LOCATED_VALUE_NOT_COMPARED",
+        "DWORD overflow must not be compared.");
+    Assert(GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(
+        new[] { integerCandidate with { SourceStoredType = "REG_QWORD",
+            SourceStoredValue = "4294967296", MmcObservedValue = "4294967296" } })[0]
+        .ValueVerificationStatus == "MATCH_LITERAL_INTEGER",
+        "QWORD values may exceed the DWORD range.");
+    // Conversion requires a reviewed same-GPO/same-setting identity, a
+    // pinned Registry.pol hash and a fingerprint of the reviewed ADMX/ADML
+    // evidence. Strings such as "minutes" are not themselves proof.
+    var approvedRule = new GpoDiscoveryEvidenceService.VerifiedUnitMapping(
+        integerCandidate.GpoId, integerCandidate.Scope, integerCandidate.RegistryTarget,
+        "minutes", "Reviewed ADMX/ADML element and its native MMC display")
+    {
+        IdentitySha256 = integerCandidate.IdentityHash,
+        SourceFileSha256 = integerCandidate.SourceFileHash,
+        DefinitionEvidenceSha256 = new string('B', 64),
+        ReviewedAgainstMmc = true,
+        ReviewReference = "review-001"
+    };
+    var mappedMinutes = GpoDiscoveryEvidenceService.ApplyVerifiedUnitMappings(
+        new[] { integerCandidate }, new[] { approvedRule })[0];
+    Assert(mappedMinutes.SourceUnit == "minutes" &&
+           mappedMinutes.UnitMappingStatus == "VERIFIED_EXPLICIT" &&
+           mappedMinutes.UnitMappingEvidence is not null,
+        "Only a unique, reviewed, fingerprint-bound rule may provide units.");
+    Assert(GpoDiscoveryEvidenceService.ApplyVerifiedUnitMappings(
+        new[] { integerCandidate },
+        new[] { approvedRule with { GpoId = Guid.NewGuid() } })[0].SourceUnit == "",
+        "Mappings from a different GPO must not apply.");
+    Assert(GpoDiscoveryEvidenceService.ApplyVerifiedUnitMappings(
+        new[] { integerCandidate },
+        new[] { approvedRule with { Scope = "User" } })[0].SourceUnit == "",
+        "Mappings from another policy scope must not apply.");
+    Assert(GpoDiscoveryEvidenceService.ApplyVerifiedUnitMappings(
+        new[] { integerCandidate },
+        new[] { approvedRule with { RegistryTarget = "Other / Value" } })[0].SourceUnit == "",
+        "Mappings for a different Registry.pol target must not apply.");
+    var unapproved = GpoDiscoveryEvidenceService.ApplyVerifiedUnitMappings(
+        new[] { integerCandidate },
+        new[] { approvedRule with { ReviewedAgainstMmc = false } })[0];
+    Assert(unapproved.UnitMappingStatus == "UNVERIFIED_RULE" &&
+           string.IsNullOrEmpty(unapproved.SourceUnit),
+        "A provenance sentence without independent review is not proof.");
+    foreach (var badRule in new[]
+    {
+        approvedRule with { Provenance = "" },
+        approvedRule with { ReviewReference = "" },
+        approvedRule with { DefinitionEvidenceSha256 = "" },
+        approvedRule with { IdentitySha256 = new string('C', 64) },
+        approvedRule with { SourceFileSha256 = new string('C', 64) }
+    })
+    {
+        Assert(GpoDiscoveryEvidenceService.ApplyVerifiedUnitMappings(
+            new[] { integerCandidate }, new[] { badRule })[0].UnitMappingStatus ==
+            "UNVERIFIED_RULE", "Incomplete or stale reviewed unit evidence must fail closed.");
+    }
+    var ambiguousRules = GpoDiscoveryEvidenceService.ApplyVerifiedUnitMappings(
+        new[] { integerCandidate },
+        new[] { approvedRule, approvedRule with { SourceUnit = "seconds" } })[0];
+    Assert(ambiguousRules.UnitMappingStatus == "AMBIGUOUS_RULES" &&
+           string.IsNullOrEmpty(ambiguousRules.SourceUnit),
+        "Contradictory same-target unit rules must not be silently filtered.");
+    Assert(GpoDiscoveryEvidenceService.ApplyVerifiedUnitMappings(
+        new[] { integerCandidate }, new[] { approvedRule, approvedRule })[0]
+        .UnitMappingStatus == "AMBIGUOUS_RULES",
+        "Duplicate mapping declarations are also ambiguous.");
+    var unsupportedRule = GpoDiscoveryEvidenceService.ApplyVerifiedUnitMappings(
+        new[] { integerCandidate },
+        new[] { approvedRule with { SourceUnit = "seconds" } })[0];
+    Assert(unsupportedRule.UnitMappingStatus == "UNSUPPORTED_UNIT" &&
+           string.IsNullOrEmpty(unsupportedRule.SourceUnit),
+        "Unimplemented unit pairs must never be guessed.");
+    Assert(GpoDiscoveryEvidenceService.ApplyVerifiedUnitMappings(
+        new[] { integerCandidate with { SourceStoredType = "REG_QWORD" } },
+        new[] { approvedRule })[0].UnitMappingStatus == "SOURCE_NOT_VERIFIED",
+        "The typed conversion allowlist is DWORD-only.");
+    Assert(GpoDiscoveryEvidenceService.ApplyVerifiedUnitMappings(
+        new[] { integerCandidate with { SourceFileHash = "" } },
+        new[] { approvedRule })[0].UnitMappingStatus == "SOURCE_NOT_VERIFIED",
+        "Missing Registry.pol hashes must block unit mapping.");
+    Assert(GpoDiscoveryEvidenceService.ApplyVerifiedUnitMappings(
+        new[] { mappedMinutes }, Array.Empty<GpoDiscoveryEvidenceService.VerifiedUnitMapping>())[0]
+        .SourceUnit == "",
+        "Repeating validation without approvals must drop previously attached units.");
+
+    var explicitMinutes = mappedMinutes with { MmcObservedValue = "10 hours" };
+    Assert(GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(
+        new[] { explicitMinutes })[0].ValueVerificationStatus ==
+        "MATCH_EXPLICIT_MINUTES_HOURS",
+        "Reviewed source minutes may match exact MMC hours.");
+    Assert(GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(new[] {
+        explicitMinutes with { MmcObservedValue = "11 hours" } })[0]
+        .ValueVerificationStatus == "MISMATCH_EXPLICIT_MINUTES_HOURS",
+        "Reviewed unit mapping must detect unequal durations.");
+    Assert(GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(new[] {
+        integerCandidate with { MmcObservedValue = "10 hours", SourceUnit = "minutes" } })[0]
+        .ValueVerificationStatus == "SOURCE_RECORD_LOCATED_VALUE_NOT_COMPARED",
+        "Setting SourceUnit directly without reviewed evidence must not authorize conversion.");
+    Assert(GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(new[] {
+        explicitMinutes with { UnitMappingEvidence = null } })[0]
+        .ValueVerificationStatus == "SOURCE_RECORD_LOCATED_VALUE_NOT_COMPARED",
+        "An unbacked VERIFIED_EXPLICIT marker must not authorize conversion.");
+    Assert(GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(new[] {
+        explicitMinutes with { SourceFileHash = new string('C', 64) } })[0]
+        .ValueVerificationStatus == "SOURCE_RECORD_LOCATED_VALUE_NOT_COMPARED",
+        "A source file changed after review must invalidate an approved conversion.");
+    foreach (var ambiguousText in new[] { "10 Hours", "10 hrs", "010 hours",
+        "10.0 hours", "10 hours ", "10 hours extra", "10 часов", "600" })
+    {
+        Assert(GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(new[] {
+            explicitMinutes with { MmcObservedValue = ambiguousText } })[0]
+            .ValueVerificationStatus == "SOURCE_RECORD_LOCATED_VALUE_NOT_COMPARED",
+            "Unrecognized, localized or unitless MMC values must not be converted.");
+    }
+    Assert(GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(
+        new[] { ambiguousRules with { MmcObservedValue = "600" } })[0]
+        .ValueVerificationStatus == "SOURCE_RECORD_LOCATED_VALUE_NOT_COMPARED",
+        "Ambiguous unit rules must block even an equal-looking bare numeric value.");
+    Assert(GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(
+        new[] { unapproved with { MmcObservedValue = "600" } })[0]
+        .ValueVerificationStatus == "SOURCE_RECORD_LOCATED_VALUE_NOT_COMPARED",
+        "A rejected unit review must block a misleading numeric literal fallback.");
+    Assert(GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(
+        new[] { unsupportedRule with { MmcObservedValue = "600" } })[0]
+        .ValueVerificationStatus == "SOURCE_RECORD_LOCATED_VALUE_NOT_COMPARED",
+        "Unknown source units must not be compared as unitless integers.");
+    var mappedExport = GpoDiscoveryEvidenceService.ExportTsv(new[] { explicitMinutes });
+    Assert(mappedExport.Contains("UnitMappingStatus", StringComparison.Ordinal) &&
+           mappedExport.Contains("VERIFIED_EXPLICIT", StringComparison.Ordinal) &&
+           mappedExport.Contains("review-001", StringComparison.Ordinal),
+        "TSV must expose explicit unit review status and its audit reference.");
+    var noHash = GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(
+        new[] { literalCandidate with { SourceFileHash = "" } })[0];
+    Assert(noHash.ValueVerificationStatus ==
+           "SOURCE_RECORD_LOCATED_VALUE_NOT_COMPARED",
+        "Missing source hash must fail closed.");
+    var duplicateSource = GpoDiscoveryEvidenceService.CorrelateRegistrySource(
+        registryEvidence, new[] { registrySource, registrySource });
+    Assert(duplicateSource[0].SourceStatus == "AMBIGUOUS_REGISTRY_SOURCE",
+        "Duplicate Registry.pol source entries must remain ambiguous.");
+    var otherSource = GpoDiscoveryEvidenceService.CorrelateRegistrySource(
+        registryEvidence, new[] { registrySource with { GpoId = Guid.NewGuid() } });
+    Assert(otherSource[0].SourceStatus == "REGISTRY_METADATA",
+        "Source from another GPO must not match.");
+    var otherScope = GpoDiscoveryEvidenceService.CorrelateRegistrySource(
+        registryEvidence, new[] { registrySource with { Scope = "User" } });
+    Assert(otherScope[0].SourceStatus == "REGISTRY_METADATA",
+        "Source from another scope must not match.");
+    var otherFormat = GpoDiscoveryEvidenceService.CorrelateRegistrySource(
+        registryEvidence, new[] { registrySource with { SourceFile = "Registry.xml" } });
+    Assert(otherFormat[0].SourceStatus == "REGISTRY_METADATA",
+        "GPP Registry XML must not be mistaken for Registry.pol.");
+    var tsv = GpoDiscoveryEvidenceService.ExportTsv(rows);
+    Assert(tsv.Contains("'=HYPERLINK", StringComparison.Ordinal),
+        "TSV export must escape spreadsheet formulas.");
+}
+
+
+static void TestDiscoveryUnitReview()
+{
+    var id = Guid.NewGuid();
+    var registryKey = @"Software\Policies\Example";
+    var policy = new AdmxPolicyDefinition
+    {
+        AdmxFile = "Example.admx", Name = "ExampleTimeout",
+        DisplayName = "Example timeout", Scope = "Computer",
+        Category = "Example Policies",
+        Key = registryKey,
+        Elements = new[]
+        {
+            new AdmxElementDefinition
+            {
+                Id = "Timeout", Label = "Timeout value", Type = AdmxElementType.Decimal,
+                Key = registryKey, ValueName = "TimeoutMinutes"
+            }
+        }
+    };
+    var setting = new PolicySettingInfo
+    {
+        GpoId = id, Scope = "Computer", Extension = "RegistrySettings",
+        Category = "Administrative Templates > Example Policies",
+        SettingName = "Example timeout",
+        RegistryKey = registryKey, RegistryValue = "TimeoutMinutes"
+    };
+    var raw = GpoDiscoveryEvidenceService.Build(new[] { setting });
+    Assert(raw.Count == 1 && raw[0].NavigationStatus == "SECTION_CANDIDATE",
+        "A GPMC Administrative Templates route by itself must remain a section candidate.");
+    var duplicates = GpoDiscoveryEvidenceService.Build(new[] { setting, setting });
+    Assert(duplicates.Count == 2 && duplicates.All(e => e.NavigationStatus == "AMBIGUOUS"),
+        "Duplicate GPMC source identities must never independently verify the same MMC row.");
+    var section = "Computer Configuration > Policies > Administrative Templates > Example Policies";
+    var observed = new MmcInventoryEntry
+    {
+        GpoId = id, Scope = "Computer", SettingName = "Example timeout",
+        SectionPath = section, TreeSegments = section.Split(" > "),
+        Navigation = "Exact MMC row candidate", MmcState = "Enabled",
+        MmcValue = "10 hours"
+    };
+    Assert(GpoDiscoveryAdmxIdentityService.MatchesExactFolder(
+        "Computer", section, policy.Category),
+        "Only the complete ADMX category tree identifies an exact MMC folder.");
+    var sameSuffixDifferentFolder =
+        "Computer Configuration > Policies > Administrative Templates > Other > Example Policies";
+    Assert(!GpoDiscoveryAdmxIdentityService.MatchesExactFolder(
+        "Computer", sameSuffixDifferentFolder, policy.Category),
+        "A matching category suffix in another folder must not count as the correct ADMX path.");
+    Assert(!GpoDiscoveryAdmxIdentityService.MatchesExactFolder(
+        "User", section, policy.Category),
+        "A path under the wrong MMC policy scope cannot be an exact folder.");
+
+    Assert(GpoDiscoveryEvidenceService.CorrelateMmc(raw, new[] { observed })[0]
+        .NavigationStatus == "SECTION_CANDIDATE",
+        "A nested Administrative Templates row must not match without an exact ADMX definition.");
+    var mmcMatched = GpoDiscoveryEvidenceService.CorrelateMmc(raw,
+        new[] { observed }, new[] { policy });
+    Assert(mmcMatched[0].NavigationStatus == "MMC_ROW_OBSERVED" &&
+           mmcMatched[0].MmcObservedSection == section &&
+           mmcMatched[0].MmcRowNavigation == "Exact MMC row candidate",
+        "Unique same-GPO/scope/registry-element and exact MMC section should be observed.");
+    Assert(GpoDiscoveryEvidenceService.CorrelateMmc(raw,
+        new[] { observed with { Navigation = "Section only / ambiguous" } },
+        new[] { policy })[0].NavigationStatus == "SECTION_CANDIDATE",
+        "Nonexact MMC row navigation must never upgrade the discovery status.");
+    Assert(GpoDiscoveryEvidenceService.CorrelateMmc(raw,
+        new[] { observed }, new[] { policy, policy })[0]
+        .NavigationStatus == "SECTION_CANDIDATE",
+        "Ambiguous same-name ADMX policies must never be selected by first match.");
+    var multipleElements = new AdmxPolicyDefinition
+    {
+        AdmxFile = policy.AdmxFile, Name = policy.Name, DisplayName = policy.DisplayName,
+        Scope = policy.Scope, Category = policy.Category,
+        Elements = new[] { policy.Elements[0],
+            new AdmxElementDefinition
+            {
+                Id = "Other", Type = AdmxElementType.Decimal,
+                Key = registryKey, ValueName = "Other"
+            } }
+    };
+    Assert(GpoDiscoveryEvidenceService.CorrelateMmc(raw,
+        new[] { observed }, new[] { multipleElements })[0]
+        .NavigationStatus == "SECTION_CANDIDATE",
+        "A policy with multiple decimal elements must not equate a policy-level MMC display with one field.");
+    Assert(GpoDiscoveryEvidenceService.CorrelateMmc(raw,
+        new[] { observed with { GpoId = Guid.NewGuid() } }, new[] { policy })[0]
+        .NavigationStatus == "SECTION_CANDIDATE",
+        "MMC evidence from another GPO must be excluded.");
+    Assert(GpoDiscoveryEvidenceService.CorrelateMmc(raw,
+        new[] { observed with { SectionPath = section + " > Wrong",
+            TreeSegments = (section + " > Wrong").Split(" > ") } },
+        new[] { policy })[0].NavigationStatus == "SECTION_CANDIDATE",
+        "A row in another MMC folder is not the same configured policy.");
+    Assert(GpoDiscoveryEvidenceService.CorrelateMmc(raw,
+        new[] { observed with { SectionPath = sameSuffixDifferentFolder,
+            TreeSegments = sameSuffixDifferentFolder.Split(" > ") } },
+        new[] { policy })[0].NavigationStatus == "SECTION_CANDIDATE",
+        "A different MMC folder with an identical category suffix must not match the ADMX policy.");
+
+    var source = new RealSettingRecord
+    {
+        GpoId = id, Scope = "Computer", RegistryKey = registryKey,
+        RegistryValue = "TimeoutMinutes", SourceFile = @"Machine\Registry.pol",
+        SourceSha256 = new string('A', 64), ValueType = "REG_DWORD", Value = "600"
+    };
+    var withSource = GpoDiscoveryEvidenceService.CorrelateRegistrySource(
+        mmcMatched, new[] { source });
+    var verified = GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(withSource);
+    Assert(verified[0].ValueVerificationStatus == "SOURCE_RECORD_LOCATED_VALUE_NOT_COMPARED",
+        "Never infer minutes from 600 and 10 hours.");
+    var row = verified[0];
+    var candidate = GpoDiscoveryUnitReviewService.Inspect(row, new[] { policy });
+    Assert(candidate.CanReview && candidate.Status == "READY_FOR_MANUAL_REVIEW",
+        "Exact MMC and Registry.pol evidence permits manual review, not automatic conversion.");
+    Assert(GpoDiscoveryUnitReviewService.Inspect(row with {
+        MmcObservedSection = sameSuffixDifferentFolder }, new[] { policy }).Status ==
+        "ADMX_NOT_MAPPED",
+        "Manual unit review requires the complete MMC path, not a category suffix.");
+    Assert(GpoDiscoveryUnitReviewService.Inspect(row, new[] { policy, policy }).Status ==
+           "AMBIGUOUS_ADMX", "Ambiguous templates must block review.");
+    Assert(GpoDiscoveryUnitReviewService.Inspect(row with { SourceStoredType = "REG_SZ" },
+        new[] { policy }).Status == "SOURCE_NOT_EXACT", "Non-DWORD sources block review.");
+    Assert(GpoDiscoveryUnitReviewService.Inspect(row with { SourceFileHash = "" },
+        new[] { policy }).Status == "SOURCE_NOT_EXACT", "Unhashed source blocks review.");
+    Assert(GpoDiscoveryUnitReviewService.Inspect(row with { MmcObservedValue = "10 Hours" },
+        new[] { policy }).Status == "UNSUPPORTED_FORMAT",
+        "Unrecognized/native localized MMC units require a dedicated parser.");
+    Assert(GpoDiscoveryUnitReviewService.Inspect(row with { MmcObservedState = "Not Configured (MMC)" },
+        new[] { policy }).Status == "MMC_NOT_CONFIGURED",
+        "Not Configured MMC rows cannot be approved as configured-source value equivalence.");
+    Assert(GpoDiscoveryUnitReviewService.Inspect(row, new[] { policy }).CanReview,
+        "The exact policy record remains eligible.");
+    Assert(GpoDiscoveryUnitReviewService.Inspect(row, new[] { new AdmxPolicyDefinition
+    {
+        AdmxFile = policy.AdmxFile, Name = policy.Name, DisplayName = policy.DisplayName,
+        Scope = policy.Scope, Category = policy.Category, Elements =
+            new[] { policy.Elements[0], policy.Elements[0] }
+    } }).Status == "AMBIGUOUS_ELEMENT",
+        "Two exact decimal element mappings are ambiguous.");
+    var root = Path.Combine(Path.GetTempPath(), "GPOSE-discovery-" + Guid.NewGuid().ToString("N"));
+    try
+    {
+        var langDir = Path.Combine(root, "en-US");
+        Directory.CreateDirectory(langDir);
+        var admxPath = Path.Combine(root, "Example.admx");
+        var admlPath = Path.Combine(langDir, "Example.adml");
+        File.WriteAllText(admxPath,
+            "<policyDefinitions><policies><policy name=\"ExampleTimeout\" class=\"Machine\" " +
+            "key=\"Software\\Policies\\Example\" displayName=\"$(string.PolicyName)\">" +
+            "<elements><decimal id=\"Timeout\" valueName=\"TimeoutMinutes\"/></elements>" +
+            "</policy></policies></policyDefinitions>");
+        File.WriteAllText(admlPath,
+            "<policyDefinitionResources><resources><stringTable>" +
+            "<string id=\"PolicyName\">Example timeout</string>" +
+            "</stringTable></resources></policyDefinitionResources>");
+        var fingerprint = GpoDiscoveryUnitReviewService.CaptureDefinition(candidate,
+            root, "en-US");
+        Assert(fingerprint.AdmxSha256.Length == 64 &&
+               fingerprint.AdmlSha256.Length == 64 &&
+               fingerprint.DefinitionSha256.Length == 64,
+            "Review must SHA-256 fingerprint actual ADMX and ADML bytes and the exact policy.");
+        var mapping = GpoDiscoveryUnitReviewService.Approve(
+            candidate, fingerprint, "Change-Ticket-123");
+        var applied = GpoDiscoveryEvidenceService.ApplyVerifiedUnitMappings(
+            new[] { row }, new[] { mapping });
+        var converted = GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(applied);
+        Assert(converted[0].ValueVerificationStatus == "MATCH_EXPLICIT_MINUTES_HOURS" &&
+               converted[0].UnitMappingEvidence?.ReviewReference == "Change-Ticket-123",
+            "Explicit, reviewed and fingerprint-bound conversion may match 600 minutes to 10 hours.");
+
+        var failedApproval = false;
+        try
+        {
+            _ = GpoDiscoveryUnitReviewService.Approve(candidate, fingerprint, "x");
+        }
+        catch (ArgumentException)
+        {
+            failedApproval = true;
+        }
+        Assert(failedApproval, "A valid review reference must be required.");
+
+        File.AppendAllText(admlPath, "\n<!-- modified after capture -->");
+        var changed = GpoDiscoveryUnitReviewService.CaptureDefinition(candidate, root, "en-US");
+        Assert(changed.DefinitionSha256 != fingerprint.DefinitionSha256,
+            "Changes to any reviewed ADMX/ADML byte must invalidate the previous review digest.");
+        var rejectedLanguage = false;
+        try
+        {
+            _ = GpoDiscoveryUnitReviewService.CaptureDefinition(candidate, root, "../en-US");
+        }
+        catch (InvalidOperationException)
+        {
+            rejectedLanguage = true;
+        }
+        Assert(rejectedLanguage, "Review cannot traverse out of the pinned ADML language directory.");
+        File.Delete(admlPath);
+        var rejectedMissing = false;
+        try
+        {
+            _ = GpoDiscoveryUnitReviewService.CaptureDefinition(candidate, root, "en-US");
+        }
+        catch (InvalidOperationException)
+        {
+            rejectedMissing = true;
+        }
+        Assert(rejectedMissing, "Missing ADML must never be reported as verified source units.");
+    }
+    finally
+    {
+        Directory.Delete(root, recursive: true);
+    }
+}
+
+
+static void TestDiscoverySourceFreshness()
+{
+    var id = Guid.NewGuid();
+    const string domain = "example.test";
+    const string dc = "dc01.example.test";
+    var key = @"Software\Policies\Example";
+    var fullPath = @"\\" + dc + @"\SYSVOL\" + domain + @"\Policies\" +
+        id.ToString("B") + @"\Machine\Registry.pol";
+    var source = new RealSettingRecord
+    {
+        GpoId = id, GpoName = "Source test", Scope = "Computer",
+        RegistryKey = key, RegistryValue = "Timeout",
+        SourceFile = fullPath, SourceSha256 = new string('A', 64),
+        Value = "600", ValueType = "REG_DWORD"
+    };
+    var input = new PolicySettingInfo
+    {
+        GpoId = id, GpoName = "Source test", Scope = "Computer",
+        Extension = "RegistrySettings", SettingName = "Example timeout",
+        RegistryKey = key, RegistryValue = "Timeout"
+    };
+    var located = GpoDiscoveryEvidenceService.CorrelateRegistrySource(
+        GpoDiscoveryEvidenceService.Build(new[] { input }), new[] { source })[0];
+    Assert(located.SourceStatus == "REGISTRY_SOURCE_LOCATED",
+        "The synthetic source should be found exactly once.");
+
+    var file = new RealSettingsFileEvidence(fullPath, "Read", 1,
+        new string('A', 64), "Snapshot verified");
+    var current = new RealSettingsScanResult(id, "Source test", domain, dc,
+        DateTimeOffset.UtcNow, new[] { source }, new[] { file });
+    var selected = GpoDiscoverySourceFreshnessService.SelectCompleteRegistryRecords(current);
+    Assert(selected.Count == 1 && selected[0] == source,
+        "Only records from the exact fully parsed, hashed Registry.pol path may be verified.");
+
+    var valid = GpoDiscoverySourceFreshnessService.Check(located, current, domain, dc);
+    Assert(valid.IsCurrent && valid.Status == "SOURCE_RECHECKED",
+        "Re-scanned same-DC/source/target/hash/type/value must validate.");
+    Assert(!GpoDiscoverySourceFreshnessService.Check(located, current, domain, "dc02.example.test").IsCurrent,
+        "Never accept another pinned domain controller.");
+    Assert(!GpoDiscoverySourceFreshnessService.Check(located,
+        current with { DomainController = "dc02.example.test" }, domain, dc).IsCurrent,
+        "Mismatch of actual scanned controller must invalidate the snapshot.");
+    Assert(!GpoDiscoverySourceFreshnessService.Check(located,
+        current with { GpoId = Guid.NewGuid() }, domain, dc).IsCurrent,
+        "GPO identity mismatch must fail closed.");
+    Assert(!GpoDiscoverySourceFreshnessService.Check(located,
+        current with { Domain = "other.test" }, domain, dc).IsCurrent,
+        "Domain mismatch must fail closed.");
+
+    var updated = current with { Files = new[]
+        { file with { Sha256 = new string('B', 64) } } };
+    Assert(GpoDiscoverySourceFreshnessService.Check(located, updated, domain, dc)
+        .Status == "SOURCE_FILE_CHANGED", "Changes to Registry.pol hash must block approval.");
+
+    var partial = current with { Files = new[]
+        { file with { Status = "Partial" } } };
+    Assert(GpoDiscoverySourceFreshnessService.SelectCompleteRegistryRecords(partial).Count == 0,
+        "Partial parse records must never enter the production GPMC/MMC literal comparison.");
+    Assert(GpoDiscoverySourceFreshnessService.Check(located, partial, domain, dc)
+        .Status == "SOURCE_FILE_INCOMPLETE", "Partial sources cannot be fresh evidence.");
+    var missing = current with { Files = Array.Empty<RealSettingsFileEvidence>() };
+    Assert(GpoDiscoverySourceFreshnessService.Check(located, missing, domain, dc)
+        .Status == "SOURCE_FILE_AMBIGUOUS", "Missing file-level evidence must fail closed.");
+    var duplicateFile = current with { Files = new[] { file, file } };
+    Assert(GpoDiscoverySourceFreshnessService.Check(located, duplicateFile, domain, dc)
+        .Status == "SOURCE_FILE_AMBIGUOUS", "Duplicate source-file identities must fail closed.");
+    Assert(GpoDiscoverySourceFreshnessService.SelectCompleteRegistryRecords(duplicateFile).Count == 0,
+        "Duplicate supposedly complete source files must not contribute verified values.");
+
+    var spoofedPath = @"\\attacker\SYSVOL\" + domain + @"\Policies\" +
+        id.ToString("B") + @"\Machine\Registry.pol";
+    var wrongPath = current with
+    {
+        Rows = new[] { source with { SourceFile = spoofedPath } },
+        Files = new[] { file with { SourceFile = spoofedPath } }
+    };
+    Assert(GpoDiscoverySourceFreshnessService.SelectCompleteRegistryRecords(wrongPath).Count == 0,
+        "A different UNC server with the same Registry.pol suffix must not be trusted.");
+    Assert(GpoDiscoverySourceFreshnessService.Check(located, wrongPath, domain, dc)
+        .Status == "SOURCE_FILE_AMBIGUOUS",
+        "A forged same-name file outside pinned-DC GPO path must never pass.");
+
+    var changedValue = current with { Rows = new[] { source with { Value = "601" } } };
+    Assert(GpoDiscoverySourceFreshnessService.Check(located, changedValue, domain, dc)
+        .Status == "SOURCE_VALUE_CHANGED", "Changed typed source value must block approval.");
+    var wrongType = current with { Rows = new[] {
+        source with { ValueType = "REG_SZ" } } };
+    Assert(GpoDiscoverySourceFreshnessService.Check(located, wrongType, domain, dc)
+        .Status == "SOURCE_VALUE_CHANGED", "Changed source DWORD type must block approval.");
+    var wrongTarget = current with { Rows = new[] {
+        source with { RegistryValue = "Else" } } };
+    Assert(GpoDiscoverySourceFreshnessService.Check(located, wrongTarget, domain, dc)
+        .Status == "SOURCE_TARGET_AMBIGUOUS",
+        "Source registry key/value target must match exactly.");
+    var ambiguous = current with { Rows = new[] { source, source } };
+    Assert(GpoDiscoverySourceFreshnessService.Check(located, ambiguous, domain, dc)
+        .Status == "SOURCE_TARGET_AMBIGUOUS", "Duplicated source targets are not verified.");
+
+    var notConfigured = located with
+    {
+        NavigationStatus = "MMC_ROW_OBSERVED",
+        MmcObservedState = "Not Configured (MMC)",
+        MmcObservedValue = "600"
+    };
+    Assert(GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(
+        new[] { notConfigured })[0].ValueVerificationStatus ==
+        "SOURCE_RECORD_LOCATED_VALUE_NOT_COMPARED",
+        "A Not Configured native MMC row must never be declared a literal source match.");
+
+    var exported = GpoDiscoveryEvidenceService.ExportTsv(new[] {
+        located with { SourceRecheckStatus = "SOURCE_RECHECKED",
+            SourceRecheckedAtUtc = current.CapturedAt.UtcDateTime } });
+    Assert(exported.Contains("SourceRecheckStatus", StringComparison.Ordinal) &&
+           exported.Contains("SourceRecheckedAtUtc", StringComparison.Ordinal) &&
+           exported.Contains("SOURCE_RECHECKED", StringComparison.Ordinal),
+        "TSV must disclose freshness status and recheck timestamp separately from MMC.");
+}
+
+
+static void TestDiscoveryCoverageReport()
+{
+    var id = Guid.NewGuid();
+    const string secret = "PRIVATE_SOURCE_VALUE_DO_NOT_EXPORT_12345";
+    const string key = @"Software\Policies\PRIVATE_LOCATION_DO_NOT_EXPORT";
+    var input = new PolicySettingInfo
+    {
+        GpoId = id, GpoName = "PRIVATE_GPO_DO_NOT_EXPORT",
+        SettingName = "PRIVATE_SETTING_DO_NOT_EXPORT", Scope = "Computer",
+        Extension = "RegistrySettings",
+        RegistryKey = key, RegistryValue = "Timeout"
+    };
+    var root = GpoDiscoveryEvidenceService.Build(new[] { input })[0];
+    var rows = new[]
+    {
+        root with
+        {
+            NavigationStatus = "MMC_ROW_OBSERVED",
+            SourceStatus = "REGISTRY_SOURCE_LOCATED",
+            ValueVerificationStatus = "MATCH_LITERAL_INTEGER",
+            UnitMappingStatus = "NOT_EVALUATED",
+            SourceStoredValue = secret, Notes = "PRIVATE_NOTES_DO_NOT_EXPORT",
+            SourceFileHash = new string('A', 64),
+            SourceRecheckStatus = "SOURCE_RECHECKED"
+        },
+        root with
+        {
+            NavigationStatus = "SECTION_CANDIDATE",
+            SourceStatus = "REGISTRY_METADATA",
+            ValueVerificationStatus = "NOT_VERIFIED"
+        },
+        root with
+        {
+            NavigationStatus = "AMBIGUOUS",
+            SourceStatus = "NON_REGISTRY_OR_UNVERIFIED",
+            ValueVerificationStatus = "MISMATCH_EXPLICIT_MINUTES_HOURS",
+            UnitMappingStatus = "VERIFIED_EXPLICIT",
+            SourceRecheckStatus = "SOURCE_RECHECK_FAILED"
+        },
+        root with
+        {
+            NavigationStatus = secret,
+            SourceStatus = secret,
+            ValueVerificationStatus = secret,
+            UnitMappingStatus = secret,
+            SourceRecheckStatus = secret
+        }
+    };
+    var report = GpoDiscoveryCoverageService.Build(rows,
+        new[] { "READY_FOR_MANUAL_REVIEW", "MMC_NOT_EXACT",
+            "VERIFIED_EXPLICIT", secret });
+
+    Assert(report.IndexedRows == 4 &&
+           report.ObservedMmcRows == 1 &&
+           report.LocatedSourceRows == 1 &&
+           report.LiteralComparisonRows == 1 &&
+           report.ReviewedUnitRows == 1,
+        "Coverage must count exact categories but not invent effective RSoP statistics.");
+    Assert(report.Findings.Any(f => f.Status == "AMBIGUOUS" && f.Area == "MMC navigation") &&
+           report.Findings.Any(f => f.Status == "MMC_NOT_EXACT" && f.Area == "Review eligibility") &&
+           report.Findings.Any(f => f.Status == "SOURCE_RECHECK_FAILED" && f.Area == "Source recheck"),
+        "Coverage must group known navigation, source freshness and review blockers.");
+    Assert(report.Findings.Any(f => f.Status == "OTHER_OR_UNRECOGNIZED"),
+        "Unrecognized status codes must be converted to a non-sensitive generic marker.");
+    var safe = report.ToSafeText();
+    foreach (var disallowed in new[]
+    {
+        secret, input.GpoName, input.SettingName, key, id.ToString("D"),
+        rows[0].SourceFileHash, "PRIVATE_NOTES_DO_NOT_EXPORT"
+    })
+        Assert(!safe.Contains(disallowed, StringComparison.Ordinal),
+            "Copyable coverage must not contain raw GPO names, values, identifiers or hashes.");
+    Assert(safe.Contains("NOT effective RSoP", StringComparison.Ordinal) &&
+           safe.Contains("OTHER_OR_UNRECOGNIZED", StringComparison.Ordinal) &&
+           safe.Contains("SOURCE_RECHECK_FAILED", StringComparison.Ordinal),
+        "Safe coverage must show data limitations, source freshness and only predefined status codes.");
+
+    var forgedReport = report with
+    {
+        Findings = new[]
+        {
+            new GpoDiscoveryCoverageService.CoverageFinding(
+                secret, secret, 1, secret, secret),
+            new GpoDiscoveryCoverageService.CoverageFinding(
+                "Source provenance", "REGISTRY_SOURCE_LOCATED", 1, secret, secret)
+        }
+    };
+    var forgedCopy = forgedReport.ToSafeText();
+    Assert(!forgedCopy.Contains(secret, StringComparison.Ordinal) &&
+           forgedCopy.Contains("OTHER_OR_UNRECOGNIZED", StringComparison.Ordinal) &&
+           forgedCopy.Contains("one unique", StringComparison.OrdinalIgnoreCase),
+        "Even a manually constructed coverage report cannot copy unsanitized identities or details.");
+    var empty = GpoDiscoveryCoverageService.Build(
+        Array.Empty<GpoDiscoveryEvidenceService.Evidence>());
+    Assert(empty.IndexedRows == 0 && empty.Findings.Count == 0,
+        "Unloaded/empty index must not be interpreted as verified GPO absence.");
+    var countMismatchRejected = false;
+    try
+    {
+        _ = GpoDiscoveryCoverageService.Build(rows, new[] { "NOT_EVALUATED" });
+    }
+    catch (ArgumentException)
+    {
+        countMismatchRejected = true;
+    }
+    Assert(countMismatchRejected, "Review statuses must correspond 1:1 with evidence rows.");
+}
+
+
+static void TestUniversalExactMmcRoutes()
+{
+    var gpoId = Guid.NewGuid();
+    const string securityName = "Network security: LAN Manager authentication level";
+    var security = new PolicySettingInfo
+    {
+        GpoId = gpoId, GpoName = "Test GPO", Scope = "Computer",
+        Extension = "SecuritySettings",
+        Category = "Security Settings > Local Policies > Security Options",
+        SettingName = securityName, Value = "Enabled"
+    };
+    var securityPath = GpoPolicySectionRoutes.Resolve(security).ToArray();
+    MmcInventoryEntry Observed(PolicySettingInfo source,
+        IReadOnlyList<string> path, string name) =>
+        new()
+        {
+            GpoId = source.GpoId, Scope = source.Scope,
+            SettingName = name,
+            TreeSegments = path,
+            SectionPath = string.Join(" > ", path),
+            MmcValue = "Enabled", MmcState = "Configured",
+            Navigation = "Exact MMC row candidate"
+        };
+    var native = Observed(security, securityPath, securityName);
+    var noScan = GpoExactMmcRouteResolver.Resolve(
+        security, new[] { security }, null);
+    Assert(noScan.Status == GpoExactMmcRouteResolver.NoInventory &&
+           noScan.Entry is null,
+        "A documented section alone must not be reported as an observed exact row.");
+    var exact = GpoExactMmcRouteResolver.Resolve(
+        security, new[] { security }, new[] { native });
+    Assert(exact.CanOpen && ReferenceEquals(exact.Entry, native) &&
+           exact.Explanation.Contains("NOT verified", StringComparison.OrdinalIgnoreCase),
+        "One same-GPO/scope/native section+name match is an exact observed route only.");
+    Assert(GpoExactMmcRouteResolver.Resolve(
+        security, new[] { security },
+        new[] { native with { GpoId = Guid.NewGuid() } }).Status ==
+        GpoExactMmcRouteResolver.SectionOnly,
+        "MMC rows from a different GPO must be ignored.");
+    Assert(GpoExactMmcRouteResolver.Resolve(
+        security, new[] { security },
+        new[] { native with { Scope = "User" } }).Status ==
+        GpoExactMmcRouteResolver.SectionOnly,
+        "User-scope rows cannot support computer navigation.");
+    Assert(GpoExactMmcRouteResolver.Resolve(
+        security, new[] { security },
+        new[] { native with { TreeSegments = securityPath.SkipLast(1)
+            .Append("User Rights Assignment").ToArray() } }).Status ==
+        GpoExactMmcRouteResolver.SectionOnly,
+        "Exact row name in a different MMC section must not become an edit route.");
+    Assert(GpoExactMmcRouteResolver.Resolve(
+        security, new[] { security, security }, new[] { native }).Status ==
+        GpoExactMmcRouteResolver.SourceAmbiguous,
+        "Duplicate GPMC source identities prevent automatic and manual routing.");
+    Assert(GpoExactMmcRouteResolver.Resolve(
+        security, new[] { security },
+        new[] { native, native with { MmcValue = "Different" } }).Status ==
+        GpoExactMmcRouteResolver.Ambiguous,
+        "Multiple native MMC rows must never be selected by first match.");
+    Assert(!GpoExactMmcRouteResolver.MayReview(
+        security, new[] { security, security }, native, new[] { native }),
+        "Manual review must not bypass duplicate-source safeguards.");
+    Assert(!GpoExactMmcRouteResolver.MayReview(
+        security, new[] { security },
+        native with { MmcValue = "Fabricated" }, new[] { native }),
+        "A forged/stale native row must not be accepted by manual review.");
+    var review = GpoExactMmcRouteResolver.ReviewCandidates(
+        security, new[]
+        {
+            native,
+            native with { GpoId = Guid.NewGuid() },
+            native with { Scope = "User" },
+            native with { TreeSegments = new[]
+            {
+                "Computer Configuration", "Policies", "Windows Settings",
+                "Scripts"
+            } }
+        });
+    Assert(review.Count == 1 && ReferenceEquals(review[0], native) &&
+           GpoExactMmcRouteResolver.MayReview(
+               security, new[] { security }, native, review),
+        "Manual route picker must include only safe, same-GPO/scope observed rows.");
+
+    var account = new PolicySettingInfo
+    {
+        GpoId = gpoId, Scope = "Computer", Extension = "SecuritySettings",
+        Category = "SecuritySettings", SettingName = "Account: LockoutBadCount",
+        Value = "Name=LockoutBadCount; SettingNumber=5; Type=Account Lockout"
+    };
+    var accountTyped = GpoKnownAccountPolicyService.TryDescribe(
+        account, out var accountInfo);
+    Assert(accountTyped &&
+           accountInfo.NativeName == "Account lockout threshold" &&
+           new GpoEditorNavigatorService().CanNavigateExactly(account),
+        "Typed security Account Lockout nodes must map to their native MMC names.");
+    var accountRow = Observed(account,
+        GpoPolicySectionRoutes.Resolve(account),
+        "Account lockout threshold");
+    Assert(GpoExactMmcRouteResolver.Resolve(
+        account, new[] { account }, new[] { accountRow }).CanOpen,
+        "Lockout source name must map to exact native MMC row.");
+    var counterfeit = new PolicySettingInfo
+    {
+        GpoId = gpoId, Scope = "Computer", Extension = "SecuritySettings",
+        Category = "SecuritySettings", SettingName = "Account: LockoutBadCount",
+        Value = "SettingNumber=5; Type=Kerberos"
+    };
+    Assert(!GpoKnownAccountPolicyService.TryDescribe(counterfeit, out _) &&
+           !GpoExactMmcRouteResolver.Resolve(
+                counterfeit, new[] { counterfeit }, new[] { accountRow }).CanOpen,
+        "Wrong source Type cannot silently select an unrelated security policy.");
+    var password = new PolicySettingInfo
+    {
+        GpoId = gpoId, Scope = "Computer", Extension = "SecuritySettings",
+        Category = "SecuritySettings", SettingName = "Account: MinimumPasswordLength",
+        Value = "SettingNumber=12; Type=Password"
+    };
+    var pwOk = GpoKnownAccountPolicyService.TryDescribe(password, out var pw);
+    Assert(pwOk && pw.NativeName == "Minimum password length" &&
+           GpoPolicySectionRoutes.Resolve(password)[^1] == "Password Policy",
+        "Typed Password Policy entries must navigate to the correct MMC category.");
+
+    var admx = new PolicySettingInfo
+    {
+        GpoId = gpoId, Scope = "Computer", Extension = "RegistrySettings",
+        Category = "Administrative Templates", SettingName = "Example setting",
+        RegistryKey = @"Software\Policies\Example", RegistryValue = "Enabled",
+        Value = "1"
+    };
+    var definition = new AdmxPolicyDefinition
+    {
+        AdmxFile = "Example.admx", Name = "ExampleSetting",
+        DisplayName = "Example setting", Category = "System > Test",
+        Scope = "Computer", Key = admx.RegistryKey,
+        ValueName = admx.RegistryValue
+    };
+    var admxMmc = Observed(admx, new[]
+    {
+        "Computer Configuration", "Policies", "Administrative Templates",
+        "System", "Test"
+    }, "Example setting");
+    Assert(GpoExactMmcRouteResolver.Resolve(
+        admx, new[] { admx }, new[] { admxMmc }, new[] { definition }).CanOpen,
+        "Unique ADMX definition and exact nested category must locate its MMC policy-level row.");
+    Assert(GpoExactMmcRouteResolver.Resolve(
+        admx, new[] { admx }, new[] { admxMmc },
+        new[] { definition, definition }).Status ==
+        GpoExactMmcRouteResolver.SectionOnly,
+        "Ambiguous same-registry ADMX definitions must not yield a route.");
+    Assert(GpoExactMmcRouteResolver.Resolve(
+        admx, new[] { admx },
+        new[] { admxMmc with { TreeSegments = new[]
+        {
+            "Computer Configuration", "Policies", "Administrative Templates",
+            "Other", "Test"
+        } } }, new[] { definition }).Status == GpoExactMmcRouteResolver.SectionOnly,
+        "A same-name ADMX setting under another category is not the same policy.");
+
+    var audit = new PolicySettingInfo
+    {
+        GpoId = gpoId, Scope = "Computer", Extension = "AuditSettings",
+        Category = "Security Settings > Advanced Audit Policy Configuration > Audit Policies",
+        SettingName = "Credential Validation", Value = "Success, Failure"
+    };
+    var auditRoot = GpoPolicySectionRoutes.Resolve(audit);
+    var auditRow = Observed(audit,
+        auditRoot.Concat(new[] { "Account Logon" }).ToArray(),
+        "Credential Validation");
+    Assert(GpoExactMmcRouteResolver.Resolve(audit, new[] { audit },
+        new[] { auditRow }).CanOpen,
+        "Nested Advanced Audit Policy rows can be resolved only through exact observed names.");
+    Assert(GpoExactMmcRouteResolver.Resolve(audit, new[] { audit },
+        new[] { auditRow, auditRow with
+        {
+            TreeSegments = auditRoot.Concat(new[] { "Logon/Logoff" }).ToArray()
+        } }).Status == GpoExactMmcRouteResolver.Ambiguous,
+        "Identical Audit Policy names in two branches require operator investigation.");
+
+    var preference = new PolicySettingInfo
+    {
+        GpoId = gpoId, Scope = "User", Extension = "ScheduledTasksSettings",
+        Category = "ScheduledTasksSettings", SettingName = "Deploy task",
+        Value = "Action=Update"
+    };
+    var prefRoot = GpoPolicySectionRoutes.Resolve(preference);
+    Assert(string.Join(" > ", prefRoot) ==
+           "User Configuration > Preferences > Control Panel Settings > Scheduled Tasks",
+        "Known Group Policy Preferences CSE must use Preferences, not Policies.");
+    Assert(GpoPreferencesMmcSections.Resolve(new PolicySettingInfo
+    {
+        GpoId = gpoId, Scope = "Computer", Extension = "DriveMapSettings"
+    }).Count == 0,
+        "User-only GPP Drive Maps must not invent a Computer MMC folder.");
+    var preferenceRow = Observed(preference, prefRoot, "Deploy task");
+    Assert(GpoExactMmcRouteResolver.Resolve(preference, new[] { preference },
+        new[] { preferenceRow }).CanOpen,
+        "Unique exact GPP native list item may be navigated without assuming source-value verification.");
+    Assert(GpoExactMmcRouteResolver.Resolve(preference, new[] { preference },
+        new[] { preferenceRow with { TreeSegments = prefRoot.Take(1)
+            .Concat(new[] { "Policies" }).Concat(prefRoot.Skip(2)).ToArray() } }).Status ==
+        GpoExactMmcRouteResolver.SectionOnly,
+        "GPP item under wrong Policies/Preferences tree cannot match.");
+
+    var technical = new PolicySettingInfo
+    {
+        GpoId = gpoId, Scope = "Computer", Extension = "SecuritySettings",
+        Category = "SecuritySettings", SettingName = "Member: user",
+        Value = "SID=S-1-5-21-...",
+    };
+    Assert(GpoExactMmcRouteResolver.Resolve(technical,
+        new[] { technical }, new[] { native }).Status ==
+        GpoExactMmcRouteResolver.Unsupported,
+        "GPMC nested XML details must not be passed to native policy row editing.");
+
+    var unknown = new PolicySettingInfo
+    {
+        GpoId = gpoId, Scope = "User", Extension = "VendorCustomExtension",
+        Category = "VendorCustomExtension", SettingName = "Named setting"
+    };
+    var observedUnknown = Observed(unknown,
+        new[] { "User Configuration", "Preferences", "Windows Settings",
+            "Vendor Custom" }, "Named setting");
+    Assert(GpoExactMmcRouteResolver.Resolve(unknown, new[] { unknown },
+        new[] { observedUnknown }).Status == GpoExactMmcRouteResolver.NoRow &&
+           GpoExactMmcRouteResolver.ReviewCandidates(
+               unknown, new[] { observedUnknown }).Count == 1,
+        "Unknown CSE may offer explicit manual route review but never automatic first-match.");
+}
+
+
+
+static void TestAccountStoredSourceEvidence()
+{
+    var gpo = Guid.NewGuid();
+    const string domain = "example.local";
+    const string dc = "dc01.example.local";
+    var path = Path.Combine($@"\\{dc}\SYSVOL\{domain}", "Policies",
+        gpo.ToString("B"), "Machine", "Microsoft", "Windows NT",
+        "SecEdit", "GptTmpl.inf");
+    var inf = "[Unicode]\r\nUnicode=yes\r\n[System Access]\r\n" +
+              "MinimumPasswordLength = 14\r\nPasswordComplexity = 1\r\n" +
+              "LockoutBadCount = 5\r\nLockoutDuration = 30\r\n";
+    var bytes = System.Text.Encoding.Unicode.GetPreamble()
+        .Concat(System.Text.Encoding.Unicode.GetBytes(inf)).ToArray();
+    var sha = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes));
+    var parsed = SecurityTemplateSourceReader.Parse(bytes, gpo, "test", path, sha);
+    Assert(parsed.IsComplete && parsed.Rows.Count >= 4,
+        "Fixture must parse actual typed [System Access] INF records.");
+    var source = new RealSettingsScanResult(gpo, "test", domain, dc, DateTimeOffset.UtcNow,
+        parsed.Rows, new[] { new RealSettingsFileEvidence(path, "Read",
+            parsed.Rows.Count, sha, "Test bounded source") });
+
+    PolicySettingInfo Item(string name, string type, string field, string number) => new()
+    {
+        GpoId = gpo, Scope = "Computer", Extension = "SecuritySettings",
+        Category = "SecuritySettings", SettingName = "Account: " + name,
+        Value = "Name=" + name + "; " + field + "=" + number + "; Type=" + type
+    };
+    var length = Item("MinimumPasswordLength", "Password", "SettingNumber", "14");
+    GpoAccountStoredSourceEvidenceService.Result Compare(
+        PolicySettingInfo value, RealSettingsScanResult? snapshot,
+        IReadOnlyList<PolicySettingInfo>? indexed = null,
+        string? pinned = null) =>
+        GpoAccountStoredSourceEvidenceService.Compare(value,
+            indexed ?? new[] { value }, snapshot, domain, pinned ?? dc);
+    Assert(Compare(length, source).Status == GpoAccountStoredSourceEvidenceService.Match &&
+           Compare(length, source).SourceSha256 == sha,
+        "MinimumPasswordLength must agree with the pinned, complete SecEdit System Access key.");
+
+    var mismatch = Item("MinimumPasswordLength", "Password", "SettingNumber", "15");
+    Assert(Compare(mismatch, source).Status == GpoAccountStoredSourceEvidenceService.Mismatch,
+        "Stored GPMC/INF numeric differences must be reported, not automatically corrected.");
+    Assert(Compare(Item("PasswordComplexity", "Password", "SettingBoolean", "true"), source)
+           .Status == GpoAccountStoredSourceEvidenceService.Match,
+        "Boolean true must map to INF 1 for the known password complexity key.");
+    Assert(Compare(Item("PasswordComplexity", "Password", "SettingBoolean", "false"), source)
+           .Status == GpoAccountStoredSourceEvidenceService.Mismatch,
+        "Boolean mismatch must not be hidden by generic strings.");
+    Assert(Compare(Item("LockoutBadCount", "Account Lockout", "SettingNumber", "5"), source)
+           .Status == GpoAccountStoredSourceEvidenceService.Match &&
+           Compare(Item("LockoutDuration", "Account Lockout", "SettingNumber", "30"), source)
+           .Status == GpoAccountStoredSourceEvidenceService.Match,
+        "Only typed known Account Lockout fields map to System Access.");
+    Assert(Compare(length, null).Status == GpoAccountStoredSourceEvidenceService.NoSnapshot,
+        "An unscanned account policy is NOT Not Configured.");
+    Assert(Compare(length, source, pinned: "other.example.local").Status ==
+           GpoAccountStoredSourceEvidenceService.WrongSnapshot,
+        "A source from another pinned DC cannot verify the selected GPO.");
+    Assert(Compare(length, source with { GpoId = Guid.NewGuid() }).Status ==
+           GpoAccountStoredSourceEvidenceService.WrongSnapshot,
+        "Cross-GPO security template cannot verify this policy.");
+    Assert(Compare(length, source, new[] { length, length }).Status ==
+           GpoAccountStoredSourceEvidenceService.GpmcAmbiguous,
+        "Two GPMC rows for one typed account setting cannot verify the first match.");
+    Assert(Compare(length, source with { Files =
+        new[] { source.Files[0] with { Status = "Partial" } } }).Status ==
+           GpoAccountStoredSourceEvidenceService.FileIncomplete,
+        "Even a valid first INF row from partial parsing cannot be considered verified.");
+    Assert(Compare(length, source with { Files =
+        new[] { source.Files[0], source.Files[0] } }).Status ==
+           GpoAccountStoredSourceEvidenceService.FileAmbiguous,
+        "Duplicate file evidence must block.");
+    Assert(Compare(length, source with { Rows =
+        parsed.Rows.Concat(parsed.Rows.Where(r => r.SettingName == "MinimumPasswordLength")).ToArray() })
+        .Status == GpoAccountStoredSourceEvidenceService.SourceAmbiguous,
+        "Duplicate exact System Access keys must block.");
+    Assert(Compare(length, source with { Rows = parsed.Rows.Select(r =>
+        r.SettingName == "MinimumPasswordLength"
+            ? r with { SourceSha256 = new string('D', 64) } : r).ToArray() })
+        .Status == GpoAccountStoredSourceEvidenceService.SourceUntrusted,
+        "Row/source hash mismatches must fail closed.");
+    Assert(Compare(length, source with { Rows = parsed.Rows.Where(r =>
+        r.SettingName != "MinimumPasswordLength").ToArray() })
+        .Status == GpoAccountStoredSourceEvidenceService.SourceMissing,
+        "Missing [System Access] row must not be called Not Configured.");
+    foreach (var invalid in new[]
+    {
+        "Name=MinimumPasswordLength; SettingNumber=014; Type=Password",
+        "Name=MinimumPasswordLength; SettingNumber=-1; Type=Password",
+        "Name=MinimumPasswordLength; SettingNumber=14; SettingNumber=14; Type=Password",
+        "Name=MinimumPasswordLength; SettingNumber=14; Type=Kerberos",
+        "Name=MaximumPasswordAge; SettingNumber=14; Type=Password",
+        "Name=MinimumPasswordLength; SettingBoolean=true; Type=Password",
+        "Name=MinimumPasswordLength; SettingNumber=14; Type=Password; Type=Password"
+    })
+    {
+        var malformed = new PolicySettingInfo
+        {
+            GpoId = gpo, Scope = "Computer", Extension = "SecuritySettings",
+            Category = "SecuritySettings", SettingName = length.SettingName,
+            Value = invalid
+        };
+        var result = Compare(malformed, source);
+        Assert(result.Status is GpoAccountStoredSourceEvidenceService.GpmcUntyped
+            or GpoAccountStoredSourceEvidenceService.NotApplicable,
+            "Malformed or contradictory Account GPMC metadata must never compare.");
+    }
+}
+
+static void TestGppRegistryPinnedSourceMetadata()
+{
+    var id = Guid.NewGuid();
+    const string domain = "example.test";
+    const string dc = "dc01.example.test";
+    const string privateValue = "CONFIDENTIAL_GPP_VALUE_DO_NOT_EXPORT_81";
+    const string privateFilter = "PRIVATE_TARGET_NAME_DO_NOT_EXPORT_88";
+    var uid = Guid.NewGuid().ToString("B");
+    const string key = @"SOFTWARE\Example\Flags";
+
+    string SourceXml(string action = "U", string type = "REG_DWORD") =>
+        "<RegistrySettings><Registry name='Example flag' uid='" + uid + "'>" +
+        "<Properties action='" + action + "' hive='HKLM' key='" + key +
+        "' name='Enabled' type='" + type + "' value='" + privateValue + "'/>" +
+        "<Filters><FilterComputer name='" + privateFilter + "'/></Filters>" +
+        "</Registry></RegistrySettings>";
+    var raw = System.Text.Encoding.UTF8.GetBytes(SourceXml());
+    var parsed = GpoGppRegistrySourceEvidenceService.Parse(raw);
+    Assert(parsed.Status == "Read" && parsed.Sha256.Length == 64 &&
+           parsed.Items.Count == 1 && parsed.Items[0].Order == 1,
+        "A valid one-item bounded source must preserve the exact UID/order/type.");
+    var json = System.Text.Json.JsonSerializer.Serialize(parsed);
+    foreach (var value in new[] { privateValue, privateFilter, "value='" + privateValue })
+        Assert(!json.Contains(value, StringComparison.Ordinal),
+            "GPP Registry stored-source snapshot must never retain value data or targeting contents.");
+    var gpo = new GpoInfo
+    {
+        Id = id, DomainName = domain, DisplayName = "GPP example",
+        ComputerEnabled = true, UserEnabled = true
+    };
+    var report = "<GPO><Computer><ExtensionData><Extension type='RegistrySettings'>" +
+        SourceXml().Replace("<RegistrySettings>", "")
+                   .Replace("</RegistrySettings>", "") +
+        "</Extension></ExtensionData></Computer><User/></GPO>";
+    var policy = GpmService.ParseXmlSettings(report, gpo).Single();
+    Assert(policy.GppRegistryValueType == "REG_DWORD" &&
+           policy.GppRegistryHasFilters &&
+           policy.GppRegistryUid.Length > 0 &&
+           !policy.SearchText.Contains(privateValue),
+        "Typed GPMC index must preserve safe Registry metadata but redact value data.");
+
+    var path = Path.Combine($@"\\{dc}\SYSVOL\{domain}", "Policies",
+        id.ToString("B"), "Machine", "Preferences", "Registry", "Registry.xml");
+    var snapshot = new GpoGppRegistrySourceEvidenceService.Snapshot(
+        id, "Computer", domain, dc, path, "Read", parsed.Sha256, parsed.Items,
+        DateTimeOffset.UtcNow);
+
+    GpoGppRegistrySourceEvidenceService.Result Compare(
+        PolicySettingInfo setting, GpoGppRegistrySourceEvidenceService.Snapshot? src,
+        IReadOnlyList<PolicySettingInfo>? indexed = null,
+        string? dcOverride = null) =>
+        GpoGppRegistrySourceEvidenceService.Compare(setting, indexed ?? new[] { setting },
+            src, domain, dcOverride ?? dc);
+    var agreement = Compare(policy, snapshot);
+    Assert(agreement.Status == GpoGppRegistrySourceEvidenceService.Match &&
+           agreement.Explanation.Contains("NOT verified", StringComparison.Ordinal) &&
+           !agreement.Explanation.Contains(privateValue),
+        "Exact GPMC UID/order/type/action/hive/key/filter metadata match is NOT value/RSoP verification.");
+    var changed = parsed.Items[0] with { ValueType = "REG_SZ" };
+    Assert(Compare(policy, snapshot with { Items = new[] { changed } }).Status ==
+           GpoGppRegistrySourceEvidenceService.Mismatch,
+        "Changed source type must show metadata difference.");
+    Assert(Compare(policy, snapshot with { Items = new[] {
+        parsed.Items[0] with { KeyPath = "SOFTWARE\\Other" }
+    } }).Status == GpoGppRegistrySourceEvidenceService.Mismatch,
+        "Changed GPP Registry key must show a stored metadata difference.");
+    Assert(Compare(policy, null).Status == GpoGppRegistrySourceEvidenceService.NoSnapshot,
+        "Unscanned Registry.xml is not Not Configured.");
+    Assert(Compare(policy, snapshot with { DomainController = "other.example.test" }).Status ==
+           GpoGppRegistrySourceEvidenceService.WrongSnapshot &&
+           Compare(policy, snapshot, dcOverride: "other.example.test").Status ==
+           GpoGppRegistrySourceEvidenceService.WrongSnapshot,
+        "Wrong pinned DC must be rejected even if the SHA-256 is identical.");
+    Assert(Compare(policy, snapshot with { SourceFile = path.Replace("dc01", "dc02") }).Status ==
+           GpoGppRegistrySourceEvidenceService.WrongSnapshot,
+        "A same-suffix Registry.xml on another DC must never verify this setting.");
+    Assert(Compare(policy, snapshot with { Status = "Partial" }).Status ==
+           GpoGppRegistrySourceEvidenceService.FileIncomplete,
+        "Partial Registry.xml cannot verify metadata.");
+    Assert(Compare(policy, snapshot with { FileSha256 = "" }).Status ==
+           GpoGppRegistrySourceEvidenceService.FileIncomplete,
+        "Missing source SHA-256 must block.");
+    Assert(Compare(policy, snapshot with { Items = parsed.Items.Concat(parsed.Items).ToArray() })
+        .Status == GpoGppRegistrySourceEvidenceService.SourceAmbiguous,
+        "Duplicate pinned source UIDs cannot select the first.");
+    Assert(Compare(policy, snapshot with { Items = Array.Empty<GpmcRegistryPreferenceReportService.Item>() })
+        .Status == GpoGppRegistrySourceEvidenceService.SourceMissing,
+        "Missing UID must stay unverified.");
+    Assert(Compare(policy, snapshot, new[] { policy, policy }).Status ==
+           GpoGppRegistrySourceEvidenceService.AmbiguousGpmc,
+        "Duplicate typed GPMC UID must fail closed.");
+    Assert(Compare(new PolicySettingInfo
+    {
+        GpoId = id, Scope = "Computer", Extension = "GppRegistry",
+        GppRegistryHive = "HKLM", GppRegistryKeyPath = key,
+        GppRegistryAction = "Update", GppRegistryOrder = 1
+    }, snapshot).Status == GpoGppRegistrySourceEvidenceService.UntrustedGpmc,
+        "Missing GPMC UID must never verify a source item.");
+
+    foreach (var invalid in new[]
+    {
+        "<!DOCTYPE RegistrySettings [<!ENTITY x SYSTEM 'file:///C:/Windows/win.ini'>]>" +
+        "<RegistrySettings>&x;</RegistrySettings>",
+        "<RegistrySettings><Collection/><Registry name='Example' uid='" + uid +
+        "'><Properties action='U' hive='HKLM' key='" + key + "'/></Registry></RegistrySettings>",
+        "<RegistrySettings><Registry uid='" + uid + "'>" +
+        "<Properties action='U' hive='HKLM' key='" + key + "'/></Registry>" +
+        "<Registry uid='" + uid + "'><Properties action='U' hive='HKLM' key='" + key +
+        "'/></Registry></RegistrySettings>",
+        "<RegistrySettings><Registry name='Bad' uid='" + uid +
+        "'><Properties action='UNKNOWN' hive='HKLM' key='" + key +
+        "' value='" + privateValue + "'/></Registry></RegistrySettings>"
+    })
+    {
+        var bad = GpoGppRegistrySourceEvidenceService.Parse(
+            System.Text.Encoding.UTF8.GetBytes(invalid));
+        Assert(bad.Status == "Invalid" && bad.Items.Count == 0 &&
+               !System.Text.Json.JsonSerializer.Serialize(bad).Contains(privateValue),
+            "GPP source parser must fail closed on malformed, duplicate or unsupported XML.");
+    }
+}
+
+static void TestKerberosStoredSourceEvidence()
+{
+    var gpo = Guid.NewGuid();
+    const string domain = "example.local";
+    const string dc = "dc01.example.local";
+    var path = Path.Combine($@"\\{dc}\SYSVOL\{domain}", "Policies",
+        gpo.ToString("B"), "Machine", "Microsoft",
+        "Windows NT", "SecEdit", "GptTmpl.inf");
+    var inf = "[Unicode]\r\nUnicode=yes\r\n[Kerberos Policy]\r\n" +
+              "MaxClockSkew = 5\r\nTicketValidateClient = 1\r\n";
+    var bytes = System.Text.Encoding.Unicode.GetPreamble()
+        .Concat(System.Text.Encoding.Unicode.GetBytes(inf)).ToArray();
+    var sha = Convert.ToHexString(
+        System.Security.Cryptography.SHA256.HashData(bytes));
+    var parsed = SecurityTemplateSourceReader.Parse(
+        bytes, gpo, "Kerberos test", path, sha);
+    Assert(parsed.IsComplete && parsed.Rows.Count >= 2,
+        "Test must parse real SecEdit UTF-16 Kerberos keys.");
+    var files = new[]
+    {
+        new RealSettingsFileEvidence(path, "Read", parsed.Rows.Count, sha,
+            "Test snapshot with exact bytes and hash")
+    };
+    var snapshot = new RealSettingsScanResult(gpo, "Kerberos test", domain, dc,
+        DateTimeOffset.UtcNow, parsed.Rows, files);
+    var policy = new PolicySettingInfo
+    {
+        GpoId = gpo, GpoName = "Kerberos test",
+        Scope = "Computer", Extension = "SecuritySettings",
+        Category = KerberosPolicyMetadataService.Category,
+        SettingName = "Maximum tolerance for computer clock synchronization",
+        Value = "Name=MaxClockSkew; SettingNumber=5; Type=Kerberos"
+    };
+    GpoKerberosStoredSourceEvidenceService.Result Compare(
+        PolicySettingInfo setting, RealSettingsScanResult? source,
+        IReadOnlyList<PolicySettingInfo>? indexed = null,
+        string? domainOverride = null, string? dcOverride = null) =>
+        GpoKerberosStoredSourceEvidenceService.Compare(
+            setting, indexed ?? new[] { setting }, source,
+            domainOverride ?? domain, dcOverride ?? dc);
+    var agree = Compare(policy, snapshot);
+    Assert(agree.Status == GpoKerberosStoredSourceEvidenceService.Match &&
+           agree.GpmcLiteral == "5" && agree.InfLiteral == "5" &&
+           agree.SourceSha256 == sha &&
+           agree.Explanation.Contains("NOT MMC", StringComparison.Ordinal),
+        "One SHA-256-backed Kerberos source snapshot should agree without claiming client RSoP.");
+    var differs = Compare(new PolicySettingInfo
+    {
+        GpoId = gpo, Scope = "Computer", Extension = "SecuritySettings",
+        Category = KerberosPolicyMetadataService.Category,
+        SettingName = "Account: MaxClockSkew",
+        Value = "Name=MaxClockSkew; SettingNumber=6; Type=Kerberos"
+    }, snapshot);
+    Assert(differs.Status == GpoKerberosStoredSourceEvidenceService.Mismatch &&
+           differs.GpmcLiteral == "6" && differs.InfLiteral == "5",
+        "Different stored values must be reported as captured-snapshot difference.");
+
+    var boolean = new PolicySettingInfo
+    {
+        GpoId = gpo, Scope = "Computer", Extension = "SecuritySettings",
+        Category = KerberosPolicyMetadataService.Category,
+        SettingName = "Enforce user logon restrictions",
+        Value = "Name=TicketValidateClient; SettingBoolean=true; Type=Kerberos"
+    };
+    Assert(Compare(boolean, snapshot).Status ==
+           GpoKerberosStoredSourceEvidenceService.Match,
+        "Explicit GPMC true must agree only with saved SecEdit boolean 1.");
+    var falseBoolean = new PolicySettingInfo
+    {
+        GpoId = gpo, Scope = "Computer", Extension = "SecuritySettings",
+        Category = KerberosPolicyMetadataService.Category,
+        SettingName = boolean.SettingName,
+        Value = "Name=TicketValidateClient; SettingBoolean=false; Type=Kerberos"
+    };
+    Assert(Compare(falseBoolean, snapshot).Status ==
+           GpoKerberosStoredSourceEvidenceService.Mismatch,
+        "Stored Boolean true and GPMC Boolean false differ.");
+    Assert(Compare(policy, null).Status ==
+           GpoKerberosStoredSourceEvidenceService.NoSnapshot,
+        "Absent source scan cannot be called Not Configured.");
+    Assert(Compare(policy, snapshot, dcOverride: "other-dc.example.local").Status ==
+           GpoKerberosStoredSourceEvidenceService.WrongSnapshot,
+        "A source captured from a different pinned DC must be rejected.");
+    Assert(Compare(policy, snapshot, domainOverride: "other.example.local").Status ==
+           GpoKerberosStoredSourceEvidenceService.WrongSnapshot,
+        "Cross-domain source snapshots must not compare.");
+    Assert(Compare(policy, snapshot with { GpoId = Guid.NewGuid() }).Status ==
+           GpoKerberosStoredSourceEvidenceService.WrongSnapshot,
+        "A same-looking SecEdit file from another GPO cannot be compared.");
+    Assert(Compare(policy, snapshot, new[] { policy, policy }).Status ==
+           GpoKerberosStoredSourceEvidenceService.GpmcAmbiguous,
+        "Duplicate GPMC policy identities must not be selected by first record.");
+    Assert(Compare(policy, snapshot with { Files = Array.Empty<RealSettingsFileEvidence>() })
+        .Status == GpoKerberosStoredSourceEvidenceService.FileAbsent,
+        "Absent GptTmpl INF file is unknown, not Not Configured.");
+    Assert(Compare(policy, snapshot with { Files = new[]
+    {
+        files[0] with { SourceFile = path.Replace("dc01", "dc02",
+            StringComparison.OrdinalIgnoreCase) }
+    } }).Status == GpoKerberosStoredSourceEvidenceService.FileAbsent,
+        "A same-suffix source file on another DC must not be accepted.");
+    Assert(Compare(policy, snapshot with { Files = new[] { files[0], files[0] } })
+        .Status == GpoKerberosStoredSourceEvidenceService.FileAmbiguous,
+        "Duplicate file records cannot establish one source identity.");
+    Assert(Compare(policy, snapshot with { Files = new[]
+    {
+        files[0] with { Status = "Partial" }
+    } }).Status == GpoKerberosStoredSourceEvidenceService.FileIncomplete,
+        "A partial SecEdit parser must block comparisons even for a valid first row.");
+    Assert(Compare(policy, snapshot with { Files = new[]
+    {
+        files[0] with { Sha256 = "" }
+    } }).Status == GpoKerberosStoredSourceEvidenceService.FileIncomplete,
+        "Missing source-file SHA-256 must block stored-value agreement.");
+    Assert(Compare(policy, snapshot with
+    {
+        Rows = parsed.Rows.Where(x => x.SettingName != "MaxClockSkew").ToArray()
+    }).Status == GpoKerberosStoredSourceEvidenceService.SourceMissing,
+        "An absent exact source key is not proof that Kerberos is Not Configured.");
+    Assert(Compare(policy, snapshot with
+    {
+        Rows = parsed.Rows.Concat(new[] { parsed.Rows.Single(x =>
+            x.SettingName == "MaxClockSkew") }).ToArray()
+    }).Status == GpoKerberosStoredSourceEvidenceService.SourceAmbiguous,
+        "Duplicate exact template key entries must fail closed.");
+    Assert(Compare(policy, snapshot with
+    {
+        Rows = parsed.Rows.Select(x => x.SettingName == "MaxClockSkew"
+            ? x with { SourceSha256 = new string('C', 64) } : x).ToArray()
+    }).Status == GpoKerberosStoredSourceEvidenceService.SourceUntrusted,
+        "Stored row must have same hash as the complete source file.");
+    foreach (var malformed in new[]
+    {
+        "Type=Kerberos; Name=MaxClockSkew; SettingNumber=05",
+        "Type=Kerberos; Name=MaxClockSkew; SettingNumber=-1",
+        "Type=Kerberos; Name=MaxClockSkew; SettingNumber=4294967296",
+        "Type=Kerberos; Name=MaxClockSkew; SettingNumber=5; SettingNumber=5",
+        "Name=MaxClockSkew; SettingNumber=5; Type=Kerberos; Type=Kerberos",
+        "Type=Kerberos; Name=MaxClockSkew; SettingBoolean=true",
+        "Type=Kerberos; Name=MaxRenewAge; SettingNumber=5",
+        "Name=MaxClockSkew; SettingNumber=5",
+        "Type=Kerberos; Name=MaxClockSkew; SettingNumber=5; SettingBoolean=true"
+    })
+    {
+        var unsupported = new PolicySettingInfo
+        {
+            GpoId = policy.GpoId, Scope = policy.Scope, Extension = policy.Extension,
+            Category = policy.Category, SettingName = policy.SettingName,
+            Value = malformed
+        };
+        Assert(Compare(unsupported, snapshot).Status ==
+               GpoKerberosStoredSourceEvidenceService.GpmcUntyped,
+            "Malformed/duplicate/conflicting Kerberos GPMC fields cannot verify stored data.");
+    }
+    var srp = new PolicySettingInfo
+    {
+        GpoId = gpo, Scope = "User",
+        Extension = "SoftwareRestrictionSettings", SettingName = "Path Rule",
+        Value = @"Path=C:\Windows\System32\example.exe"
+    };
+    Assert(Compare(srp, snapshot).Status ==
+           GpoKerberosStoredSourceEvidenceService.NotSupported,
+        "A Kerberos source checker must never claim stored SRP rule coverage.");
+
+    var onlyOneFamily = new RealSettingsSourceService();
+    ExpectFailure(() => onlyOneFamily.Scan(
+        new GpoInfo { Id = gpo, DomainName = domain },
+        registryOnly: true, securityOnly: true),
+        "GptTmpl-only and Registry.pol-only selection must be mutually exclusive.");
+}
+
+
+static void TestSrpStoredSourceEvidence()
+{
+    var gpo = Guid.NewGuid();
+    const string domain = "example.test";
+    const string dc = "dc01.example.test";
+    const string rawPath = @"%systemdrive%\Windows\system32\dsdbutil.exe";
+    var guid = Guid.NewGuid().ToString("B");
+    var registryKey =
+        @"Software\Policies\Microsoft\Windows\Safer\CodeIdentifiers\0\Paths\" + guid;
+    var file = Path.Combine($@"\\{dc}\SYSVOL\{domain}",
+        "Policies", gpo.ToString("B"), "User", "Registry.pol");
+
+    // Build and parse a real PReg stream. ItemData is REG_EXPAND_SZ and
+    // must remain unexpanded, case-preserved and bound to a specific GUID.
+    var bytes = new List<byte>();
+    void Raw(byte[] data) => bytes.AddRange(data);
+    void Text(string text) => Raw(System.Text.Encoding.Unicode.GetBytes(text));
+    void Dword(uint value)
+    {
+        var data = new byte[4];
+        System.Buffers.Binary.BinaryPrimitives.WriteUInt32LittleEndian(data, value);
+        Raw(data);
+    }
+    Dword(0x67655250);
+    Dword(1);
+    Text("[");
+    Text(registryKey + "\0"); Text(";");
+    Text("ItemData\0"); Text(";");
+    Dword(2); Text(";");
+    var payload = System.Text.Encoding.Unicode.GetBytes(rawPath + "\0");
+    Dword((uint)payload.Length); Text(";");
+    Raw(payload); Text("]");
+    var raw = bytes.ToArray();
+    var sha = Convert.ToHexString(
+        System.Security.Cryptography.SHA256.HashData(raw));
+    var parsed = RegistryPolReader.Parse(raw, gpo, "SRP test",
+        "User", file, sha);
+    Assert(parsed.IsComplete && parsed.Rows.Count == 1 &&
+           parsed.Rows[0].ValueType == "REG_EXPAND_SZ" &&
+           parsed.Rows[0].Value == rawPath &&
+           parsed.Rows[0].RegistryKey == registryKey,
+        "Typed PReg source must preserve the literal SRP path and Safer key.");
+
+    var snapshot = new RealSettingsScanResult(gpo, "SRP test", domain, dc,
+        DateTimeOffset.UtcNow, parsed.Rows,
+        new[] { new RealSettingsFileEvidence(file, "Read", 1, sha, "read") });
+    PolicySettingInfo NewPolicy(string value) => new()
+    {
+        GpoId = gpo, GpoName = "SRP test",
+        Scope = "User", Extension = "SoftwareRestrictionSettings",
+        Category = "SoftwareRestrictionSettings",
+        SettingName = "Path Rule", Value = value
+    };
+    var setting = NewPolicy("SecurityLevel=Disallowed; " +
+        "ModificationTime=2021-10-27T16:47:31Z; Path=" + rawPath);
+
+    GpoSoftwareRestrictionStoredSourceEvidenceService.Result Compare(
+        PolicySettingInfo candidate, RealSettingsScanResult? source,
+        IReadOnlyList<PolicySettingInfo>? indexed = null,
+        string? domainOverride = null, string? dcOverride = null) =>
+        GpoSoftwareRestrictionStoredSourceEvidenceService.Compare(
+            candidate, indexed ?? new[] { candidate }, source,
+            domainOverride ?? domain, dcOverride ?? dc);
+
+    var agree = Compare(setting, snapshot);
+    Assert(agree.Status == GpoSoftwareRestrictionStoredSourceEvidenceService.Match &&
+           agree.Path == rawPath && agree.SourceSha256 == sha &&
+           agree.GpmcSecurityLevel == "Disallowed" &&
+           agree.SourceSecurityLevel == "Disallowed" &&
+           agree.Explanation.Contains("NOT verified", StringComparison.Ordinal),
+        "Exact stored SRP Path+Level match must NOT claim effective RSoP.");
+
+    var higherLevel = NewPolicy("SecurityLevel=Unrestricted; Path=" + rawPath);
+    var differs = Compare(higherLevel, snapshot);
+    Assert(differs.Status == GpoSoftwareRestrictionStoredSourceEvidenceService.Mismatch &&
+           differs.SourceSecurityLevel == "Disallowed" &&
+           differs.GpmcSecurityLevel == "Unrestricted",
+        "A matching path in a different Safer security level must be reported as a difference.");
+
+    Assert(Compare(setting, null).Status ==
+           GpoSoftwareRestrictionStoredSourceEvidenceService.NoSnapshot,
+        "Never call an unscanned scope not configured.");
+    Assert(Compare(setting, snapshot, dcOverride: "dc02.example.test").Status ==
+           GpoSoftwareRestrictionStoredSourceEvidenceService.WrongSnapshot,
+        "Another pinned DC's Registry.pol cannot verify this GPMC rule.");
+    Assert(Compare(setting, snapshot, domainOverride: "another.test").Status ==
+           GpoSoftwareRestrictionStoredSourceEvidenceService.WrongSnapshot,
+        "Cross-domain Registry.pol evidence must be rejected.");
+    Assert(Compare(setting, snapshot with { GpoId = Guid.NewGuid() }).Status ==
+           GpoSoftwareRestrictionStoredSourceEvidenceService.WrongSnapshot,
+        "Wrong GPO ID cannot use the same-looking source records.");
+    Assert(Compare(setting, snapshot, new[] { setting, higherLevel }).Status ==
+           GpoSoftwareRestrictionStoredSourceEvidenceService.GpmcAmbiguous,
+        "Multiple GPMC rules for one path are ambiguous even when their levels differ.");
+
+    Assert(Compare(setting, snapshot with
+    {
+        Files = Array.Empty<RealSettingsFileEvidence>()
+    }).Status == GpoSoftwareRestrictionStoredSourceEvidenceService.FileAbsent,
+        "Missing Registry.pol source file must remain unknown.");
+    Assert(Compare(setting, snapshot with
+    {
+        Files = new[] { snapshot.Files[0], snapshot.Files[0] }
+    }).Status == GpoSoftwareRestrictionStoredSourceEvidenceService.FileAmbiguous,
+        "Duplicate exact source file entries cannot establish a unique snapshot.");
+    Assert(Compare(setting, snapshot with
+    {
+        Files = new[] { snapshot.Files[0] with { Status = "Partial" } }
+    }).Status == GpoSoftwareRestrictionStoredSourceEvidenceService.FileIncomplete,
+        "A partially parsed Registry.pol must never verify a saved rule.");
+    Assert(Compare(setting, snapshot with
+    {
+        Files = new[] { snapshot.Files[0] with { Sha256 = "" } }
+    }).Status == GpoSoftwareRestrictionStoredSourceEvidenceService.FileIncomplete,
+        "A source missing its SHA-256 is not trusted.");
+
+    Assert(Compare(setting, snapshot with
+    {
+        Rows = parsed.Rows.Concat(parsed.Rows).ToArray()
+    }).Status == GpoSoftwareRestrictionStoredSourceEvidenceService.SourceAmbiguous,
+        "Two ItemData records for the same literal path must not select a first record.");
+    Assert(Compare(setting, snapshot with
+    {
+        Rows = new[] { parsed.Rows[0] with { ValueType = "REG_BINARY" } }
+    }).Status == GpoSoftwareRestrictionStoredSourceEvidenceService.SourceNotExact,
+        "Only typed REG_SZ/REG_EXPAND_SZ ItemData can be compared.");
+    Assert(Compare(setting, snapshot with
+    {
+        Rows = new[] { parsed.Rows[0] with { RegistryKey =
+            registryKey.Replace(@"\0\Paths\", @"\131072\Paths\") } }
+    }).Status == GpoSoftwareRestrictionStoredSourceEvidenceService.SourceNotExact,
+        "Unsupported security levels must never be given an invented meaning.");
+    Assert(Compare(setting, snapshot with
+    {
+        Rows = new[] { parsed.Rows[0] with { RegistryKey =
+            registryKey + @"\Unexpected" } }
+    }).Status == GpoSoftwareRestrictionStoredSourceEvidenceService.SourceNotExact,
+        "Unexpected descendants below the GUID key must fail closed.");
+    Assert(Compare(setting, snapshot with
+    {
+        Rows = new[] { parsed.Rows[0] with { SourceSha256 = new string('F', 64) } }
+    }).Status == GpoSoftwareRestrictionStoredSourceEvidenceService.SourceNotExact,
+        "Registry record and file SHA-256 must agree.");
+    Assert(Compare(setting, snapshot with
+    {
+        Rows = new[] { parsed.Rows[0] with { State = "Stored operation" } }
+    }).Status == GpoSoftwareRestrictionStoredSourceEvidenceService.SourceNotExact,
+        "Special Registry.pol operations are not current configured SRP values.");
+    Assert(Compare(setting, snapshot with
+    {
+        Rows = parsed.Rows.Select(row => row with { Value = "another.exe" }).ToArray()
+    }).Status == GpoSoftwareRestrictionStoredSourceEvidenceService.SourceMissing,
+        "An unmatched source path is unknown, not a false numeric/unit mismatch.");
+
+    foreach (var invalid in new[]
+    {
+        "SecurityLevel=Disallowed; SecurityLevel=Unrestricted; Path=" + rawPath,
+        "SecurityLevel=Basic User; Path=" + rawPath,
+        "SecurityLevel=Disallowed; Path=some;thing",
+        "SecurityLevel=Disallowed; Path=",
+        "Path=" + rawPath
+    })
+        Assert(Compare(NewPolicy(invalid), snapshot).Status ==
+               GpoSoftwareRestrictionStoredSourceEvidenceService.GpmcInvalid,
+            "Malformed/unrecognized SRP GPMC source metadata must be rejected.");
+
+    var unsupported = NewPolicy("SecurityLevel=Disallowed; Path=" + rawPath);
+    Assert(GpoSoftwareRestrictionStoredSourceEvidenceService.Compare(
+        new PolicySettingInfo
+        {
+            GpoId = gpo, Scope = "User", Extension = "SoftwareRestrictionSettings",
+            SettingName = "Hash Rule", Value = unsupported.Value
+        }, new[] { unsupported }, snapshot, domain, dc).Status ==
+        GpoSoftwareRestrictionStoredSourceEvidenceService.NotApplicable,
+        "A Path Rule source checker must not claim support for other SRP rule families.");
+}
+
+
+static void TestGpmcRegistryPreferenceEvidence()
+{
+    var gpo = new GpoInfo
+    {
+        Id = Guid.NewGuid(),
+        DomainName = "test.example",
+        DisplayName = "Example GPP Registry GPO",
+        ComputerEnabled = true, UserEnabled = true
+    };
+    const string key = @"SYSTEM\CurrentControlSet\Services\LanmanServer\Shares\Security";
+    const string secretValue = "CONFIDENTIAL_REGISTRY_VALUE_NOT_FOR_INDEX_7834";
+    var xml = "<GPO><Computer><ExtensionData><Extension type='RegistrySettings'>" +
+        "<Registry name='pslogging$' uid='{11111111-2222-3333-4444-555555555555}'>" +
+        "<Properties action='D' hive='HKEY_LOCAL_MACHINE' key='" + key +
+        "' name='pslogging$' type='REG_SZ' value='" + secretValue + "' />" +
+        "<Filters><FilterBoolean bool='AND'/></Filters>" +
+        "</Registry></Extension></ExtensionData></Computer>" +
+        "<User/></GPO>";
+
+    var settings = GpmService.ParseXmlSettings(xml, gpo);
+    Assert(settings.Count == 1, "One GPP Registry source must produce exactly one configured indexed item.");
+    var row = settings[0];
+    Assert(row.Extension == "GppRegistry" &&
+           row.Category == "Preferences > Windows Settings > Registry" &&
+           row.GppRegistryAction == "Delete" &&
+           row.GppRegistryHive == "HKEY_LOCAL_MACHINE" &&
+           row.GppRegistryKeyPath == key &&
+           row.GppRegistryValueName == "pslogging$" &&
+           row.GppRegistryOrder == 1 &&
+           row.State.Contains("GPP Delete") &&
+           row.Value.Contains("Action=Delete"),
+        "GPMC Registry Properties must become a typed preference, including exact action/hive/key/value name.");
+
+    Assert(!GpoSettingSourceProvenance.IsVerifiedRegistryTarget(row) &&
+           string.IsNullOrEmpty(GpoSettingSourceProvenance.RegistryTarget(row)) &&
+           GpoSettingSourceProvenance.DisplayRegistryTarget(row)
+               .Contains(@"HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\LanmanServer\Shares\Security / pslogging$"),
+        "Display-only GPP registry targets must never become Registry.pol evidence or RSoP.");
+    Assert(GpoEditorNavigatorService.NavigationTarget(row).EndsWith(
+               "Preferences > Windows Settings > Registry", StringComparison.Ordinal) &&
+           !new GpoEditorNavigatorService().CanNavigateExactly(row),
+        "GPP source can route only to the native Preferences folder, not an unverified exact item.");
+    Assert(!row.SearchText.Contains(secretValue) &&
+           !row.Value.Contains(secretValue),
+        "Sensitive GPP registry value data must never enter the default settings index.");
+
+    var report = GpoSettingsReportService.Parse(gpo, xml);
+    static IEnumerable<GpoReportNode> Walk(GpoReportNode node)
+    {
+        yield return node;
+        foreach (var child in node.Children)
+            foreach (var nested in Walk(child))
+                yield return nested;
+    }
+    var nodes = report.Sections.SelectMany(Walk).ToArray();
+    var target = nodes.SingleOrDefault(x => x.RegistryTarget.Contains("pslogging$"));
+    Assert(target is not null &&
+           target.Details.Contains("Action: Delete") &&
+           target.Details.Contains("Hive: HKEY_LOCAL_MACHINE") &&
+           target.Details.Contains("Key path: " + key) &&
+           target.Details.Contains("Value name: pslogging$") &&
+           target.Details.Contains("Order: 1") &&
+           target.Details.Contains("not Registry.pol") &&
+           !target.Details.Contains(secretValue),
+        "The GPMC tree must show the Microsoft-style Registry fields without exposing stored value data.");
+
+    Assert(nodes.Any(x => x.Label == "Preferences (GPP)") &&
+           nodes.Any(x => x.Label == "Windows Settings > Registry") &&
+           !nodes.Where(x => x.Label == "Administrative Templates")
+               .SelectMany(Walk).Any(x => x.RegistryTarget.Contains("pslogging$")),
+        "Registry preference source must be grouped under GPP, not Administrative Templates.");
+
+    // Same-named GPP items are distinct source operations. The displayed
+    // Order and GUID prevent a misleading "first match" edit shortcut.
+    var repeated = xml.Replace("</Registry></Extension>",
+        "</Registry><Registry name='pslogging$' " +
+        "uid='{99999999-8888-7777-6666-555555555555}'>" +
+        "<Properties action='U' hive='HKLM' key='" + key +
+        "' name='pslogging$' type='REG_SZ' value='" + secretValue + "' />" +
+        "</Registry></Extension>", StringComparison.Ordinal);
+    var repeatedRows = GpmService.ParseXmlSettings(repeated, gpo);
+    Assert(repeatedRows.Count == 2 &&
+           repeatedRows[0].GppRegistryOrder == 1 &&
+           repeatedRows[1].GppRegistryOrder == 2 &&
+           repeatedRows[0].GppRegistryUid != repeatedRows[1].GppRegistryUid &&
+           repeatedRows[0].GppRegistryAction == "Delete" &&
+           repeatedRows[1].GppRegistryAction == "Update" &&
+           repeatedRows.All(x => !x.SearchText.Contains(secretValue,
+               StringComparison.Ordinal)),
+        "Duplicate visible GPP Registry names must preserve order/UID/action and redact value data.");
+    var repeatedReport = GpoSettingsReportService.Parse(gpo, repeated);
+    var repeatedDetails = repeatedReport.Sections.SelectMany(Walk)
+        .Where(n => n.RegistryTarget.Contains("pslogging$", StringComparison.Ordinal))
+        .ToArray();
+    Assert(repeatedDetails.Length == 2 &&
+           repeatedDetails[0].Label.Contains("Order 1", StringComparison.Ordinal) &&
+           repeatedDetails[1].Label.Contains("Order 2", StringComparison.Ordinal) &&
+           repeatedDetails[1].Details.Contains("Action: Update", StringComparison.Ordinal),
+        "GPMC-style source report must distinguish same-named items by their original order.");
+
+    var item = System.Xml.Linq.XElement.Parse(
+        "<r:Registry xmlns:r='urn:group-policy-registry' name='My item'>" +
+        "<r:Properties action='Delete' hive='HKLM' key='SOFTWARE\\Example' name='Flag'/>" +
+        "</r:Registry>");
+    Assert(GpmcRegistryPreferenceReportService.TryRead(item, out var typed) &&
+           typed.RegistryTarget == @"HKEY_LOCAL_MACHINE\SOFTWARE\Example / Flag" &&
+           typed.Action == "Delete",
+        "A namespaced Registry preference source should use local names and exact structural evidence.");
+
+    foreach (var properties in new[]
+    {
+        "<Properties action='Delete' key='SOFTWARE\\Example' name='Flag'/>",
+        "<Properties action='Invalid' hive='HKLM' key='SOFTWARE\\Example' name='Flag'/>",
+        "<Properties action='Delete' hive='INVALID' key='SOFTWARE\\Example' name='Flag'/>",
+        "<Properties action='D' hive='HKLM' key='' name='Flag'/>"
+    })
+    {
+        var invalid = System.Xml.Linq.XElement.Parse(
+            "<Registry>" + properties + "</Registry>");
+        Assert(!GpmcRegistryPreferenceReportService.TryRead(invalid, out _),
+            "Unknown actions, hives or missing keys must never be treated as verified GPP registry targets.");
+    }
+
+    Assert(SecurityXmlEntryClassifier.IsTechnicalDetail(new PolicySettingInfo
+    {
+        Extension = "SoftwareInstallationSettings", SettingName = "Applicability"
+    }) && !SecurityXmlEntryClassifier.IsTechnicalDetail(row),
+        "MSI Applicability is package descriptor metadata; an exact GPP Registry item is not.");
+
+    var malformed = xml.Replace("action='D'", "action='INVALID'");
+    var unknown = GpmService.ParseXmlSettings(malformed, gpo);
+    Assert(unknown.Count == 1 &&
+           unknown[0].SettingName == "Registry preference (unparsed)" &&
+           unknown[0].RegistryKey == "" &&
+           unknown[0].GppRegistryKeyPath == "",
+        "Malformed preferences must remain visible as unverified source without a guessed registry path.");
+
+    // Partial/unknown Registry Properties are still an unverified GPP
+    // item, never an ordinary XML row disclosing a sensitive value.
+    var hiddenXml = xml.Replace(
+        "<Properties action='D' hive='HKEY_LOCAL_MACHINE' key='" + key +
+        "' name='pslogging$' type='REG_SZ' value='" + secretValue + "' />",
+        "<Properties value='" + secretValue + "' />",
+        StringComparison.Ordinal);
+    var hiddenRows = GpmService.ParseXmlSettings(hiddenXml, gpo);
+    Assert(hiddenRows.Count == 1 &&
+           hiddenRows[0].SettingName == "Registry preference (unparsed)" &&
+           hiddenRows[0].GppRegistryKeyPath.Length == 0 &&
+           !hiddenRows[0].SearchText.Contains(secretValue, StringComparison.Ordinal),
+        "Invalid Registry/Properties cannot leak values or claim a source target.");
+    var hiddenReport = GpoSettingsReportService.Parse(gpo, hiddenXml);
+    var hiddenTree = hiddenReport.Sections.SelectMany(Walk).ToArray();
+    Assert(hiddenTree.Any(n => n.Label.Contains("Registry Preference: UNVERIFIED")) &&
+           !hiddenTree.Any(n => n.Details.Contains(secretValue, StringComparison.Ordinal) ||
+                                n.RegistryTarget.Length > 0),
+        "Incomplete GPP source must be redacted in the GPMC-style report.");
+
+    ExpectFailure(() => GpmService.ParseXmlSettings(
+        "<!DOCTYPE GPO [<!ENTITY injected SYSTEM 'file:///C:/windows/win.ini'>]>" +
+        "<GPO>&injected;</GPO>", gpo),
+        "GPMC XML index parser must reject DTD and external entities.");
+    ExpectFailure(() => GpmService.ParseXmlSettings(
+        "<GPO><Computer><ExtensionData></Computer>", gpo),
+        "Malformed GPMC XML must be rejected rather than treated as an empty GPO.");
+}
+
+
+static void TestGpmcExactRegistryReportLookup()
+{
+    const string key = @"SYSTEM\CurrentControlSet\Services\LanmanServer\Shares\Security";
+    const string secret = "PRIVATE_DATA_NEVER_INDEX_5471";
+    var gpo = new GpoInfo
+    {
+        Id = Guid.NewGuid(), DisplayName = "GPO Registry Test A",
+        DomainName = "example.test", ComputerEnabled = true, UserEnabled = true
+    };
+    var xml = "<GPO><Computer><ExtensionData><Extension type='RegistrySettings'>" +
+        "<Registry name='pslogging$' uid='{11111111-2222-3333-4444-555555555555}'>" +
+        "<Properties action='D' hive='HKLM' key='" + key +
+        "' name='pslogging$' type='REG_SZ' value='" + secret + "'/>" +
+        "</Registry>" +
+        "<Registry name='pslogging$' uid='{99999999-8888-7777-6666-555555555555}'>" +
+        "<Properties action='U' hive='HKLM' key='" + key +
+        "' name='pslogging$' type='REG_SZ' value='" + secret + "'/>" +
+        "</Registry></Extension></ExtensionData></Computer>" +
+        "<User><ExtensionData><Extension type='RegistrySettings'>" +
+        "<Registry name='pslogging$' uid='{11111111-2222-3333-4444-555555555555}'>" +
+        "<Properties action='D' hive='HKCU' key='Software\\Other'" +
+        " name='pslogging$' type='REG_SZ' value='" + secret + "'/>" +
+        "</Registry></Extension></ExtensionData></User></GPO>";
+
+    var entries = GpmService.ParseXmlSettings(xml, gpo);
+    Assert(entries.Count == 3 && entries.Count(e => e.Scope == "Computer") == 2,
+        "GPMC must preserve multiple same-name Registry items and both scopes.");
+    var report = GpoSettingsReportService.Parse(gpo, xml);
+    Assert(report.GpoId == gpo.Id,
+        "Fresh source report identity must preserve the requested GPO GUID.");
+
+    var a = entries.Single(e => e.Scope == "Computer" && e.GppRegistryOrder == 1);
+    var b = entries.Single(e => e.Scope == "Computer" && e.GppRegistryOrder == 2);
+    var user = entries.Single(e => e.Scope == "User");
+
+    var aCreated = GpmcRegistryReportLocator.TryCreate(a, out var aReference);
+    var bCreated = GpmcRegistryReportLocator.TryCreate(b, out var bReference);
+    var userCreated = GpmcRegistryReportLocator.TryCreate(
+        user, out var userReference);
+    Assert(aCreated && bCreated && userCreated,
+        "Only typed GPP Registry rows with UID, order and full target are eligible.");
+
+    var resultA = GpmcRegistryReportLocator.Locate(report, aReference);
+    var resultB = GpmcRegistryReportLocator.Locate(report, bReference);
+    var resultUser = GpmcRegistryReportLocator.Locate(report, userReference);
+    Assert(resultA.IsExact && resultB.IsExact && resultUser.IsExact &&
+           !ReferenceEquals(resultA.Node, resultB.Node) &&
+           resultA.Node!.GppRegistryAction == "Delete" &&
+           resultB.Node!.GppRegistryAction == "Update" &&
+           resultUser.Node!.GppRegistryScope == "User" &&
+           resultB.Node.GppRegistryOrder == 2 &&
+           resultA.Node.RegistryTarget ==
+               @"HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\LanmanServer\Shares\Security / pslogging$",
+        "Exact report selection must choose one correct UID/order/action/scope, never first same-label row.");
+
+    Assert(!resultA.Node!.Details.Contains(secret) &&
+           !resultB.Node!.Details.Contains(secret) &&
+           !resultUser.Node!.Details.Contains(secret) &&
+           !a.SearchText.Contains(secret) &&
+           a.IndexedSourceRegistryKey ==
+               @"GPP source: HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\LanmanServer\Shares\Security" &&
+           a.IndexedSourceRegistryValueName == "pslogging$",
+        "The main GPMC grid must show Microsoft-style source hive/key/name without raw value data.");
+
+    var otherGpo = new GpoInfo
+    {
+        Id = Guid.NewGuid(), DisplayName = "GPO Registry Test B",
+        DomainName = "example.test", ComputerEnabled = true, UserEnabled = true
+    };
+    var otherReport = GpoSettingsReportService.Parse(otherGpo, xml);
+    Assert(GpmcRegistryReportLocator.Locate(otherReport, aReference).Status ==
+           GpmcRegistryReportLocator.WrongGpo,
+        "A similarly named registry item in a different GPO must never be selected.");
+
+    Assert(GpmcRegistryReportLocator.Locate(report,
+               aReference with { Order = 2 }).Status ==
+           GpmcRegistryReportLocator.StaleMetadata &&
+           GpmcRegistryReportLocator.Locate(report,
+               aReference with { RegistryTarget = @"HKEY_LOCAL_MACHINE\OTHER" }).Status ==
+           GpmcRegistryReportLocator.StaleMetadata &&
+           GpmcRegistryReportLocator.Locate(report,
+               aReference with { Action = "Update" }).Status ==
+           GpmcRegistryReportLocator.StaleMetadata,
+        "A changed source order, path or action must invalidate the cached GPMC item.");
+
+    Assert(GpmcRegistryReportLocator.Locate(report,
+               aReference with { Uid = Guid.NewGuid() }).Status ==
+           GpmcRegistryReportLocator.MissingUid,
+        "No UID match must never trigger an unrelated substring search.");
+
+    var duplicateUidXml = xml.Replace(
+        "99999999-8888-7777-6666-555555555555",
+        "11111111-2222-3333-4444-555555555555",
+        StringComparison.Ordinal);
+    var duplicateUidReport = GpoSettingsReportService.Parse(gpo, duplicateUidXml);
+    Assert(GpmcRegistryReportLocator.Locate(duplicateUidReport,
+               aReference).Status == GpmcRegistryReportLocator.AmbiguousUid,
+        "Duplicated UID within one Computer scope cannot be assigned to the first row.");
+
+    Assert(!GpmcRegistryReportLocator.TryCreate(new PolicySettingInfo
+        {
+            GpoId = gpo.Id, Scope = "Computer",
+            Extension = "SoftwareInstallationSettings",
+            SettingName = "Applicability", RegistryKey = key,
+            RegistryValue = "pslogging$"
+        }, out _),
+        "A technical MSI Applicability descriptor must never acquire another GPO's GPP registry path.");
+
+    var technical = new PolicySettingInfo
+    {
+        GpoId = gpo.Id, Scope = "Computer",
+        Extension = "SoftwareInstallationSettings",
+        SettingName = "Applicability", RegistryKey = key,
+        RegistryValue = "pslogging$"
+    };
+    Assert(SecurityXmlEntryClassifier.IsTechnicalDetail(technical) &&
+           technical.IndexedSourceRegistryKey == "" &&
+           technical.IndexedSourceRegistryValueName == "",
+        "Legacy metadata must remain source-only and show no invented Registry.pol target.");
+
+    Assert(!GpmcRegistryReportLocator.TryCreate(new PolicySettingInfo
+        {
+            GpoId = gpo.Id, Scope = "Computer", Extension = "GppRegistry",
+            GppRegistryHive = "HKLM", GppRegistryKeyPath = key,
+            GppRegistryUid = "invalid", GppRegistryOrder = 1,
+            GppRegistryAction = "Delete"
+        }, out _) &&
+        !GpmcRegistryReportLocator.TryCreate(new PolicySettingInfo
+        {
+            GpoId = gpo.Id, Scope = "Computer", Extension = "GppRegistry",
+            GppRegistryHive = "HKLM", GppRegistryKeyPath = key,
+            GppRegistryUid = Guid.NewGuid().ToString("D"), GppRegistryOrder = 0,
+            GppRegistryAction = "Delete"
+        }, out _),
+        "A GPP source without exact UID and order must remain manual-only.");
+}
+
+
+static void TestAdvancedAuditStoredSourceEvidence()
+{
+    var gpo = Guid.NewGuid();
+    var subcategory = Guid.Parse("0cce9215-69ae-11d9-bed3-505054503030");
+    const string domain = "example.test";
+    const string dc = "dc01.example.test";
+    var path = Path.Combine($@"\\{dc}\SYSVOL\{domain}", "Policies",
+        gpo.ToString("B"), "Machine", "Microsoft", "Windows NT", "Audit", "audit.csv");
+    var csv = "Machine Name,Policy Target,Subcategory,Subcategory GUID,Inclusion Setting," +
+              "Exclusion Setting,Setting Value\r\n" +
+              "TEST-MACHINE,System,Logon," + subcategory.ToString("B") + ",Success,,1\r\n";
+    var bytes = System.Text.Encoding.UTF8.GetBytes(csv);
+    var sha = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes));
+    var parsed = AdvancedAuditSourceReader.Parse(bytes, gpo, "test", path, sha);
+    Assert(parsed.IsComplete && parsed.Rows.Count == 1 &&
+           parsed.Rows[0].Category == "Advanced Audit Policy > System",
+        "Fixture must parse one complete typed System audit.csv source row.");
+    var source = new RealSettingsScanResult(gpo, "test", domain, dc, DateTimeOffset.UtcNow,
+        parsed.Rows, new[] { new RealSettingsFileEvidence(
+            path, "Read", parsed.Rows.Count, sha, "Test complete pinned source") });
+
+    PolicySettingInfo Setting(string value = "1", string target = "System",
+        string? summary = null) => new()
+    {
+        GpoId = gpo, Scope = "Computer", Extension = "AuditSettings",
+        Category = "Security Settings > Advanced Audit Policy Configuration > Audit Policies",
+        SettingName = "Audit Logon",
+        Value = summary ?? ("PolicyTarget=" + target + "; SubcategoryGuid=" +
+            subcategory.ToString("B") + "; SettingValue=" + value +
+            "; InclusionSetting=Success")
+    };
+    GpoAdvancedAuditStoredSourceEvidenceService.Result Compare(
+        PolicySettingInfo setting, RealSettingsScanResult? captured,
+        IReadOnlyList<PolicySettingInfo>? indexed = null, string? pinned = null) =>
+        GpoAdvancedAuditStoredSourceEvidenceService.Compare(
+            setting, indexed ?? new[] { setting }, captured, domain, pinned ?? dc);
+
+    var valid = Setting();
+    Assert(Compare(valid, source).Status == GpoAdvancedAuditStoredSourceEvidenceService.Match &&
+           Compare(valid, source).SourceSha256 == sha &&
+           Compare(valid, source).Explanation.Contains("RSoP", StringComparison.Ordinal),
+        "Pinned System GUID and numeric code match, without an effective RSoP claim.");
+    Assert(Compare(Setting("2"), source).Status == GpoAdvancedAuditStoredSourceEvidenceService.Mismatch,
+        "Different literal System audit codes must be reported as differences.");
+    Assert(Compare(valid, null).Status == GpoAdvancedAuditStoredSourceEvidenceService.NoSnapshot,
+        "An unscanned audit source cannot be verified.");
+    Assert(Compare(valid, source, pinned: "dc02.example.test").Status ==
+           GpoAdvancedAuditStoredSourceEvidenceService.WrongSnapshot,
+        "Another pinned DC's audit.csv must never verify the selected GPO.");
+    Assert(Compare(valid, source with { GpoId = Guid.NewGuid() }).Status ==
+           GpoAdvancedAuditStoredSourceEvidenceService.WrongSnapshot,
+        "Wrong GPO ID must block audit evidence.");
+    Assert(Compare(valid, source with { Files = Array.Empty<RealSettingsFileEvidence>() }).Status ==
+           GpoAdvancedAuditStoredSourceEvidenceService.FileMissing,
+        "Missing audit.csv cannot be treated as Not Configured.");
+    Assert(Compare(valid, source with {
+        Files = new[] { source.Files[0], source.Files[0] } }).Status ==
+           GpoAdvancedAuditStoredSourceEvidenceService.FileAmbiguous,
+        "Duplicated exact CSV file identity must block.");
+    Assert(Compare(valid, source with {
+        Files = new[] { source.Files[0] with { Status = "Partial" } } }).Status ==
+           GpoAdvancedAuditStoredSourceEvidenceService.FileIncomplete,
+        "Partial audit.csv must not verify a first valid row.");
+    Assert(Compare(valid, source with {
+        Rows = parsed.Rows.Concat(parsed.Rows).ToArray() }).Status ==
+           GpoAdvancedAuditStoredSourceEvidenceService.SourceAmbiguous,
+        "Duplicate subcategory GUID entries must not use first match.");
+    Assert(Compare(valid, source with {
+        Rows = parsed.Rows.Select(row => row with { SourceSha256 = new string('A', 64) }).ToArray()
+    }).Status == GpoAdvancedAuditStoredSourceEvidenceService.SourceInvalid,
+        "Row hash disagreement must block comparison.");
+    Assert(Compare(valid, source with {
+        Rows = parsed.Rows.Select(row => row with { Category = "Advanced Audit Policy > S-1-5-21-1" })
+            .ToArray()
+    }).Status == GpoAdvancedAuditStoredSourceEvidenceService.SourceMissing,
+        "A per-user SID target must not be confused with System audit.");
+    Assert(Compare(valid, source with {
+        Rows = parsed.Rows.Select(row => row with { RegistryValue = Guid.NewGuid().ToString("B") })
+            .ToArray()
+    }).Status == GpoAdvancedAuditStoredSourceEvidenceService.SourceMissing,
+        "The exact GUID is required even when localized names match.");
+    Assert(Compare(valid, source, new[] { valid, valid }).Status ==
+           GpoAdvancedAuditStoredSourceEvidenceService.GpmcAmbiguous,
+        "Duplicate indexed GPMC GUIDs cannot be matched by first row.");
+    Assert(Compare(valid, source, new[] { Setting("2") }).Status ==
+           GpoAdvancedAuditStoredSourceEvidenceService.GpmcAmbiguous,
+        "A changed GPMC source cannot reuse stale indexed values.");
+    foreach (var bad in new[] {
+        Setting("5"), Setting("01"), Setting("-1"), Setting(target: "S-1-5-21-1"),
+        Setting(summary: "PolicyTarget=System; SettingValue=1"),
+        Setting(summary: "PolicyTarget=System; SubcategoryGuid=wrong; SettingValue=1"),
+        Setting(summary: "PolicyTarget=System; PolicyTarget=System; SubcategoryGuid=" +
+            subcategory.ToString("B") + "; SettingValue=1"),
+        Setting(summary: "PolicyTarget=System; SubcategoryGuid=" +
+            subcategory.ToString("B") + "; SettingValue=1; SettingValue=1")
+    })
+        Assert(Compare(bad, source).Status == GpoAdvancedAuditStoredSourceEvidenceService.GpmcInvalid,
+            "Invalid, duplicated or per-user GPMC numeric audit fields must be rejected.");
+    var user = new PolicySettingInfo {
+        GpoId = gpo, Scope = "User", Extension = "AuditSettings",
+        Category = valid.Category, SettingName = valid.SettingName, Value = valid.Value
+    };
+    Assert(Compare(user, source).Status == GpoAdvancedAuditStoredSourceEvidenceService.NotApplicable,
+        "Computer source verification must not accept User scope.");
+}
+
+static void TestSourcePathPresentation()
+{
+    const string confidential = "SENSITIVE_REGISTRY_DATA_NEVER_COPY_2718";
+    var registry = new PolicySettingInfo {
+        GpoName = "Example GPO", Scope = "Computer",
+        Extension = "RegistrySettings", SettingName = "Target version",
+        RegistryKey = @"SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate",
+        RegistryValue = "TargetReleaseVersionInfo", Value = confidential
+    };
+    var hint = GpoSourcePathPresentationService.Describe(registry);
+    var copied = GpoSourcePathPresentationService.CopyLocationText(registry);
+    Assert(hint.GpoRelativeFile == @"Machine\Registry.pol" &&
+           hint.ReportedTarget.Contains("TargetReleaseVersionInfo", StringComparison.Ordinal) &&
+           copied.Contains(@"Machine\Registry.pol", StringComparison.Ordinal) &&
+           !copied.Contains(confidential, StringComparison.Ordinal),
+        "A reported Administrative Templates registry key/path is useful but must not expose raw value data.");
+
+    var gpp = new PolicySettingInfo {
+        GpoName = "Preferences", Scope = "User", Extension = "GppRegistry",
+        GppRegistryHive = "HKEY_CURRENT_USER", GppRegistryKeyPath = @"Software\Example",
+        GppRegistryValueName = "Test", GppRegistryAction = "U", Value = confidential
+    };
+    var gppPath = GpoSourcePathPresentationService.Describe(gpp);
+    Assert(gppPath.GpoRelativeFile == @"User\Preferences\Registry\Registry.xml" &&
+           gppPath.ReportedTarget.Contains(@"Software\Example", StringComparison.Ordinal) &&
+           !GpoSourcePathPresentationService.CopyLocationText(gpp)
+               .Contains(confidential, StringComparison.Ordinal) &&
+           gppPath.Limitations.Contains("NOT Registry.pol", StringComparison.Ordinal),
+        "GPP must show its XML path and registry target without secret data or Registry.pol claims.");
+
+    var unknown = new PolicySettingInfo {
+        Scope = "Computer", Extension = "SoftwareInstallationSettings",
+        SettingName = "Applicability", RegistryKey = @"SOFTWARE\Confusing",
+        Value = confidential
+    };
+    Assert(GpoSourcePathPresentationService.Describe(unknown).ReportedTarget ==
+           "(no registry target)",
+        "Software Installation metadata must not be confused with a registry setting.");
+    Assert(GpoSourcePathPresentationService.Describe(new PolicySettingInfo {
+        Scope = "Computer", Extension = "ThirdPartySecurity",
+        RegistryKey = @"SOFTWARE\Confusing"
+    }).ReportedTarget == "(no verified registry target)",
+        "Unsupported GPMC extensions must not infer a path from arbitrary XML attributes.");
+
+    // GPMC may omit the registry Key even when a unique, same-category
+    // ADMX policy declares it. Show the declaration, not a stored-source claim.
+    var noRegistryInGpmc = new PolicySettingInfo {
+        GpoName = "Windows Update", Scope = "Computer",
+        Extension = "RegistrySettings",
+        Category = "Windows Components > Windows Update",
+        SettingName = "Select the target Feature Update version",
+        Value = confidential
+    };
+    var admx = new AdmxPolicyDefinition {
+        AdmxFile = "WindowsUpdate.admx",
+        DisplayName = noRegistryInGpmc.SettingName,
+        Scope = "Machine", Category = noRegistryInGpmc.Category,
+        Key = @"SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate",
+        ValueName = "TargetReleaseVersionInfo",
+        Elements = new[] {
+            new AdmxElementDefinition {
+                Id = "TargetProductVersion", Type = AdmxElementType.Text,
+                Key = @"SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate",
+                ValueName = "ProductVersion"
+            }
+        }
+    };
+    var declaration = GpoSourcePathPresentationService.DescribeAdmxDeclaration(
+        noRegistryInGpmc, new[] { admx });
+    Assert(declaration.Contains(@"HKLM\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate",
+               StringComparison.Ordinal) &&
+           declaration.Contains("TargetReleaseVersionInfo", StringComparison.Ordinal) &&
+           declaration.Contains("ProductVersion", StringComparison.Ordinal) &&
+           declaration.Contains("NOT stored-source verified", StringComparison.Ordinal) &&
+           !declaration.Contains(confidential, StringComparison.Ordinal),
+        "A unique ADMX declaration gives registry key paths but is not proof of saved policy values.");
+    Assert(GpoSourcePathPresentationService.DescribeAdmxDeclaration(
+        noRegistryInGpmc, new[] { admx, admx }) == string.Empty,
+        "Duplicate same-category ADMX definitions may not select a first target.");
+    Assert(GpoSourcePathPresentationService.DescribeAdmxDeclaration(
+        noRegistryInGpmc, Array.Empty<AdmxPolicyDefinition>()) == string.Empty,
+        "Missing ADMX definitions cannot be guessed from policy name.");
+    var sourceCopy = GpoSourcePathPresentationService.CopyLocationText(
+        noRegistryInGpmc, declaration);
+    Assert(sourceCopy.Contains("ADMX reference", StringComparison.Ordinal) &&
+           !sourceCopy.Contains(confidential, StringComparison.Ordinal),
+        "Copying an ADMX-declared target must not copy actual GPMC setting values.");
 }

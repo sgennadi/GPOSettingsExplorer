@@ -2,6 +2,7 @@ using GPOSettingsExplorer.Models;
 using GPOSettingsExplorer.Services;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Reflection;
 using System.Windows;
 using System.Windows.Data;
 using System.Windows.Input;
@@ -30,10 +31,22 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
-        // Take the version from the running assembly, never from a hard-coded caption.
-        var version = typeof(MainWindow).Assembly.GetName().Version;
+        // Show the actual running assembly's version and explicit prerelease
+        // marker. Never label a development build as a stable release.
+        var assembly = typeof(MainWindow).Assembly;
+        var version = assembly.GetName().Version;
+        var informational = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion ?? string.Empty;
+        var previewMatch = System.Text.RegularExpressions.Regex.Match(
+            informational, @"-preview\.([0-9]+)",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase |
+            System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+        var isPreview = informational.Contains("-preview", StringComparison.OrdinalIgnoreCase);
         Title = "GPO Settings Explorer" +
-                (version is null ? "" : $" v{version.ToString(3)}");
+                (version is null ? "" : $" v{version.ToString(3)}") +
+                (isPreview ? " Preview" +
+                    (previewMatch.Success ? " " + previewMatch.Groups[1].Value : "") :
+                    string.Empty);
 
         GpoGrid.ItemsSource = _gpos;
         SettingsGrid.ItemsSource = _settings;
@@ -59,6 +72,13 @@ public partial class MainWindow : Window
         ApplyStoredUpdateState();
 
         await RefreshAllAsync();
+
+        // Optional and per-user: refresh only new/modified GPMC XML records
+        // in the existing cache. Never launch MMC inventory for all GPOs
+        // during startup: it can open unsafe snap-ins on a production DC.
+        if (_autoGpmcIndexOnStartup && _domainContext is not null &&
+            _gpmService.IsAvailable && _gpos.Count > 0)
+            _ = EnsureSettingsIndexAsync(forceRebuild: false);
 
         StartDiagnosticQueueMonitor();
 
@@ -661,6 +681,9 @@ public partial class MainWindow : Window
     private void SettingsSearchBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
         => _settingsView.Refresh();
 
+    private void SettingsShowTechnicalCheckBox_Changed(
+        object sender, RoutedEventArgs e) => _settingsView?.Refresh();
+
     private void WmiSearchBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
         => _wmiView.Refresh();
 
@@ -695,6 +718,13 @@ public partial class MainWindow : Window
         {
             return false;
         }
+
+        // The flat legacy index previously displayed MSI Applicability
+        // descriptors like independent editable policies. Retain those
+        // details only on explicit user request.
+        if (SecurityXmlEntryClassifier.IsTechnicalDetail(setting) &&
+            SettingsShowTechnicalCheckBox?.IsChecked != true)
+            return false;
 
         var search = SettingsSearchBox?.Text?.Trim();
         return string.IsNullOrWhiteSpace(search) ||
@@ -732,7 +762,11 @@ public partial class MainWindow : Window
     private void SetBusy(bool busy, string? message = null)
     {
         BusyProgress.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
-        Mouse.OverrideCursor = busy ? Cursors.Wait : null;
+        // Mouse.OverrideCursor is global across ALL WPF windows. A script
+        // preview displayed during an in-progress backup was still clickable
+        // but misleadingly showed the wait cursor. Busy belongs to MAIN only:
+        // owned confirmation dialogs must retain the regular pointer.
+        Cursor = busy ? Cursors.Wait : null;
 
         if (!string.IsNullOrWhiteSpace(message))
         {

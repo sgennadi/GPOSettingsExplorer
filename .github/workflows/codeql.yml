@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - dev/preview13-merged-evidence
   pull_request:
     branches:
       - main

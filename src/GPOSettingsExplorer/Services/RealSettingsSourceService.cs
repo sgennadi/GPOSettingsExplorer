@@ -10,9 +10,23 @@ namespace GPOSettingsExplorer.Services;
 public sealed class RealSettingsSourceService
 {
     public RealSettingsScanResult Scan(
-        GpoInfo gpo, CancellationToken cancellation = default)
+        GpoInfo gpo, CancellationToken cancellation = default,
+        bool registryOnly = false, bool securityOnly = false,
+        string? registryScope = null, bool auditOnly = false)
     {
         ArgumentNullException.ThrowIfNull(gpo);
+        if ((registryOnly ? 1 : 0) + (securityOnly ? 1 : 0) +
+            (auditOnly ? 1 : 0) > 1)
+            throw new ArgumentException(
+                "Select one source family: registryOnly, securityOnly or auditOnly.");
+        if (registryScope is not null &&
+            (!registryOnly ||
+             (!registryScope.Equals("User", StringComparison.OrdinalIgnoreCase) &&
+              !registryScope.Equals("Computer", StringComparison.OrdinalIgnoreCase))))
+            throw new ArgumentException(
+                "A scope filter is supported only for registryOnly User/Computer reads.",
+                nameof(registryScope));
+
         var context = DomainConnectionState.Context;
         if (context is null || string.IsNullOrWhiteSpace(context.ConnectedServer) ||
             !context.DomainName.Equals(gpo.DomainName, StringComparison.OrdinalIgnoreCase))
@@ -24,7 +38,10 @@ public sealed class RealSettingsSourceService
 
         var pinnedDc = context.ConnectedServer;
         var domain = context.DomainName;
-        var root = Path.Combine(DomainConnectionState.BuildSysvolRoot(domain),
+        // Build the UNC from the DC captured at the start of this scan.
+        // Never ask the mutable global connection state a second time and
+        // accidentally read a different SYSVOL server mid-scan.
+        var root = Path.Combine($@"\\{pinnedDc}\SYSVOL\{domain}",
             "Policies", gpo.Id.ToString("B"));
         var sources = new (string RelativePath, string Scope, string Kind)[]
         {
@@ -35,6 +52,19 @@ public sealed class RealSettingsSourceService
             (Path.Combine("Machine", "Microsoft", "Windows NT",
                 "Audit", "audit.csv"), "Computer", "AdvancedAudit")
         };
+
+        // Unit rechecks need only Machine/User Registry.pol: do not read
+        // SecEdit, audit.csv or unrelated potentially sensitive GPP XML.
+        if (registryOnly)
+            sources = sources.Where(source => source.Kind == "Registry" &&
+                (registryScope is null || source.Scope.Equals(
+                    registryScope, StringComparison.OrdinalIgnoreCase))).ToArray();
+        else if (securityOnly)
+            sources = sources.Where(source => source.Kind == "Security").ToArray();
+        else if (auditOnly)
+            sources = sources.Where(source => source.Kind == "AdvancedAudit").ToArray();
+        else if (auditOnly)
+            sources = sources.Where(source => source.Kind == "AdvancedAudit").ToArray();
 
         var rows = new List<RealSettingRecord>();
         var files = new List<RealSettingsFileEvidence>();
@@ -142,8 +172,18 @@ public sealed class RealSettingsSourceService
 
         // Extend the verified source snapshot with standard GPP XML files.
         // This is a read-only, curated item projection, not a GPP CSE emulator.
-        GppXmlSourceScanService.Scan(root, gpo, rows, files, cancellation);
+        if (!registryOnly && !securityOnly && !auditOnly)
+            GppXmlSourceScanService.Scan(root, gpo, rows, files, cancellation);
 
+        // Discard the entire collection if the session was repointed while
+        // individual source files were being read.
+        var current = DomainConnectionState.Context;
+        if (current is null ||
+            !current.DomainName.Equals(domain, StringComparison.OrdinalIgnoreCase) ||
+            !current.ConnectedServer.Equals(pinnedDc, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                "Domain/DC connection changed during the pinned SYSVOL scan. " +
+                "Evidence cannot be combined across controllers.");
         return new RealSettingsScanResult(gpo.Id, gpo.DisplayName,
             domain, pinnedDc, DateTimeOffset.Now, rows, files);
     }

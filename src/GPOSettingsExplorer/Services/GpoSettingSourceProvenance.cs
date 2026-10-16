@@ -25,8 +25,30 @@ public static class GpoSettingSourceProvenance
         return false;
     }
 
+    public static bool IsGppRegistrySource(PolicySettingInfo setting) =>
+        setting.Extension.Equals("GppRegistry", StringComparison.OrdinalIgnoreCase) &&
+        !string.IsNullOrWhiteSpace(setting.GppRegistryHive) &&
+        !string.IsNullOrWhiteSpace(setting.GppRegistryKeyPath);
+
+    // View-only, source-labeled target. DO NOT feed it to Registry.pol
+    // correlation or native/local regedit; a GPP Delete action describes
+    // desired policy behavior, not a present value.
+    public static string DisplayRegistryTarget(PolicySettingInfo setting)
+    {
+        if (IsGppRegistrySource(setting))
+            return "GPP source: " + setting.GppRegistryHive + "\\" +
+                setting.GppRegistryKeyPath +
+                (string.IsNullOrWhiteSpace(setting.GppRegistryValueName)
+                    ? "" : " / " + setting.GppRegistryValueName);
+        return RegistryTarget(setting);
+    }
+
     public static string RegistrySummary(PolicySettingInfo setting)
     {
+        if (IsGppRegistrySource(setting))
+            return DisplayRegistryTarget(setting) +
+                " | Action: " + setting.GppRegistryAction +
+                " | Stored preference (not Registry.pol; target client state unknown)";
         if (!IsVerifiedRegistryTarget(setting))
             return "Not applicable / not verified for this GPMC extension";
 
@@ -48,6 +70,7 @@ public static class GpoSettingSourceProvenance
         setting.Extension switch
         {
             "RegistrySettings" or "Administrative Templates" => "Registry.pol / Administrative Templates",
+            "GppRegistry" => "GPMC Group Policy Preferences Registry (not Registry.pol)",
             "SecuritySettings" => "GPMC Security Settings (not GPP Registry)",
             "AuditSettings" => "GPMC Advanced Audit",
             "NrptSettings" => "GPMC Name Resolution Policy",
