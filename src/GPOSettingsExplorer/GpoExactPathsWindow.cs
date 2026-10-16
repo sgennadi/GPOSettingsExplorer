@@ -18,18 +18,33 @@ public sealed class GpoExactPathsWindow : Window
         PolicySettingInfo Source,
         string Gpo, string Scope, string Extension, string Setting,
         string SectionHint, string Status, string ObservedExactPath,
-        string Reason, string SourceStatus = "", string SourceExplanation = "")
+        string Reason, string SourceStatus = "", string SourceExplanation = "",
+        string AdmxDeclaration = "")
     {
+        public string SourcePathLabel
+        {
+            get
+            {
+                var source = GpoSourcePathPresentationService.Describe(Source);
+                return source.GpoRelativeFile + " | " + source.ReportedTarget +
+                    (string.IsNullOrWhiteSpace(AdmxDeclaration)
+                        ? "" : " | " + AdmxDeclaration);
+            }
+        }
+
         public string SearchText => string.Join(" ", new[]
         {
             Gpo, Scope, Extension, Setting, SectionHint,
-            Status, ObservedExactPath, Reason, SourceStatus, SourceExplanation
+            Status, ObservedExactPath, Reason, SourceStatus, SourceExplanation,
+            GpoSourcePathPresentationService.Describe(Source).SearchText,
+            AdmxDeclaration
         });
     }
 
     private readonly Func<IReadOnlyList<RouteRow>> _refresh;
     private readonly Func<PolicySettingInfo, Window, IProgress<string>, Task<bool>> _open;
     private readonly Func<PolicySettingInfo, Window, IProgress<string>, Task<bool>> _checkSource;
+    private readonly Action<PolicySettingInfo> _openManual;
     private readonly DataGrid _grid = new()
     {
         AutoGenerateColumns = false,
@@ -64,8 +79,24 @@ public sealed class GpoExactPathsWindow : Window
         MinWidth = 205,
         Padding = new Thickness(12, 7, 12, 7),
         ToolTip = "Read-only, single-GPO pinned source: Kerberos GptTmpl.inf " +
-                  "Account/Kerberos GptTmpl.inf, SRP Registry.pol or GPP Registry.xml. " +
-                  "GPP comparison is metadata only; NOT MMC or client RSoP."
+                  "Account/Kerberos GptTmpl.inf, SRP Registry.pol, Audit/audit.csv or " +
+                  "GPP Registry.xml. GPP is metadata only; NOT MMC or client RSoP."
+    };
+    private readonly Button _manualEditor = new()
+    {
+        Content = "Open GPO editor (manual)",
+        IsEnabled = false,
+        Padding = new Thickness(12, 7, 12, 7),
+        ToolTip = "Opens selected GPO at its root with NO MMC inventory scan. " +
+                  "Manual edits in MMC can change this GPO."
+    };
+    private readonly Button _copyLocation = new()
+    {
+        Content = "Copy source / registry path",
+        IsEnabled = false,
+        Padding = new Thickness(12, 7, 12, 7),
+        ToolTip = "Copies only the reported source/target metadata, not raw setting values. " +
+                  "The clipboard may include confidential GPO names and paths."
     };
     private readonly Button _refreshButton = new()
     {
@@ -77,16 +108,18 @@ public sealed class GpoExactPathsWindow : Window
 
     public GpoExactPathsWindow(Func<IReadOnlyList<RouteRow>> refresh,
         Func<PolicySettingInfo, Window, IProgress<string>, Task<bool>> open,
-        Func<PolicySettingInfo, Window, IProgress<string>, Task<bool>> checkSource)
+        Func<PolicySettingInfo, Window, IProgress<string>, Task<bool>> checkSource,
+        Action<PolicySettingInfo> openManual)
     {
         _refresh = refresh ?? throw new ArgumentNullException(nameof(refresh));
         _open = open ?? throw new ArgumentNullException(nameof(open));
         _checkSource = checkSource ?? throw new ArgumentNullException(nameof(checkSource));
+        _openManual = openManual ?? throw new ArgumentNullException(nameof(openManual));
 
         Title = "Exact MMC Paths - indexed GPMC policy coverage";
-        Width = 1400;
+        Width = 1240;
         Height = 760;
-        MinWidth = 950;
+        MinWidth = 700;
         MinHeight = 470;
         WindowStartupLocation = WindowStartupLocation.CenterOwner;
         ResizeMode = ResizeMode.CanResize;
@@ -118,7 +151,9 @@ public sealed class GpoExactPathsWindow : Window
                 "XML children, custom views and unscanned GPOs are not silently " +
                 "marked verified. Selected-GPO checks compare typed Kerberos and Account " +
                 "Password/Lockout GptTmpl.inf, SRP Registry.pol path/security level, " +
-                "or GPP Registry.xml item METADATA (not value data) against GPMC. " +
+                "Advanced Audit System subcategory audit.csv or GPP Registry.xml item " +
+                "METADATA (not value data) against GPMC. " +
+                "Open GPO editor (manual) never performs a native MMC scan. " +
                 "Neither a route nor a match proves effective client RSoP.",
             Foreground = UiStyle.WarningBrush,
             TextWrapping = TextWrapping.Wrap
@@ -134,7 +169,9 @@ public sealed class GpoExactPathsWindow : Window
         controls.Children.Add(_search);
         controls.Children.Add(_refreshButton);
         controls.Children.Add(_openSelected);
+        controls.Children.Add(_manualEditor);
         controls.Children.Add(_securitySource);
+        controls.Children.Add(_copyLocation);
         _search.TextChanged += (_, _) =>
         {
             _view?.Refresh();
@@ -145,12 +182,20 @@ public sealed class GpoExactPathsWindow : Window
         _grid.MouseDoubleClick += async (_, _) => await OpenSelectedAsync();
         _openSelected.Click += async (_, _) => await OpenSelectedAsync();
         _securitySource.Click += async (_, _) => await CheckSourceAsync();
+        _manualEditor.Click += (_, _) => OpenManualEditor();
+        _copyLocation.Click += (_, _) => CopyLocation();
         header.Children.Add(_summary);
 
         var footer = new StackPanel { Margin = new Thickness(0, 6, 0, 0) };
         DockPanel.SetDock(footer, Dock.Bottom);
         root.Children.Add(footer);
-        footer.Children.Add(_detail);
+        footer.Children.Add(new ScrollViewer
+        {
+            Content = _detail,
+            MaxHeight = 165,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled
+        });
 
         void Column(string caption, string binding, double weight)
         {
@@ -166,6 +211,7 @@ public sealed class GpoExactPathsWindow : Window
         Column("GPMC extension", nameof(RouteRow.Extension), 1.15);
         Column("Configured setting", nameof(RouteRow.Setting), 2);
         Column("Candidate section", nameof(RouteRow.SectionHint), 2.1);
+        Column("Source file / registry path", nameof(RouteRow.SourcePathLabel), 2.5);
         Column("Route status", nameof(RouteRow.Status), 1.1);
         Column("Stored source evidence", nameof(RouteRow.SourceStatus), 1.3);
         Column("Observed exact MMC path", nameof(RouteRow.ObservedExactPath), 2.7);
@@ -214,6 +260,10 @@ public sealed class GpoExactPathsWindow : Window
             row.SourceStatus == GpoGppRegistrySourceEvidenceService.Match);
         var gppDifferences = all.Count(row =>
             row.SourceStatus == GpoGppRegistrySourceEvidenceService.Mismatch);
+        var auditMatches = all.Count(row =>
+            row.SourceStatus == GpoAdvancedAuditStoredSourceEvidenceService.Match);
+        var auditDifferences = all.Count(row =>
+            row.SourceStatus == GpoAdvancedAuditStoredSourceEvidenceService.Mismatch);
         var ambiguous = all.Count(row =>
             row.Status is GpoExactMmcRouteResolver.Ambiguous or
                 GpoExactMmcRouteResolver.SourceAmbiguous);
@@ -224,7 +274,8 @@ public sealed class GpoExactPathsWindow : Window
             $"{sourceMatches:N0} Kerberos stored agreements / {sourceDifferences:N0} differences | " +
             $"{srpMatches:N0} SRP saved path+level agreements / {srpDifferences:N0} differences | " +
             $"{accountMatches:N0} Password/Lockout agreements / {accountDifferences:N0} differences | " +
-            $"{gppMatches:N0} GPP metadata agreements / {gppDifferences:N0} differences. " +
+            $"{gppMatches:N0} GPP metadata agreements / {gppDifferences:N0} differences | " +
+            $"{auditMatches:N0} Advanced Audit saved agreements / {auditDifferences:N0} differences. " +
             "GPP data, native MMC and effective client RSoP remain NOT VERIFIED.";
     }
 
@@ -232,6 +283,8 @@ public sealed class GpoExactPathsWindow : Window
     {
         var row = _grid.SelectedItem as RouteRow;
         _openSelected.IsEnabled = row is not null;
+        _manualEditor.IsEnabled = row is not null;
+        _copyLocation.IsEnabled = row is not null;
         var isKerberos = row is not null &&
             KerberosPolicyMetadataService.IsKnownKerberosSetting(row.Source);
         var isSrp = row is not null &&
@@ -240,15 +293,24 @@ public sealed class GpoExactPathsWindow : Window
             GpoKnownAccountPolicyService.TryDescribe(row.Source, out _);
         var isGpp = row is not null &&
             row.Source.Extension.Equals("GppRegistry", StringComparison.OrdinalIgnoreCase);
-        _securitySource.IsEnabled = isKerberos || isSrp || isAccount || isGpp;
+        var isAudit = row is not null &&
+            GpoAdvancedAuditStoredSourceEvidenceService.IsSupported(row.Source);
+        _securitySource.IsEnabled = isKerberos || isSrp || isAccount || isGpp || isAudit;
         _securitySource.Content = isSrp ? "Check SRP Registry.pol..."
+            : isAudit ? "Check Advanced Audit audit.csv..."
             : isGpp ? "Check GPP Registry.xml metadata..."
             : isAccount ? "Check Password/Lockout GptTmpl.inf..."
             : "Check Kerberos GptTmpl.inf...";
         _detail.Text = row is null
-            ? "Select a setting, then find its exact native MMC location " +
-              "with an optional SINGLE-GPO scan (requires confirmation)."
+            ? "Select a setting. Open GPO editor (manual) works without any scan; " +
+              "exact row navigation requires separately captured MMC evidence."
             : row.Status + " — " + row.Reason +
+              "\nGPMC source: " + GpoSourcePathPresentationService.Describe(row.Source).Family +
+              "\nGPO-relative file: " + GpoSourcePathPresentationService.Describe(row.Source).GpoRelativeFile +
+              "\nGPMC target: " + GpoSourcePathPresentationService.Describe(row.Source).ReportedTarget +
+              "\nADMX target: " + (string.IsNullOrWhiteSpace(row.AdmxDeclaration)
+                  ? "(not uniquely resolved)" : row.AdmxDeclaration) +
+              "\nLimits: " + GpoSourcePathPresentationService.Describe(row.Source).Limitations +
               (string.IsNullOrWhiteSpace(row.ObservedExactPath)
                   ? "" : "\nObserved: " + row.ObservedExactPath) +
               (string.IsNullOrEmpty(row.SourceStatus)
@@ -264,16 +326,20 @@ public sealed class GpoExactPathsWindow : Window
         var isAccount = GpoKnownAccountPolicyService.TryDescribe(selected.Source, out _);
         var isGpp = selected.Source.Extension.Equals(
             "GppRegistry", StringComparison.OrdinalIgnoreCase);
-        if (!srp && !isAccount && !isGpp &&
+        var isAudit = GpoAdvancedAuditStoredSourceEvidenceService.IsSupported(selected.Source);
+        if (!srp && !isAccount && !isGpp && !isAudit &&
             !KerberosPolicyMetadataService.IsKnownKerberosSetting(selected.Source))
             return;
 
         _securitySource.IsEnabled = false;
         _openSelected.IsEnabled = false;
+        _manualEditor.IsEnabled = false;
+        _copyLocation.IsEnabled = false;
         _refreshButton.IsEnabled = false;
         _detail.Text = srp
             ? "Reading scope-specific SRP Registry.pol on pinned DC, read-only..."
             : isGpp ? "Reading only selected scope Registry.xml metadata; no value data retained..."
+            : isAudit ? "Reading System Advanced Audit audit.csv on pinned DC..."
             : isAccount ? "Reading [System Access] Password/Lockout GptTmpl.inf on pinned DC..."
             : "Reading typed Kerberos GptTmpl.inf on pinned DC...";
         try
@@ -302,14 +368,51 @@ public sealed class GpoExactPathsWindow : Window
         }
     }
 
+    private void OpenManualEditor()
+    {
+        if (_grid.SelectedItem is not RouteRow row)
+            return;
+        try
+        {
+            _openManual(row.Source);
+            _detail.Text = "Opened selected GPO in its native MMC editor at the root. " +
+                "No exact row/value, client RSoP or policy save was verified. " +
+                "Manual changes in MMC may change the GPO.";
+        }
+        catch (Exception ex)
+        {
+            _detail.Text = "Manual GPO editor could not be opened: " + ex.Message;
+            CrashLogService.Write("Open manual GPO editor from Exact MMC Paths", ex);
+        }
+    }
+
+    private void CopyLocation()
+    {
+        if (_grid.SelectedItem is not RouteRow row)
+            return;
+        try
+        {
+            Clipboard.SetText(GpoSourcePathPresentationService.CopyLocationText(row.Source, row.AdmxDeclaration));
+            _detail.Text = "Copied reported GPO source/target metadata without raw setting " +
+                "values. The clipboard may contain confidential GPO names and paths.";
+        }
+        catch (Exception ex)
+        {
+            _detail.Text = "Source location could not be copied: " + ex.Message;
+            CrashLogService.Write("Copy source location from Exact MMC Paths", ex);
+        }
+    }
+
     private async Task OpenSelectedAsync()
     {
         if (_grid.SelectedItem is not RouteRow selected)
             return;
         _openSelected.IsEnabled = false;
+        _manualEditor.IsEnabled = false;
+        _copyLocation.IsEnabled = false;
         _refreshButton.IsEnabled = false;
         _securitySource.IsEnabled = false;
-        _detail.Text = "Checking source, selected GPO and MMC snapshot...";
+        _detail.Text = "Checking previously observed same-GPO native MMC row...";
         try
         {
             var progress = new Progress<string>(text => _detail.Text = text);
@@ -318,8 +421,9 @@ public sealed class GpoExactPathsWindow : Window
             _detail.Text = success
                 ? "Exact native MMC row was selected and Properties requested. " +
                   "Confirm its actual dialog. This does NOT attest values or RSoP."
-                : "No exact native policy row could safely be opened. Review " +
-                  "the status, source identity and MMC skipped sections.";
+                : "No safely observed native MMC policy row was opened. " +
+                  "Use Open GPO editor (manual) without any scan, or separately " +
+                  "capture one GPO with MMC Full Settings Inventory.";
         }
         catch (Exception ex)
         {
@@ -331,10 +435,13 @@ public sealed class GpoExactPathsWindow : Window
             if (IsLoaded)
             {
                 _openSelected.IsEnabled = _grid.SelectedItem is RouteRow;
+                _manualEditor.IsEnabled = _grid.SelectedItem is RouteRow;
+                _copyLocation.IsEnabled = _grid.SelectedItem is RouteRow;
                 _securitySource.IsEnabled = _grid.SelectedItem is RouteRow row &&
                     (KerberosPolicyMetadataService.IsKnownKerberosSetting(row.Source) ||
                      SoftwareRestrictionMmcRouteService.IsPathRule(row.Source) ||
                      GpoKnownAccountPolicyService.TryDescribe(row.Source, out _) ||
+                     GpoAdvancedAuditStoredSourceEvidenceService.IsSupported(row.Source) ||
                      row.Source.Extension.Equals("GppRegistry",
                          StringComparison.OrdinalIgnoreCase));
                 _refreshButton.IsEnabled = true;

@@ -44,13 +44,11 @@ public partial class MainWindow
 
         if (!HasCurrentMmcInventoryFor(gpo))
         {
-            progress?.Report("An observed route is required: starting the ONE selected-GPO " +
-                "read-only MMC inventory only with explicit confirmation.");
-            if (!await ScanMmcInventoryAsync(gpo, dialogOwner, progress))
-            {
-                progress?.Report("MMC scan canceled/failed. No exact native route can be claimed.");
-                return false;
-            }
+            progress?.Report("No existing same-GPO/DC MMC snapshot. Use the explicit " +
+                "single-GPO Scan MMC action in MMC Full Settings Inventory if needed. " +
+                "No risky native inventory was launched from this setting. " +
+                "You can open the selected GPO editor manually now.");
+            return false;
         }
 
         if (!HasCurrentMmcInventoryFor(gpo) || _domainContext is null)
@@ -141,6 +139,8 @@ public partial class MainWindow
     private bool _srpSourceBusy;
     private GpoGppRegistrySourceEvidenceService.Snapshot? _gppRegistrySourceSnapshot;
     private bool _gppRegistrySourceBusy;
+    private RealSettingsScanResult? _advancedAuditSourceSnapshot;
+    private bool _advancedAuditSourceBusy;
 
     /// <summary>
     /// Explicit one-GPO, one-source read only. This never walks the domain or
@@ -314,10 +314,65 @@ public partial class MainWindow
         }
     }
 
+    /// <summary>
+    /// Read only selected Computer Advanced Audit/audit.csv on one pinned DC.
+    /// Never starts MMC, client auditpol, an all-GPO walk or SYSVOL writes.
+    /// </summary>
+    private async Task<bool> CheckAdvancedAuditSourceAsync(
+        PolicySettingInfo setting, Window dialogOwner, IProgress<string>? progress)
+    {
+        if (_advancedAuditSourceBusy || _domainContext is null ||
+            !GpoAdvancedAuditStoredSourceEvidenceService.IsSupported(setting))
+            return false;
+
+        var gpo = _gpos.FirstOrDefault(item => item.Id == setting.GpoId);
+        var domain = _domainContext.DomainName;
+        var dc = DomainConnectionState.GetServerFor(domain);
+        if (gpo is null || string.IsNullOrWhiteSpace(dc) ||
+            !gpo.DomainName.Equals(domain, StringComparison.OrdinalIgnoreCase))
+        {
+            progress?.Report("Same-domain GPO and pinned DC are required.");
+            return false;
+        }
+
+        _advancedAuditSourceBusy = true;
+        try
+        {
+            progress?.Report("Reading only selected GPO's Machine Audit/audit.csv " +
+                "on pinned DC (read-only; no MMC or client auditpol)...");
+            var captured = await Task.Run(() =>
+                new RealSettingsSourceService().Scan(gpo, auditOnly: true));
+            if (_domainContext is null || captured.GpoId != gpo.Id ||
+                !captured.Matches(domain, dc) ||
+                !captured.Matches(_domainContext.DomainName,
+                    DomainConnectionState.GetServerFor(_domainContext.DomainName)))
+                throw new InvalidOperationException(
+                    "Domain/pinned DC changed during audit.csv capture; snapshot discarded.");
+
+            _advancedAuditSourceSnapshot = captured;
+            progress?.Report("Audit source captured. A unique System subcategory " +
+                "GUID and canonical 0..4 value can now be compared with GPMC. " +
+                "MMC, client auditpol, replication and effective RSoP remain unverified.");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            CrashLogService.Write("Pinned Advanced Audit CSV source", ex);
+            progress?.Report("Advanced Audit source read failed: " + ex.Message);
+            return false;
+        }
+        finally
+        {
+            _advancedAuditSourceBusy = false;
+        }
+    }
+
     private Task<bool> CheckSupportedStoredSourceAsync(
         PolicySettingInfo setting, Window dialogOwner, IProgress<string> progress) =>
-        setting.Extension.Equals("GppRegistry", StringComparison.OrdinalIgnoreCase)
-            ? CheckGppRegistrySourceAsync(setting, dialogOwner, progress)
+        GpoAdvancedAuditStoredSourceEvidenceService.IsSupported(setting)
+            ? CheckAdvancedAuditSourceAsync(setting, dialogOwner, progress)
+            : setting.Extension.Equals("GppRegistry", StringComparison.OrdinalIgnoreCase)
+                ? CheckGppRegistrySourceAsync(setting, dialogOwner, progress)
             : SoftwareRestrictionMmcRouteService.IsPathRule(setting)
                 ? CheckSrpSourceAsync(setting, dialogOwner, progress)
                 : CheckSecurityTemplateSourceAsync(setting, dialogOwner, progress);
@@ -366,7 +421,22 @@ public partial class MainWindow
                     gpo, setting, window, progress);
             },
             (setting, window, progress) =>
-                CheckSupportedStoredSourceAsync(setting, window, progress))
+                CheckSupportedStoredSourceAsync(setting, window, progress),
+            setting =>
+            {
+                var target = _gpos.FirstOrDefault(item => item.Id == setting.GpoId);
+                var context = DomainConnectionState.Context;
+                if (target is null || _domainContext is null || context is null ||
+                    !target.DomainName.Equals(_domainContext.DomainName,
+                        StringComparison.OrdinalIgnoreCase) ||
+                    !context.DomainName.Equals(target.DomainName,
+                        StringComparison.OrdinalIgnoreCase) ||
+                    !context.ConnectedServer.Equals(_domainContext.ConnectedServer,
+                        StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException(
+                        "Selected GPO or pinned DC changed. Reconnect before opening MMC.");
+                _gpmService.OpenEditor(target, _domainContext.DomainDistinguishedName);
+            })
         {
             Owner = this
         };
@@ -388,7 +458,8 @@ public partial class MainWindow
         var domain = _domainContext?.DomainName ?? string.Empty;
         var dc = DomainConnectionState.GetServerFor(domain);
         var validSources = new[] {
-                _kerberosSourceSnapshot, _srpSourceSnapshot, _realSourceSnapshot
+                _kerberosSourceSnapshot, _srpSourceSnapshot,
+                _advancedAuditSourceSnapshot, _realSourceSnapshot
             }
             .Where(snapshot => snapshot is not null &&
                 snapshot.Matches(domain, dc))
@@ -416,6 +487,8 @@ public partial class MainWindow
             var isAccount = GpoKnownAccountPolicyService.TryDescribe(setting, out _);
             var isGppRegistry = setting.Extension.Equals(
                 "GppRegistry", StringComparison.OrdinalIgnoreCase);
+            var isAdvancedAudit =
+                GpoAdvancedAuditStoredSourceEvidenceService.IsSupported(setting);
             var scopeFolder = setting.Scope.Equals("User", StringComparison.OrdinalIgnoreCase)
                 ? "User" : "Machine";
 
@@ -428,10 +501,13 @@ public partial class MainWindow
                     ? file.SourceFile.Replace('/', '\\').EndsWith(
                         "\\" + scopeFolder + "\\Registry.pol",
                         StringComparison.OrdinalIgnoreCase)
-                    : (isKerberos || isAccount) &&
-                      file.SourceFile.Replace('/', '\\').EndsWith(
-                          "\\SecEdit\\GptTmpl.inf",
-                          StringComparison.OrdinalIgnoreCase)));
+                    : isAdvancedAudit
+                        ? file.SourceFile.Replace('/', '\\').EndsWith(
+                            "\\Audit\\audit.csv", StringComparison.OrdinalIgnoreCase)
+                        : (isKerberos || isAccount) &&
+                          file.SourceFile.Replace('/', '\\').EndsWith(
+                              "\\SecEdit\\GptTmpl.inf",
+                              StringComparison.OrdinalIgnoreCase)));
 
             var sourceStatus = string.Empty;
             var sourceExplanation = string.Empty;
@@ -464,12 +540,21 @@ public partial class MainWindow
                 sourceStatus = gpp.Status;
                 sourceExplanation = gpp.Explanation;
             }
+            else if (isAdvancedAudit)
+            {
+                var audit = GpoAdvancedAuditStoredSourceEvidenceService.Compare(
+                    setting, byGpo[setting.GpoId], storedSource, domain, dc);
+                sourceStatus = audit.Status;
+                sourceExplanation = audit.Explanation;
+            }
 
+            var declaredAdmx = GpoSourcePathPresentationService.DescribeAdmxDeclaration(
+                setting, _admxPolicies);
             result.Add(new GpoExactPathsWindow.RouteRow(setting,
                 setting.GpoName, setting.Scope, setting.Extension,
                 setting.SettingName, hint, decision.Status,
                 observedPath, decision.Explanation,
-                sourceStatus, sourceExplanation));
+                sourceStatus, sourceExplanation, declaredAdmx));
         }
         return result;
     }
