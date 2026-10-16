@@ -43,6 +43,8 @@ var tests = new (string Name, Action Body)[]
     ("Security-template parser reports source values and invalid encodings safely", TestRealSettingsSecurityTemplate),
     ("Typed Kerberos GPMC and pinned SecEdit snapshots fail closed on identity, hashes and duplicates", TestKerberosStoredSourceEvidence),
     ("Password and lockout stored SecEdit values require pinned source, type and canonical literal", TestAccountStoredSourceEvidence),
+    ("System Advanced Audit GUID and pinned CSV numeric values require complete source evidence", TestAdvancedAuditStoredSourceEvidence),
+    ("GPMC source paths show registry targets but never raw values or guessed keys", TestSourcePathPresentation),
     ("GPP Registry source metadata is typed, redacted, SHA-256-bound and never value verified", TestGppRegistryPinnedSourceMetadata),
     ("Typed SRP Path Rules require unique SHA-256-bound ItemData and security-level identity", TestSrpStoredSourceEvidence),
     ("Unified catalog never interprets source-file values as effective RSoP", TestRealSettingsUnifiedEvidence),
@@ -6004,4 +6006,157 @@ static void TestGpmcRegistryPreferenceEvidence()
     ExpectFailure(() => GpmService.ParseXmlSettings(
         "<GPO><Computer><ExtensionData></Computer>", gpo),
         "Malformed GPMC XML must be rejected rather than treated as an empty GPO.");
+}
+
+
+
+static void TestAdvancedAuditStoredSourceEvidence()
+{
+    var gpo = Guid.NewGuid();
+    var subcategory = Guid.Parse("0cce9215-69ae-11d9-bed3-505054503030");
+    const string domain = "example.test";
+    const string dc = "dc01.example.test";
+    var path = Path.Combine($@"\\{dc}\SYSVOL\{domain}", "Policies",
+        gpo.ToString("B"), "Machine", "Microsoft", "Windows NT", "Audit", "audit.csv");
+    var csv = "Machine Name,Policy Target,Subcategory,Subcategory GUID,Inclusion Setting," +
+              "Exclusion Setting,Setting Value\r\n" +
+              "TEST-MACHINE,System,Logon," + subcategory.ToString("B") + ",Success,,1\r\n";
+    var bytes = System.Text.Encoding.UTF8.GetBytes(csv);
+    var sha = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes));
+    var parsed = AdvancedAuditSourceReader.Parse(bytes, gpo, "test", path, sha);
+    Assert(parsed.IsComplete && parsed.Rows.Count == 1 &&
+           parsed.Rows[0].Category == "Advanced Audit Policy > System",
+        "Fixture must parse one complete typed System audit.csv source row.");
+    var source = new RealSettingsScanResult(gpo, "test", domain, dc, DateTimeOffset.UtcNow,
+        parsed.Rows, new[] { new RealSettingsFileEvidence(
+            path, "Read", parsed.Rows.Count, sha, "Test complete pinned source") });
+
+    PolicySettingInfo Setting(string value = "1", string target = "System",
+        string? summary = null) => new()
+    {
+        GpoId = gpo, Scope = "Computer", Extension = "AuditSettings",
+        Category = "Security Settings > Advanced Audit Policy Configuration > Audit Policies",
+        SettingName = "Audit Logon",
+        Value = summary ?? ("PolicyTarget=" + target + "; SubcategoryGuid=" +
+            subcategory.ToString("B") + "; SettingValue=" + value +
+            "; InclusionSetting=Success")
+    };
+    GpoAdvancedAuditStoredSourceEvidenceService.Result Compare(
+        PolicySettingInfo setting, RealSettingsScanResult? captured,
+        IReadOnlyList<PolicySettingInfo>? indexed = null, string? pinned = null) =>
+        GpoAdvancedAuditStoredSourceEvidenceService.Compare(
+            setting, indexed ?? new[] { setting }, captured, domain, pinned ?? dc);
+
+    var valid = Setting();
+    Assert(Compare(valid, source).Status == GpoAdvancedAuditStoredSourceEvidenceService.Match &&
+           Compare(valid, source).SourceSha256 == sha &&
+           Compare(valid, source).Explanation.Contains("RSoP", StringComparison.Ordinal),
+        "Pinned System GUID and numeric code match, without an effective RSoP claim.");
+    Assert(Compare(Setting("2"), source).Status == GpoAdvancedAuditStoredSourceEvidenceService.Mismatch,
+        "Different literal System audit codes must be reported as differences.");
+    Assert(Compare(valid, null).Status == GpoAdvancedAuditStoredSourceEvidenceService.NoSnapshot,
+        "An unscanned audit source cannot be verified.");
+    Assert(Compare(valid, source, pinned: "dc02.example.test").Status ==
+           GpoAdvancedAuditStoredSourceEvidenceService.WrongSnapshot,
+        "Another pinned DC's audit.csv must never verify the selected GPO.");
+    Assert(Compare(valid, source with { GpoId = Guid.NewGuid() }).Status ==
+           GpoAdvancedAuditStoredSourceEvidenceService.WrongSnapshot,
+        "Wrong GPO ID must block audit evidence.");
+    Assert(Compare(valid, source with { Files = Array.Empty<RealSettingsFileEvidence>() }).Status ==
+           GpoAdvancedAuditStoredSourceEvidenceService.FileMissing,
+        "Missing audit.csv cannot be treated as Not Configured.");
+    Assert(Compare(valid, source with {
+        Files = new[] { source.Files[0], source.Files[0] } }).Status ==
+           GpoAdvancedAuditStoredSourceEvidenceService.FileAmbiguous,
+        "Duplicated exact CSV file identity must block.");
+    Assert(Compare(valid, source with {
+        Files = new[] { source.Files[0] with { Status = "Partial" } } }).Status ==
+           GpoAdvancedAuditStoredSourceEvidenceService.FileIncomplete,
+        "Partial audit.csv must not verify a first valid row.");
+    Assert(Compare(valid, source with {
+        Rows = parsed.Rows.Concat(parsed.Rows).ToArray() }).Status ==
+           GpoAdvancedAuditStoredSourceEvidenceService.SourceAmbiguous,
+        "Duplicate subcategory GUID entries must not use first match.");
+    Assert(Compare(valid, source with {
+        Rows = parsed.Rows.Select(row => row with { SourceSha256 = new string('A', 64) }).ToArray()
+    }).Status == GpoAdvancedAuditStoredSourceEvidenceService.SourceInvalid,
+        "Row hash disagreement must block comparison.");
+    Assert(Compare(valid, source with {
+        Rows = parsed.Rows.Select(row => row with { Category = "Advanced Audit Policy > S-1-5-21-1" })
+            .ToArray()
+    }).Status == GpoAdvancedAuditStoredSourceEvidenceService.SourceMissing,
+        "A per-user SID target must not be confused with System audit.");
+    Assert(Compare(valid, source with {
+        Rows = parsed.Rows.Select(row => row with { RegistryValue = Guid.NewGuid().ToString("B") })
+            .ToArray()
+    }).Status == GpoAdvancedAuditStoredSourceEvidenceService.SourceMissing,
+        "The exact GUID is required even when localized names match.");
+    Assert(Compare(valid, source, new[] { valid, valid }).Status ==
+           GpoAdvancedAuditStoredSourceEvidenceService.GpmcAmbiguous,
+        "Duplicate indexed GPMC GUIDs cannot be matched by first row.");
+    Assert(Compare(valid, source, new[] { Setting("2") }).Status ==
+           GpoAdvancedAuditStoredSourceEvidenceService.GpmcAmbiguous,
+        "A changed GPMC source cannot reuse stale indexed values.");
+    foreach (var bad in new[] {
+        Setting("5"), Setting("01"), Setting("-1"), Setting(target: "S-1-5-21-1"),
+        Setting(summary: "PolicyTarget=System; SettingValue=1"),
+        Setting(summary: "PolicyTarget=System; SubcategoryGuid=wrong; SettingValue=1"),
+        Setting(summary: "PolicyTarget=System; PolicyTarget=System; SubcategoryGuid=" +
+            subcategory.ToString("B") + "; SettingValue=1"),
+        Setting(summary: "PolicyTarget=System; SubcategoryGuid=" +
+            subcategory.ToString("B") + "; SettingValue=1; SettingValue=1")
+    })
+        Assert(Compare(bad, source).Status == GpoAdvancedAuditStoredSourceEvidenceService.GpmcInvalid,
+            "Invalid, duplicated or per-user GPMC numeric audit fields must be rejected.");
+    var user = new PolicySettingInfo {
+        GpoId = gpo, Scope = "User", Extension = "AuditSettings",
+        Category = valid.Category, SettingName = valid.SettingName, Value = valid.Value
+    };
+    Assert(Compare(user, source).Status == GpoAdvancedAuditStoredSourceEvidenceService.NotApplicable,
+        "Computer source verification must not accept User scope.");
+}
+
+static void TestSourcePathPresentation()
+{
+    const string confidential = "SENSITIVE_REGISTRY_DATA_NEVER_COPY_2718";
+    var registry = new PolicySettingInfo {
+        GpoName = "Example GPO", Scope = "Computer",
+        Extension = "RegistrySettings", SettingName = "Target version",
+        RegistryKey = @"SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate",
+        RegistryValue = "TargetReleaseVersionInfo", Value = confidential
+    };
+    var hint = GpoSourcePathPresentationService.Describe(registry);
+    var copied = GpoSourcePathPresentationService.CopyLocationText(registry);
+    Assert(hint.GpoRelativeFile == @"Machine\Registry.pol" &&
+           hint.ReportedTarget.Contains("TargetReleaseVersionInfo", StringComparison.Ordinal) &&
+           copied.Contains(@"Machine\Registry.pol", StringComparison.Ordinal) &&
+           !copied.Contains(confidential, StringComparison.Ordinal),
+        "A reported Administrative Templates registry key/path is useful but must not expose raw value data.");
+
+    var gpp = new PolicySettingInfo {
+        GpoName = "Preferences", Scope = "User", Extension = "GppRegistry",
+        GppRegistryHive = "HKEY_CURRENT_USER", GppRegistryKeyPath = @"Software\Example",
+        GppRegistryValueName = "Test", GppRegistryAction = "U", Value = confidential
+    };
+    var gppPath = GpoSourcePathPresentationService.Describe(gpp);
+    Assert(gppPath.GpoRelativeFile == @"User\Preferences\Registry\Registry.xml" &&
+           gppPath.ReportedTarget.Contains(@"Software\Example", StringComparison.Ordinal) &&
+           !GpoSourcePathPresentationService.CopyLocationText(gpp)
+               .Contains(confidential, StringComparison.Ordinal) &&
+           gppPath.Limitations.Contains("NOT Registry.pol", StringComparison.Ordinal),
+        "GPP must show its XML path and registry target without secret data or Registry.pol claims.");
+
+    var unknown = new PolicySettingInfo {
+        Scope = "Computer", Extension = "SoftwareInstallationSettings",
+        SettingName = "Applicability", RegistryKey = @"SOFTWARE\Confusing",
+        Value = confidential
+    };
+    Assert(GpoSourcePathPresentationService.Describe(unknown).ReportedTarget ==
+           "(no registry target)",
+        "Software Installation metadata must not be confused with a registry setting.");
+    Assert(GpoSourcePathPresentationService.Describe(new PolicySettingInfo {
+        Scope = "Computer", Extension = "ThirdPartySecurity",
+        RegistryKey = @"SOFTWARE\Confusing"
+    }).ReportedTarget == "(no verified registry target)",
+        "Unsupported GPMC extensions must not infer a path from arbitrary XML attributes.");
 }
