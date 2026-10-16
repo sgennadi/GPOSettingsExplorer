@@ -104,7 +104,20 @@ public partial class MainWindow
                         gpo, setting, (Window?)valueWindow ?? this, progress),
                     verifyStoredKerberos: kerberosSourceVerifier,
                     openGpmcReport: () => OpenGpoSettingsReportForGpoAsync(
-                        gpo, (Window?)valueWindow ?? this, setting.SettingName))
+                        gpo, (Window?)valueWindow ?? this, setting.SettingName),
+                    openManualGpoEditor: () =>
+                    {
+                        var context = DomainConnectionState.Context;
+                        if (_domainContext is null || context is null ||
+                            !_gpos.Any(item => item.Id == gpo.Id) ||
+                            !gpo.DomainName.Equals(_domainContext.DomainName,
+                                StringComparison.OrdinalIgnoreCase) ||
+                            !context.ConnectedServer.Equals(_domainContext.ConnectedServer,
+                                StringComparison.OrdinalIgnoreCase))
+                            throw new InvalidOperationException(
+                                "The GPO or pinned DC session changed. Reconnect first.");
+                        _gpmService.OpenEditor(gpo, _domainContext.DomainDistinguishedName);
+                    })
                 {
                     Owner = this
                 };
