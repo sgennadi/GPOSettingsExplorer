@@ -1,5 +1,9 @@
 # GPMC source-to-MMC route verification (v2.1 preview)
 
+## Preview 12: exact GPMC Registry source lookup
+
+The native GPMC Settings report groups one GPO by Computer/User, Policies and Preferences. In All Settings, a typed GPP Registry item can now open the fresh report directly at its exact UID/order/action/full target. Missing, changed or duplicate matches are blocked: a similarly named row is never a fallback. Package Applicability is technical metadata, not an independent registry setting. See [source navigation](gpmc-exact-registry-source.md).
+
 ## Preview 11: Password / Lockout and GPP Registry saved-source evidence
 
 **Exact MMC Paths → Check selected stored source...** supports:

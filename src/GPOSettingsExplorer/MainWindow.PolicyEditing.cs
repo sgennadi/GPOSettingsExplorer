@@ -104,7 +104,8 @@ public partial class MainWindow
                         gpo, setting, (Window?)valueWindow ?? this, progress),
                     verifyStoredKerberos: kerberosSourceVerifier,
                     openGpmcReport: () => OpenGpoSettingsReportForGpoAsync(
-                        gpo, (Window?)valueWindow ?? this, setting.SettingName))
+                        gpo, (Window?)valueWindow ?? this, setting.SettingName,
+                        setting))
                 {
                     Owner = this
                 };

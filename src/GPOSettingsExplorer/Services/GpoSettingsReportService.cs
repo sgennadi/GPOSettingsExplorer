@@ -16,11 +16,23 @@ public sealed record GpoReportNode(
     // Only typed GPMC GPP Registry items populate this. Generic XML names
     // cannot create a path or silently authorize registry editing.
     public string RegistryTarget { get; init; } = string.Empty;
+
+    // Used only for exact read-only lookup inside a freshly generated GPMC
+    // report. A display label or registry path alone is not unique.
+    public string GppRegistryUid { get; init; } = string.Empty;
+    public int GppRegistryOrder { get; init; }
+    public string GppRegistryScope { get; init; } = string.Empty;
+    public string GppRegistryAction { get; init; } = string.Empty;
 }
 
 public sealed record GpoSettingsReport(
     string GpoName, DateTimeOffset CapturedUtc,
-    IReadOnlyList<GpoReportNode> Sections, bool Limited, int XmlNodes);
+    IReadOnlyList<GpoReportNode> Sections, bool Limited, int XmlNodes)
+{
+    // A report from one GPO must never be used to locate a preference
+    // selected from a different GPO, even if names and UID happen to match.
+    public Guid GpoId { get; init; }
+}
 
 public static class GpoSettingsReportService
 {
@@ -74,7 +86,10 @@ public static class GpoSettingsReportService
         sections.Add(Scope(gpo, root, "Computer", budget));
         sections.Add(Scope(gpo, root, "User", budget));
         return new GpoSettingsReport(
-            gpo.DisplayName, DateTimeOffset.UtcNow, sections, budget.Limited, count);
+            gpo.DisplayName, DateTimeOffset.UtcNow, sections, budget.Limited, count)
+        {
+            GpoId = gpo.Id
+        };
     }
 
     private static GpoReportNode General(
@@ -173,7 +188,7 @@ public static class GpoSettingsReportService
                           "value data is intentionally omitted from this report."
                         : ""),
                     ext.Elements().Take(200).Select(node =>
-                        XmlNode(node, budget, 0)).ToArray()));
+                        XmlNode(node, budget, 0, scopeName)).ToArray()));
             }
         }
 
@@ -237,7 +252,7 @@ public static class GpoSettingsReportService
     }
 
     private static GpoReportNode XmlNode(
-        XElement element, RenderBudget budget, int depth)
+        XElement element, RenderBudget budget, int depth, string scopeName = "")
     {
         if (budget.Remaining-- <= 0 || depth >= MaxDepth)
         {
@@ -265,7 +280,11 @@ public static class GpoSettingsReportService
                 ") [" + source.Action + "]", source.Details,
                 Array.Empty<GpoReportNode>())
             {
-                RegistryTarget = source.RegistryTarget
+                RegistryTarget = source.RegistryTarget,
+                GppRegistryUid = source.Uid,
+                GppRegistryOrder = source.Order,
+                GppRegistryScope = scopeName,
+                GppRegistryAction = source.Action
             };
         }
         if (KerberosPolicyMetadataService.TryDescribeGpmcNode(element, out var kerberos))
@@ -293,7 +312,7 @@ public static class GpoSettingsReportService
             label += ": " + (IsSensitive(element.Name.LocalName)
                 ? "[redacted]" : Cut(nameAttr.Value, 130));
         var children = element.Elements().Take(180).Select(e =>
-            XmlNode(e, budget, depth + 1)).ToArray();
+            XmlNode(e, budget, depth + 1, scopeName)).ToArray();
         if (element.Elements().Skip(180).Any())
             budget.Limited = true;
         return new GpoReportNode(label, XmlDetails(element), children);

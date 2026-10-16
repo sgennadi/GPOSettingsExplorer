@@ -344,8 +344,23 @@ public partial class MainWindow
             : row.Mmc is { Navigation: "Exact MMC row candidate" }
                 ? "Open exact MMC row..."
                 : "View / open section...";
-        UnifiedSelectedDetailsText.Text =
-            $"{row.Sources} | {row.Capability} | {row.Explanation}";
+        if (row.Configured is { } preference &&
+            GpoSettingSourceProvenance.IsGppRegistrySource(preference))
+        {
+            UnifiedSelectedDetailsText.Text = "GPP Registry SOURCE: " +
+                "Action=" + preference.GppRegistryAction +
+                "; Hive=" + preference.GppRegistryHive +
+                "; Key path=" + preference.GppRegistryKeyPath +
+                "; Value name=" + (preference.GppRegistryValueName.Length == 0
+                    ? "(default/key item)" : preference.GppRegistryValueName) +
+                "; Order=" + preference.GppRegistryOrder + ". " +
+                row.Explanation;
+        }
+        else
+        {
+            UnifiedSelectedDetailsText.Text =
+                $"{row.Sources} | {row.Capability} | {row.Explanation}";
+        }
     }
 
     private async Task EditSelectedUnifiedSettingAsync()

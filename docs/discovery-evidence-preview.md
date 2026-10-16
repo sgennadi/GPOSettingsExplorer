@@ -1,5 +1,9 @@
 # Discovery evidence (2.1 development)
 
+## Preview 12: exact GPMC Registry preference lookup
+
+The **Setting Value** window for a typed GPP Registry item offers **Locate exact GPP item in GPMC report...**. The new read-only report must belong to the same GPO, and one item must match the Computer/User scope, UID, original order, action and full hive/key/value target. If the GPMC index is stale, refresh it; do not select the first similar name. The advanced GPMC list shows source registry key/value columns and hides Software Installation Applicability until **Show XML metadata** is enabled. See [source navigation](gpmc-exact-registry-source.md).
+
 ## Preview 11: typed Password/Lockout and GPP Registry source checks
 
 Open **Exact MMC Paths**, select a typed **Password Policy** or **Account Lockout** GPMC setting and choose **Check Password/Lockout GptTmpl.inf...**. It reads one GPO's GptTmpl.inf from pinned DC and compares exact [System Access] numbers/booleans with canonical typed GPMC values. A stored match/difference is separate from native MMC route, effective domain account policy and client RSoP.

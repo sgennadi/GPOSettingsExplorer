@@ -24,6 +24,25 @@ public sealed class PolicySettingInfo
     public string GppRegistryUid { get; init; } = string.Empty;
     public int GppRegistryOrder { get; init; }
 
+    // Source-labeled, display-only columns for the legacy GPMC index grid.
+    // Keep GPP Registry.xml identities completely separate from Registry.pol.
+    // GPMC metadata of other extensions must not fabricate a registry key.
+    public string IndexedSourceRegistryKey =>
+        Extension.Equals("GppRegistry", StringComparison.OrdinalIgnoreCase) &&
+        !string.IsNullOrWhiteSpace(GppRegistryHive) &&
+        !string.IsNullOrWhiteSpace(GppRegistryKeyPath)
+            ? "GPP source: " + GppRegistryHive + "\\" + GppRegistryKeyPath
+            : Extension.Equals("RegistrySettings", StringComparison.OrdinalIgnoreCase) ||
+              Extension.Equals("Administrative Templates", StringComparison.OrdinalIgnoreCase)
+                ? RegistryKey : string.Empty;
+
+    public string IndexedSourceRegistryValueName =>
+        Extension.Equals("GppRegistry", StringComparison.OrdinalIgnoreCase)
+            ? GppRegistryValueName
+            : Extension.Equals("RegistrySettings", StringComparison.OrdinalIgnoreCase) ||
+              Extension.Equals("Administrative Templates", StringComparison.OrdinalIgnoreCase)
+                ? RegistryValue : string.Empty;
+
     public string SearchText =>
         $"{GpoName} {Scope} {Extension} {Category} {SettingName} {State} {Value} {RegistryKey} {RegistryValue} {GppRegistryHive} {GppRegistryKeyPath} {GppRegistryValueName} {GppRegistryAction} {GppRegistryValueType} {GppRegistryUid} {GppRegistryOrder}";
 }

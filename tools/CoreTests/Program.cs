@@ -87,6 +87,7 @@ var tests = new (string Name, Action Body)[]
     ("Universal exact MMC resolver requires same GPO/scope/section/native row", TestUniversalExactMmcRoutes),
     ("GPO settings report provides bounded native GPMC hierarchy", TestGpoSettingsReportTree),
     ("GPMC GPP Registry exposes exact hive/key/action but not raw value data or Registry.pol proof", TestGpmcRegistryPreferenceEvidence),
+    ("Exact GPMC report jump binds GPO scope UID order action and key without trusting names", TestGpmcExactRegistryReportLookup),
     ("Remote AI endpoints and prompts strictly exclude AD/GPO identities", TestRemoteAiBoundary),
     ("Discovery evidence is read-only, fail-closed and spreadsheet-safe", TestDiscoveryEvidence),
     ("Discovery unit review requires unique ADMX/ADML, MMC row, hashes and operator approval", TestDiscoveryUnitReview),
@@ -6004,4 +6005,140 @@ static void TestGpmcRegistryPreferenceEvidence()
     ExpectFailure(() => GpmService.ParseXmlSettings(
         "<GPO><Computer><ExtensionData></Computer>", gpo),
         "Malformed GPMC XML must be rejected rather than treated as an empty GPO.");
+}
+
+
+static void TestGpmcExactRegistryReportLookup()
+{
+    const string key = @"SYSTEM\CurrentControlSet\Services\LanmanServer\Shares\Security";
+    const string secret = "PRIVATE_DATA_NEVER_INDEX_5471";
+    var gpo = new GpoInfo
+    {
+        Id = Guid.NewGuid(), DisplayName = "GPO Registry Test A",
+        DomainName = "example.test", ComputerEnabled = true, UserEnabled = true
+    };
+    var xml = "<GPO><Computer><ExtensionData><Extension type='RegistrySettings'>" +
+        "<Registry name='pslogging$' uid='{11111111-2222-3333-4444-555555555555}'>" +
+        "<Properties action='D' hive='HKLM' key='" + key +
+        "' name='pslogging$' type='REG_SZ' value='" + secret + "'/>" +
+        "</Registry>" +
+        "<Registry name='pslogging$' uid='{99999999-8888-7777-6666-555555555555}'>" +
+        "<Properties action='U' hive='HKLM' key='" + key +
+        "' name='pslogging$' type='REG_SZ' value='" + secret + "'/>" +
+        "</Registry></Extension></ExtensionData></Computer>" +
+        "<User><ExtensionData><Extension type='RegistrySettings'>" +
+        "<Registry name='pslogging$' uid='{11111111-2222-3333-4444-555555555555}'>" +
+        "<Properties action='D' hive='HKCU' key='Software\\Other'" +
+        " name='pslogging$' type='REG_SZ' value='" + secret + "'/>" +
+        "</Registry></Extension></ExtensionData></User></GPO>";
+
+    var entries = GpmService.ParseXmlSettings(xml, gpo);
+    Assert(entries.Count == 3 && entries.Count(e => e.Scope == "Computer") == 2,
+        "GPMC must preserve multiple same-name Registry items and both scopes.");
+    var report = GpoSettingsReportService.Parse(gpo, xml);
+    Assert(report.GpoId == gpo.Id,
+        "Fresh source report identity must preserve the requested GPO GUID.");
+
+    var a = entries.Single(e => e.Scope == "Computer" && e.GppRegistryOrder == 1);
+    var b = entries.Single(e => e.Scope == "Computer" && e.GppRegistryOrder == 2);
+    var user = entries.Single(e => e.Scope == "User");
+
+    Assert(GpmcRegistryReportLocator.TryCreate(a, out var aReference) &&
+           GpmcRegistryReportLocator.TryCreate(b, out var bReference) &&
+           GpmcRegistryReportLocator.TryCreate(user, out var userReference),
+        "Only typed GPP Registry rows with UID, order and full target are eligible.");
+
+    var resultA = GpmcRegistryReportLocator.Locate(report, aReference);
+    var resultB = GpmcRegistryReportLocator.Locate(report, bReference);
+    var resultUser = GpmcRegistryReportLocator.Locate(report, userReference);
+    Assert(resultA.IsExact && resultB.IsExact && resultUser.IsExact &&
+           !ReferenceEquals(resultA.Node, resultB.Node) &&
+           resultA.Node!.GppRegistryAction == "Delete" &&
+           resultB.Node!.GppRegistryAction == "Update" &&
+           resultUser.Node!.GppRegistryScope == "User" &&
+           resultB.Node.GppRegistryOrder == 2 &&
+           resultA.Node.RegistryTarget ==
+               @"HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\LanmanServer\Shares\Security / pslogging$",
+        "Exact report selection must choose one correct UID/order/action/scope, never first same-label row.");
+
+    Assert(!resultA.Node!.Details.Contains(secret) &&
+           !resultB.Node!.Details.Contains(secret) &&
+           !resultUser.Node!.Details.Contains(secret) &&
+           !a.SearchText.Contains(secret) &&
+           a.IndexedSourceRegistryKey ==
+               @"GPP source: HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\LanmanServer\Shares\Security" &&
+           a.IndexedSourceRegistryValueName == "pslogging$",
+        "The main GPMC grid must show Microsoft-style source hive/key/name without raw value data.");
+
+    var otherGpo = new GpoInfo
+    {
+        Id = Guid.NewGuid(), DisplayName = "GPO Registry Test B",
+        DomainName = "example.test", ComputerEnabled = true, UserEnabled = true
+    };
+    var otherReport = GpoSettingsReportService.Parse(otherGpo, xml);
+    Assert(GpmcRegistryReportLocator.Locate(otherReport, aReference).Status ==
+           GpmcRegistryReportLocator.WrongGpo,
+        "A similarly named registry item in a different GPO must never be selected.");
+
+    Assert(GpmcRegistryReportLocator.Locate(report,
+               aReference with { Order = 2 }).Status ==
+           GpmcRegistryReportLocator.StaleMetadata &&
+           GpmcRegistryReportLocator.Locate(report,
+               aReference with { RegistryTarget = @"HKEY_LOCAL_MACHINE\OTHER" }).Status ==
+           GpmcRegistryReportLocator.StaleMetadata &&
+           GpmcRegistryReportLocator.Locate(report,
+               aReference with { Action = "Update" }).Status ==
+           GpmcRegistryReportLocator.StaleMetadata,
+        "A changed source order, path or action must invalidate the cached GPMC item.");
+
+    Assert(GpmcRegistryReportLocator.Locate(report,
+               aReference with { Uid = Guid.NewGuid() }).Status ==
+           GpmcRegistryReportLocator.MissingUid,
+        "No UID match must never trigger an unrelated substring search.");
+
+    var duplicateUidXml = xml.Replace(
+        "99999999-8888-7777-6666-555555555555",
+        "11111111-2222-3333-4444-555555555555",
+        StringComparison.Ordinal);
+    var duplicateUidReport = GpoSettingsReportService.Parse(gpo, duplicateUidXml);
+    Assert(GpmcRegistryReportLocator.Locate(duplicateUidReport,
+               aReference).Status == GpmcRegistryReportLocator.AmbiguousUid,
+        "Duplicated UID within one Computer scope cannot be assigned to the first row.");
+
+    Assert(!GpmcRegistryReportLocator.TryCreate(new PolicySettingInfo
+        {
+            GpoId = gpo.Id, Scope = "Computer",
+            Extension = "SoftwareInstallationSettings",
+            SettingName = "Applicability", RegistryKey = key,
+            RegistryValue = "pslogging$"
+        }, out _),
+        "A technical MSI Applicability descriptor must never acquire another GPO's GPP registry path.");
+
+    var technical = new PolicySettingInfo
+    {
+        GpoId = gpo.Id, Scope = "Computer",
+        Extension = "SoftwareInstallationSettings",
+        SettingName = "Applicability", RegistryKey = key,
+        RegistryValue = "pslogging$"
+    };
+    Assert(SecurityXmlEntryClassifier.IsTechnicalDetail(technical) &&
+           technical.IndexedSourceRegistryKey == "" &&
+           technical.IndexedSourceRegistryValueName == "",
+        "Legacy metadata must remain source-only and show no invented Registry.pol target.");
+
+    Assert(!GpmcRegistryReportLocator.TryCreate(new PolicySettingInfo
+        {
+            GpoId = gpo.Id, Scope = "Computer", Extension = "GppRegistry",
+            GppRegistryHive = "HKLM", GppRegistryKeyPath = key,
+            GppRegistryUid = "invalid", GppRegistryOrder = 1,
+            GppRegistryAction = "Delete"
+        }, out _) &&
+        !GpmcRegistryReportLocator.TryCreate(new PolicySettingInfo
+        {
+            GpoId = gpo.Id, Scope = "Computer", Extension = "GppRegistry",
+            GppRegistryHive = "HKLM", GppRegistryKeyPath = key,
+            GppRegistryUid = Guid.NewGuid().ToString("D"), GppRegistryOrder = 0,
+            GppRegistryAction = "Delete"
+        }, out _),
+        "A GPP source without exact UID and order must remain manual-only.");
 }

@@ -30,7 +30,9 @@ public sealed class GpoSettingsReportWindow : Window
 
     public GpoSettingsReportWindow(
         GpoInfo gpo, GpoSettingsReport report, Action openNativeGpoEditor,
-        string? initialSearch = null)
+        string? initialSearch = null,
+        GpmcRegistryReportLocator.Reference? exactPreference = null,
+        bool requestedGppRegistryLookup = false)
     {
         ArgumentNullException.ThrowIfNull(gpo);
         ArgumentNullException.ThrowIfNull(report);
@@ -200,12 +202,76 @@ public sealed class GpoSettingsReportWindow : Window
         root.Children.Add(grid);
 
         Content = root;
-        if (!string.IsNullOrWhiteSpace(initialSearch))
+        if (exactPreference is not null)
+        {
+            // An exact source UID/order/key request must never fall back to a
+            // fuzzy label search, especially for repeated Delete/Update names.
+            Loaded += (_, _) => SelectExactGppItem(report, exactPreference);
+        }
+        else if (requestedGppRegistryLookup)
+        {
+            Loaded += (_, _) =>
+            {
+                _findStatus.Foreground = UiStyle.WarningBrush;
+                _findStatus.Text = "GPP_UID_OR_ORDER_MISSING: the indexed GPMC Registry item " +
+                    "has no verified UID/order for exact source location. " +
+                    "Browse this GPO's report manually; no similar item was selected.";
+            };
+        }
+        else if (!string.IsNullOrWhiteSpace(initialSearch))
+        {
             Loaded += (_, _) =>
             {
                 _findText.Text = initialSearch;
                 FindNextMatch();
             };
+        }
+    }
+
+    private void SelectExactGppItem(
+        GpoSettingsReport report, GpmcRegistryReportLocator.Reference selected)
+    {
+        var resolution = GpmcRegistryReportLocator.Locate(report, selected);
+        if (!resolution.IsExact || resolution.Node is null)
+        {
+            _findStatus.Foreground = UiStyle.WarningBrush;
+            _findStatus.Text = resolution.Status + ": " + resolution.Explanation;
+            _details.Text = "The fresh GPMC report does not contain the exact indexed " +
+                "Registry preference identity. Refresh the GPMC settings index " +
+                "and open this GPO's Settings report again. A similarly named " +
+                "item has NOT been selected. No policy was changed.";
+            return;
+        }
+
+        var matches = new List<(TreeViewItem Item, TreeViewItem[] Parents)>();
+        void Walk(TreeViewItem item, List<TreeViewItem> parents)
+        {
+            if (ReferenceEquals(item.Tag, resolution.Node))
+                matches.Add((item, parents.ToArray()));
+            parents.Add(item);
+            foreach (var child in item.Items.OfType<TreeViewItem>())
+                Walk(child, parents);
+            parents.RemoveAt(parents.Count - 1);
+        }
+
+        foreach (var item in _tree.Items.OfType<TreeViewItem>())
+            Walk(item, new List<TreeViewItem>());
+
+        if (matches.Count != 1)
+        {
+            _findStatus.Foreground = UiStyle.WarningBrush;
+            _findStatus.Text = "REPORT_TREE_AMBIGUOUS: the resolved source " +
+                "is not one unique visible tree item. No item selected.";
+            return;
+        }
+        foreach (var parent in matches[0].Parents)
+            parent.IsExpanded = true;
+        matches[0].Item.IsSelected = true;
+        matches[0].Item.BringIntoView();
+        _findStatus.Foreground = UiStyle.SuccessBrush;
+        _findStatus.Text = "EXACT GPMC source: UID, order, action, scope and " +
+            "full registry target agree. Stored preference only; NOT " +
+            "Registry.pol, live registry, MMC or effective RSoP.";
     }
 
     /// <summary>

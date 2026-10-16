@@ -46,10 +46,14 @@ public partial class MainWindow
     // A detail window may describe a different GPO than the main grid's
     // current selection. Never silently reuse GpoGrid.SelectedItem here.
     private async Task OpenGpoSettingsReportForGpoAsync(
-        GpoInfo selected, Window owner, string? initialSearch = null)
+        GpoInfo selected, Window owner, string? initialSearch = null,
+        PolicySettingInfo? sourceSetting = null)
     {
         if (_domainContext is null)
             return;
+        if (sourceSetting is not null && sourceSetting.GpoId != selected.Id)
+            throw new InvalidOperationException(
+                "Selected GPMC setting and the requested report belong to different GPOs.");
         var context = _domainContext;
         SetBusy(true, "Reading a GPMC XML report for the selected GPO...");
         try
@@ -61,9 +65,18 @@ public partial class MainWindow
             var report = await Task.Run(() =>
                 GpoSettingsReportService.Parse(selected, xml));
 
+            GpmcRegistryReportLocator.Reference? exactPreference = null;
+            var isRegistrySource = sourceSetting is not null &&
+                GpoSettingSourceProvenance.IsGppRegistrySource(sourceSetting);
+            if (isRegistrySource &&
+                GpmcRegistryReportLocator.TryCreate(sourceSetting,
+                    out var validReference))
+                exactPreference = validReference;
+
             var viewer = new GpoSettingsReportWindow(selected, report, () =>
                 _gpmService.OpenEditor(selected, context.DomainDistinguishedName),
-                initialSearch)
+                isRegistrySource ? null : initialSearch, exactPreference,
+                requestedGppRegistryLookup: isRegistrySource)
             {
                 Owner = owner
             };

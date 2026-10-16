@@ -265,6 +265,12 @@
                                 ToolTip="Review every indexed GPMC setting's source-aware native MMC path. Scan one selected GPO on demand; never scan all native snap-ins at startup."/>
                         <Button Content="Open selected GPO" Click="OpenSettingGpo_Click"/>
                         <Button Content="Export CSV" Click="ExportSettingsCsv_Click"/>
+                        <CheckBox x:Name="SettingsShowTechnicalCheckBox"
+                                  Content="Show XML metadata"
+                                  Margin="10,0,4,0" VerticalAlignment="Center"
+                                  Checked="SettingsShowTechnicalCheckBox_Changed"
+                                  Unchecked="SettingsShowTechnicalCheckBox_Changed"
+                                  ToolTip="Technical package Applicability and ACL XML are not independent settings. Full source remains available in the GPMC Settings report."/>
                         <TextBlock x:Name="SettingsCountText" Margin="16,0,0,0" VerticalAlignment="Center" Foreground="DimGray"/>
                     </WrapPanel>
                     <DataGrid x:Name="SettingsGrid" RowStyle="{StaticResource UiPolicyRowStyle}" MouseDoubleClick="EditSetting_MouseDoubleClick">
@@ -275,8 +281,8 @@
                             <DataGridTextColumn Header="Setting" Binding="{Binding SettingName}" Width="2*"/>
                             <DataGridTextColumn Header="Category" Binding="{Binding Category}" Width="1.6*"/>
                             <DataGridTextColumn Header="Value" Binding="{Binding Value}" Width="2*"/>
-                            <DataGridTextColumn Header="Registry key" Binding="{Binding RegistryKey}" Width="1.5*"/>
-                            <DataGridTextColumn Header="Registry value" Binding="{Binding RegistryValue}" Width="1.1*"/>
+                            <DataGridTextColumn Header="Source registry key (GPP / Registry.pol)" Binding="{Binding IndexedSourceRegistryKey}" Width="1.5*" IsReadOnly="True"/>
+                            <DataGridTextColumn Header="Source value name" Binding="{Binding IndexedSourceRegistryValueName}" Width="1.1*" IsReadOnly="True"/>
                         </DataGrid.Columns>
                     </DataGrid>
                 </DockPanel>

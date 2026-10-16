@@ -681,6 +681,9 @@ public partial class MainWindow : Window
     private void SettingsSearchBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
         => _settingsView.Refresh();
 
+    private void SettingsShowTechnicalCheckBox_Changed(
+        object sender, RoutedEventArgs e) => _settingsView?.Refresh();
+
     private void WmiSearchBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
         => _wmiView.Refresh();
 
@@ -715,6 +718,13 @@ public partial class MainWindow : Window
         {
             return false;
         }
+
+        // The flat legacy index previously displayed MSI Applicability
+        // descriptors like independent editable policies. Retain those
+        // details only on explicit user request.
+        if (SecurityXmlEntryClassifier.IsTechnicalDetail(setting) &&
+            SettingsShowTechnicalCheckBox?.IsChecked != true)
+            return false;
 
         var search = SettingsSearchBox?.Text?.Trim();
         return string.IsNullOrWhiteSpace(search) ||

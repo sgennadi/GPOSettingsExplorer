@@ -422,9 +422,12 @@ public sealed class SettingValueWindow : Window
         {
             var sourceReport = new Button
             {
-                Content = "View GPMC Settings report...",
-                ToolTip = "Show stored GPO source hierarchy including exact GPP Registry " +
-                    "Hive/Key path/Value name/Action when present. Never edits local registry."
+                Content = GpmcRegistryReportLocator.TryCreate(setting, out _)
+                    ? "Locate exact GPP item in GPMC report..."
+                    : "View GPMC Settings report...",
+                ToolTip = "Show the source hierarchy for this exact GPO. Known Registry " +
+                    "items are located by UID/order/action/hive/key/value; " +
+                    "never guess by display name. No local registry edits."
             };
             sourceReport.Click += async (_, _) =>
             {
