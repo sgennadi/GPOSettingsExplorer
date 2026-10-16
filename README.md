@@ -16,6 +16,10 @@ Download the latest portable build from:
 
 Current stable release: **v2.0.3**.
 
+**New in Preview 13:** The existing Preview 12 exact GPP Registry source locator is preserved. **Exact MMC Paths** now shows GPMC source-file locations plus separately marked unique ADMX-declared registry keys/value names, **Copy source / registry path**, and **Open GPO editor (manual)** with no full native MMC scan. Computer Advanced Audit `audit.csv` can be checked on demand from a single pinned DC with exact subcategory GUID, numeric code and SHA-256. Download the [v2.1.0-preview.13 prerelease](https://github.com/sgennadi/GPOSettingsExplorer/releases/tag/v2.1.0-preview.13) when published; stable remains v2.0.3 and releases are not production-validated. See [source evidence guide](docs/discovery-evidence-preview.md).
+
+
+
 **New in Preview 12:** A typed GPP Registry preference's **Setting Value** window can **Locate exact GPP item in GPMC report...**. It selects one item only when GPO ID, Computer/User scope, UID, order, action and full registry target match a fresh GPMC report. Different/duplicate same-named items are blocked. The secondary Configured GPMC list now shows source-labeled GPP keys/value names and hides package Applicability until **Show XML metadata** is enabled. No live Regedit or RSoP. See [exact GPMC Registry source lookup](docs/gpmc-exact-registry-source.md).
 
 **New in Preview 11:** **Exact MMC Paths → Check selected stored source...** now supports **Password Policy / Account Lockout** (typed GPMC numbers/booleans versus unique pinned GptTmpl.inf [System Access]) and **GPP Registry** (pinned Registry.xml metadata, including UID/order/action/hive/key/value name/type/targeting-filter presence). Each selected GPO/scope read is opt-in, bounded, SHA-256-bound and read-only. GPP raw value data is never included in the source-check report or persistent GPMC index. **GPP_METADATA_MATCH does not mean value verification.** Neither comparison is effective client RSoP or domain account-policy precedence.
