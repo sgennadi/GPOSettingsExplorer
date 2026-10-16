@@ -77,3 +77,14 @@ A label, explainText, name containing "minutes", decimal min/max, or a nonempty 
 - Final version bump, release notes and x64/ARM64 portable release validation.
 
 Until these are completed, this is a preview capability on a development branch, **not a completed 2.1.0 release**.
+
+
+### Preview 12: safe source-first navigation and Advanced Audit
+
+**Exact MMC Paths** now shows **Source file / registry path** and **Copy source / registry path**. A GPO-relative Registry.pol, GptTmpl.inf, audit.csv or GPP Registry.xml path is a source-family hint, not a proof that the file exists. An exact registry target appears only when GPMC provides typed evidence. Copy omits raw source/value data and GPP value payloads; GPO names, settings and registry paths remain potentially confidential clipboard content.
+
+**Open GPO editor (manual)** launches the selected GPO at its root and never starts a native MMC inventory. Exact MMC row navigation now requires an existing, non-aborted, same-GPO and same-pinned-DC native snapshot; a single setting must not launch a broad inventory through unrelated or crash-prone snap-ins. A separately initiated one-GPO read-only MMC inventory is available through MMC Full Settings Inventory but requires nonproduction smoke testing.
+
+**Check Advanced Audit audit.csv...** is read-only, selected Computer GPO only, and reads exactly the pinned-DC `Machine/Microsoft/Windows NT/Audit/audit.csv` via an audit-only source scan. It correlates a unique typed GPMC `PolicyTarget=System`, `SubcategoryGuid`, canonical numeric `SettingValue` 0-4 with one exact SHA-256-bound CSV `Policy Target=System` subcategory GUID/value. Missing or incomplete files, duplicate identities, invalid/unsupported literals, changed scope/DC/GPO and per-user SID targets fail closed. Matching captured SAVED sources does not verify native MMC, effective client auditpol, cross-GPO precedence, replication or RSoP.
+
+Reference: [Microsoft MS-GPAC System audit SettingValue](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-gpac/21ad2e80-3011-48ef-be13-cc11ff7bfeb1) and [System audit.csv example](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-gpac/f2b42f67-98d0-4900-8b66-e9e7db31698a).
