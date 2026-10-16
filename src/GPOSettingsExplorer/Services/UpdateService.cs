@@ -33,7 +33,7 @@ public sealed class UpdateService
 {
     private static readonly Uri LatestReleaseUri =
         new(
-            "https://api.github.com/repos/sgennadi/GPOSettingsExplorer/releases/latest");
+            "https://api.github.com/repos/sgennadi/GPOSettingsExplorer/releases?per_page=30");
 
     private readonly HttpClient _client;
 
@@ -138,8 +138,31 @@ public sealed class UpdateService
                 cancellationToken:
                     cancellationToken);
 
-        var root =
-            document.RootElement;
+        var releases = document.RootElement;
+        if (releases.ValueKind != JsonValueKind.Array)
+            throw new InvalidOperationException("Invalid GitHub releases response.");
+        var currentTag = Assembly.GetExecutingAssembly()
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
+            .InformationalVersion?.Split('+')[0] ?? string.Empty;
+        var previewChannel = currentTag.Contains("-preview.", StringComparison.OrdinalIgnoreCase);
+        JsonElement root = default;
+        Version best = new(0, 0, 0, 0);
+        foreach (var candidate in releases.EnumerateArray())
+        {
+            if (candidate.TryGetProperty("draft", out var draft) &&
+                draft.ValueKind == JsonValueKind.True)
+                continue;
+            var candidateTag = ReadString(candidate, "tag_name");
+            if (candidateTag.Contains("-preview.", StringComparison.OrdinalIgnoreCase) != previewChannel)
+                continue;
+            var version = ParseVersion(candidateTag);
+            if (version <= best)
+                continue;
+            best = version;
+            root = candidate;
+        }
+        if (root.ValueKind == JsonValueKind.Undefined)
+            throw new InvalidOperationException("No release exists for the selected update channel.");
 
         var tag =
             ReadString(
@@ -176,14 +199,7 @@ public sealed class UpdateService
             ParseVersion(
                 tag);
 
-        var current =
-            Assembly.GetExecutingAssembly()
-                .GetName()
-                .Version
-            ?? new Version(
-                0,
-                0,
-                0);
+        var current = ParseVersion(currentTag);
 
         var expectedAsset =
             RuntimeInformation.ProcessArchitecture ==
@@ -621,44 +637,28 @@ public sealed class UpdateService
             StringComparison.Ordinal) +
         "\"";
 
-    private static Version ParseVersion(
-        string value)
+    private static Version ParseVersion(string value)
     {
-        var text =
-            value.Trim();
-
-        if (text.StartsWith(
-                'v') ||
-            text.StartsWith(
-                'V'))
+        var text = value.Trim().TrimStart('v', 'V');
+        var previewIndex = text.IndexOf("-preview.", StringComparison.OrdinalIgnoreCase);
+        var revision = 0;
+        if (previewIndex >= 0)
         {
-            text =
-                text[1..];
+            if (!int.TryParse(text[(previewIndex + 9)..], out revision) || revision < 0)
+                return new Version(0, 0, 0, 0);
+            text = text[..previewIndex];
         }
-
-        return Version.TryParse(
-                   text,
-                   out var version)
-            ? NormalizeVersion(
-                version)
-            : new Version(
-                0,
-                0,
-                0);
+        else if (text.Contains('-'))
+            return new Version(0, 0, 0, 0);
+        if (!Version.TryParse(text, out var version))
+            return new Version(0, 0, 0, 0);
+        return new Version(Math.Max(0, version.Major), Math.Max(0, version.Minor),
+            Math.Max(0, version.Build), previewIndex >= 0 ? revision : Math.Max(0, version.Revision));
     }
 
-    private static Version NormalizeVersion(
-        Version version) =>
-        new(
-            Math.Max(
-                0,
-                version.Major),
-            Math.Max(
-                0,
-                version.Minor),
-            Math.Max(
-                0,
-                version.Build));
+    private static Version NormalizeVersion(Version version) =>
+        new(Math.Max(0, version.Major), Math.Max(0, version.Minor),
+            Math.Max(0, version.Build), Math.Max(0, version.Revision));
 
     private static string RollbackRoot =>
         Path.Combine(
