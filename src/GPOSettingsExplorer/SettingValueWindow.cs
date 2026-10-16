@@ -25,7 +25,8 @@ public sealed class SettingValueWindow : Window
         Func<IProgress<string>, CancellationToken,
             Task<GpoKerberosStoredSourceEvidenceService.Result>>?
             verifyStoredKerberos = null,
-        Func<Task>? openGpmcReport = null)
+        Func<Task>? openGpmcReport = null,
+        Action? openManualGpoEditor = null)
     {
         Title =
             $"Setting Value - {setting.SettingName}";
@@ -220,6 +221,36 @@ public sealed class SettingValueWindow : Window
         };
 
         footer.Children.Add(open);
+
+        // Manual native editor never depends on an MMC inventory or guessed row.
+        // It is an explicit action; a human may change settings in MMC.
+        if (openManualGpoEditor is not null)
+        {
+            var manual = new Button
+            {
+                Content = "Open GPO editor (manual)",
+                ToolTip = "Launch this GPO at its root. No MMC scan or exact-row " +
+                    "verification. Changes made manually in MMC may affect the GPO."
+            };
+            manual.Click += (_, _) =>
+            {
+                try
+                {
+                    openManualGpoEditor();
+                    navigationStatus.Foreground = UiStyle.WarningBrush;
+                    navigationStatus.Text =
+                        "Native GPO editor opened at its root. Select the section manually. " +
+                        "The app did not verify a native policy row, stored value or client RSoP.";
+                }
+                catch (Exception ex)
+                {
+                    navigationStatus.Foreground = UiStyle.ErrorBrush;
+                    navigationStatus.Text = "Manual editor could not be opened: " + ex.Message;
+                    CrashLogService.Write("Manual MMC editor from setting value", ex);
+                }
+            };
+            footer.Children.Add(manual);
+        }
 
         // One GPMC policy may recheck existing, non-aborted MMC evidence.
         // Never start a full native MMC traversal from this small value dialog:
