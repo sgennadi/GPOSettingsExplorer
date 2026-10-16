@@ -17,13 +17,7 @@
 
 - **Preview 10: Microsoft-style GPMC Settings/source view.** Parse uniquely structured GPP Registry/Properties report items as typed GPMC preference entries with exact action, hive, registry key path, value name, type and UID (not Registry.pol). Show them in All Settings and a searchable native report tree with Copy registry target. Keep stored raw registry value data out of general indexing/report details. Unknown/invalid GPP attributes remain explicitly unverified; never infer applied client state or silently open local Regedit.
 - Reclassify Software Installation `Applicability` and package Trustee XML as technical report metadata, hidden from the default configured view but available under Show XML details / GPMC Settings report. The selected-setting report action carries its own GPO identity, independent of which other GPO is selected in the main grid.
-- Bump settings-index cache schema for safe regeneration of typed GPP rows. Add structured GPMC XML fixture tests (including the `LanmanServer\\Shares\\Security / pslogging# Changelog
-
-## Unreleased
-
-- **Preview 10: Microsoft-style GPMC Settings/source view.** Parse uniquely structured GPP Registry/Properties report items as typed GPMC preference entries with exact action, hive, registry key path, value name, type and UID (not Registry.pol). Show them in All Settings and a searchable native report tree with Copy registry target. Keep stored raw registry value data out of general indexing/report details. Unknown/invalid GPP attributes remain explicitly unverified; never infer applied client state or silently open local Regedit.
-- Reclassify Software Installation `Applicability` and package Trustee XML as technical report metadata, hidden from the default configured view but available under Show XML details / GPMC Settings report. The selected-setting report action carries its own GPO identity, independent of which other GPO is selected in the main grid.
-- Bump settings-index cache schema for safe regeneration of typed GPP rows. Add structured GPMC XML fixture tests (including the `LanmanServer\\Shares\\Security /  Delete preference), unknown source, DTD rejection, redaction and preference-vs-Administrative Templates routing. Publish v2.1.0-preview.10 portable x64 and ARM64.
+- Bump settings-index cache schema for typed GPP rows. Add XML fixture tests covering GPP Registry identity, Delete actions, DTD rejection, redaction, invalid sources and preference-versus-Administrative Templates routing. Publish portable x64 and ARM64 Preview 10.
 
 - Show original GPP Registry item order and UID in the structured Settings report and GPMC index so identically named items remain distinct. Reject malformed/DTD-bearing GPMC XML as a source-read failure without enabling DTD resolution; malformed Registry/Properties are redacted and never get an inferred target. Extend regression fixtures for duplicate operations and confidential GPP data.
 
