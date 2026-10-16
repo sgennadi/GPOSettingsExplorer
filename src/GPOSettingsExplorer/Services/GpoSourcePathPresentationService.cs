@@ -77,11 +77,64 @@ public static class GpoSourcePathPresentationService
     }
 
     /// <summary>
+    /// Unique ADMX *declaration* for a known Administrative Templates policy.
+    /// It may contain several elements/registry targets. This is neither an
+    /// observed stored Registry.pol record nor proof that MMC has the row.
+    /// Ambiguous policy names/categories return no declaration at all.
+    /// </summary>
+    public static string DescribeAdmxDeclaration(
+        PolicySettingInfo setting, IReadOnlyList<AdmxPolicyDefinition>? catalog)
+    {
+        if (catalog is null || catalog.Count == 0 ||
+            !(setting.Extension.Equals("RegistrySettings", StringComparison.OrdinalIgnoreCase) ||
+              setting.Extension.Equals("Administrative Templates", StringComparison.OrdinalIgnoreCase)))
+            return string.Empty;
+
+        var policy = UnifiedSettingsCatalogService.ResolveDefinition(setting, catalog);
+        if (policy is null)
+            return string.Empty;
+
+        var hive = setting.Scope.Equals("Computer", StringComparison.OrdinalIgnoreCase)
+            ? "HKLM" : "HKCU";
+        var targets = new List<string>();
+
+        void Add(string key, string valueName)
+        {
+            if (string.IsNullOrWhiteSpace(key) || string.IsNullOrWhiteSpace(valueName))
+                return;
+            var normalized = key.Trim().TrimStart('\\');
+            if (normalized.StartsWith("HKEY_LOCAL_MACHINE\\", StringComparison.OrdinalIgnoreCase) ||
+                normalized.StartsWith("HKLM\\", StringComparison.OrdinalIgnoreCase) ||
+                normalized.StartsWith("HKEY_CURRENT_USER\\", StringComparison.OrdinalIgnoreCase) ||
+                normalized.StartsWith("HKCU\\", StringComparison.OrdinalIgnoreCase))
+                targets.Add(normalized + " / " + valueName.Trim());
+            else
+                targets.Add(hive + "\\" + normalized + " / " + valueName.Trim());
+        }
+
+        Add(policy.Key, policy.ValueName);
+        foreach (var element in policy.Elements)
+            Add(string.IsNullOrWhiteSpace(element.Key) ? policy.Key : element.Key,
+                element.ValueName);
+
+        var unique = targets.Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        if (unique.Length == 0)
+            return string.Empty;
+
+        var name = Path.GetFileName(policy.AdmxFile);
+        var source = string.IsNullOrWhiteSpace(name) ? "ADMX" : name;
+        return "ADMX declaration (" + source + ", NOT stored-source verified): " +
+            string.Join(" | ", unique.Take(6)) +
+            (unique.Length > 6 ? " (+" + (unique.Length - 6) + " other targets)" : "");
+    }
+
+    /// <summary>
     /// Copy explicit operator-requested source LOCATION metadata only.
     /// Names and registry keys may still be confidential, so do not export
     /// or upload clipboard contents automatically. Raw policy values omitted.
     /// </summary>
-    public static string CopyLocationText(PolicySettingInfo setting)
+    public static string CopyLocationText(
+        PolicySettingInfo setting, string admxDeclaration = "")
     {
         var hint = Describe(setting);
         return "GPO: " + setting.GpoName + Environment.NewLine +
@@ -90,6 +143,8 @@ public static class GpoSourcePathPresentationService
             "GPMC source family: " + hint.Family + Environment.NewLine +
             "GPO-relative source: " + hint.GpoRelativeFile + Environment.NewLine +
             "GPMC-reported target: " + hint.ReportedTarget + Environment.NewLine +
+            "ADMX reference: " + (string.IsNullOrWhiteSpace(admxDeclaration)
+                ? "(not uniquely resolved)" : admxDeclaration) + Environment.NewLine +
             "Limitations: " + hint.Limitations + Environment.NewLine +
             "Native MMC value and effective client RSoP: NOT VERIFIED.";
     }
