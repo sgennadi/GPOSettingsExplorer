@@ -273,6 +273,20 @@ public static class GpoSettingsReportService
                 Array.Empty<GpoReportNode>());
         var name = element.Name.LocalName;
         var label = Display(name);
+        // A nested Applicability element describes its parent software
+        // installation package. Present the context instead of a misleading
+        // standalone policy name; the source XML is still read-only.
+        if (name.Equals("Applicability", StringComparison.OrdinalIgnoreCase) &&
+            element.Parent is XElement package)
+        {
+            var packageName = package.Attributes()
+                .FirstOrDefault(a => a.Name.LocalName.Equals(
+                    "name", StringComparison.OrdinalIgnoreCase))?.Value;
+            var parentLabel = package.Name.LocalName;
+            label = "Package applicability (" + Cut(
+                string.IsNullOrWhiteSpace(packageName) ? parentLabel : packageName,
+                130) + ")";
+        }
         var nameAttr = element.Attributes().FirstOrDefault(a =>
             a.Name.LocalName.Equals("name", StringComparison.OrdinalIgnoreCase));
         if (nameAttr is not null && !string.IsNullOrWhiteSpace(nameAttr.Value))
