@@ -221,6 +221,31 @@ public sealed class SettingValueWindow : Window
         };
 
         footer.Children.Add(open);
+        if (openManualGpoEditor is not null)
+        {
+            var manual = new Button
+            {
+                Content = "Open GPO editor (manual)",
+                ToolTip = "Open selected GPO at its root, without an MMC inventory scan."
+            };
+            manual.Click += (_, _) =>
+            {
+                try
+                {
+                    openManualGpoEditor();
+                    navigationStatus.Foreground = UiStyle.WarningBrush;
+                    navigationStatus.Text = "Opened native editor at GPO root. Exact setting row and effective RSoP are not verified.";
+                }
+                catch (Exception ex)
+                {
+                    navigationStatus.Foreground = UiStyle.ErrorBrush;
+                    navigationStatus.Text = "Cannot open GPO editor: " + ex.Message;
+                    CrashLogService.Write("Manual GPO editor", ex);
+                }
+            };
+            footer.Children.Add(manual);
+        }
+
 
         // Manual GPO editor: no implicit native MMC inventory or row guess.
         if (openManualGpoEditor is not null)
