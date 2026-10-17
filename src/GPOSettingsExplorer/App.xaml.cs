@@ -24,6 +24,26 @@ public partial class App : Application
 
         base.OnStartup(e);
 
+        // A health marker confirms that WPF startup completed without crashing.
+        var healthIndex = Array.IndexOf(e.Args, "--update-health-marker");
+        if (healthIndex >= 0 && healthIndex + 1 < e.Args.Length)
+        {
+            try
+            {
+                var marker = e.Args[healthIndex + 1];
+                if (System.IO.Path.GetFileName(marker).StartsWith(
+                        "GPOSettingsExplorer-Health-", StringComparison.Ordinal) &&
+                    System.IO.Path.GetFullPath(marker).StartsWith(
+                        System.IO.Path.GetFullPath(System.IO.Path.GetTempPath()),
+                        StringComparison.OrdinalIgnoreCase))
+                    System.IO.File.WriteAllText(marker, "started");
+            }
+            catch (Exception ex)
+            {
+                CrashLogService.Write("Update startup health marker", ex);
+            }
+        }
+
         if (UpdateInstaller.TryApply(
                 e.Args))
         {
