@@ -200,6 +200,9 @@ public sealed class UpdateService
                 tag);
 
         var current = ParseVersion(currentTag);
+        if (current.Major == 0)
+            current = NormalizeVersion(Assembly.GetExecutingAssembly()
+                .GetName().Version ?? new Version(0, 0, 0));
 
         var expectedAsset =
             RuntimeInformation.ProcessArchitecture ==
@@ -650,7 +653,7 @@ public sealed class UpdateService
         var revision = 0;
         if (previewIndex >= 0)
         {
-            if (!int.TryParse(text[(previewIndex + 9)..], out revision) || revision < 0)
+            if (!int.TryParse(text[(previewIndex + "-preview.".Length)..], out revision) || revision < 0)
                 return new Version(0, 0, 0, 0);
             text = text[..previewIndex];
         }
