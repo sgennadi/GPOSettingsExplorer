@@ -302,9 +302,19 @@ public sealed class UpdateService
                 directory,
                 update.Asset.Name);
 
+        if (!Uri.TryCreate(update.Asset.DownloadUrl, UriKind.Absolute, out var assetUri) ||
+            assetUri.Scheme != Uri.UriSchemeHttps ||
+            !assetUri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Update asset must be downloaded from GitHub over HTTPS.");
+
+        if (!update.Asset.Digest.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase) ||
+            update.Asset.Digest.Length != 71 ||
+            !update.Asset.Digest[7..].All(Uri.IsHexDigit))
+            throw new InvalidOperationException("GitHub release asset is missing a valid SHA-256 digest. Automatic installation is blocked.");
+
         using var response =
             await _client.GetAsync(
-                update.Asset.DownloadUrl,
+                assetUri,
                 HttpCompletionOption.ResponseHeadersRead,
                 cancellationToken);
 
@@ -380,9 +390,7 @@ public sealed class UpdateService
                     hash.GetHashAndReset())
                 .ToLowerInvariant();
 
-        if (!string.IsNullOrWhiteSpace(
-                update.Asset.Digest) &&
-            !computedDigest.Equals(
+        if (!computedDigest.Equals(
                 update.Asset.Digest.Trim(),
                 StringComparison.OrdinalIgnoreCase))
         {
@@ -605,15 +613,13 @@ public sealed class UpdateService
                 '\\',
                 '/');
 
-        return normalized.StartsWith(
-                   "/",
-                   StringComparison.Ordinal) ||
-               normalized.Contains(
-                   "../",
-                   StringComparison.Ordinal) ||
-               normalized.Contains(
-                   ":",
-                   StringComparison.Ordinal);
+        return string.IsNullOrWhiteSpace(normalized) ||
+               normalized.StartsWith("/", StringComparison.Ordinal) ||
+               normalized.StartsWith("../", StringComparison.Ordinal) ||
+               normalized.Contains("/../", StringComparison.Ordinal) ||
+               normalized.EndsWith("/..", StringComparison.Ordinal) ||
+               normalized.StartsWith("./", StringComparison.Ordinal) ||
+               normalized.Contains(":", StringComparison.Ordinal);
     }
 
     private static string ReadString(
