@@ -889,18 +889,43 @@ public static class UpdateInstaller
                     targetDirectory,
                     executableName);
 
-            Process.Start(
+            var healthMarker = Path.Combine(
+                Path.GetTempPath(),
+                "GPOSettingsExplorer-Health-" + Guid.NewGuid().ToString("N") + ".ok");
+            using var launched = Process.Start(
                 new ProcessStartInfo
                 {
-                    FileName =
-                        executable,
-                    WorkingDirectory =
-                        targetDirectory,
-                    Arguments =
-                        "--updated",
-                    UseShellExecute =
-                        true
-                });
+                    FileName = executable,
+                    WorkingDirectory = targetDirectory,
+                    Arguments = "--updated --update-health-marker " + Quote(healthMarker),
+                    UseShellExecute = true
+                }) ?? throw new InvalidOperationException("Updated application did not start.");
+
+            // The detached updater remains alive until the new GUI reports startup.
+            var healthy = false;
+            for (var attempt = 0; attempt < 60; attempt++)
+            {
+                if (File.Exists(healthMarker))
+                {
+                    healthy = !launched.HasExited;
+                    break;
+                }
+                if (launched.HasExited)
+                    break;
+                System.Threading.Thread.Sleep(500);
+            }
+            try { File.Delete(healthMarker); } catch { }
+            if (!healthy)
+            {
+                if (!launched.HasExited)
+                {
+                    launched.Kill(entireProcessTree: true);
+                    launched.WaitForExit(5000);
+                }
+                RestoreRollback(rollback, manifest);
+                throw new InvalidOperationException(
+                    "The updated application did not confirm startup within 30 seconds. Previous files were restored.");
+            }
         }
         catch (Exception ex)
         {
