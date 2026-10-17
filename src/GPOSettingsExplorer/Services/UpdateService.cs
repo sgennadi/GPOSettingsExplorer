@@ -897,7 +897,7 @@ public static class UpdateInstaller
                 {
                     FileName = executable,
                     WorkingDirectory = targetDirectory,
-                    Arguments = "--updated --update-health-marker " + Quote(healthMarker),
+                    Arguments = "--updated --update-health-marker \"" + healthMarker.Replace("\"", "\\\"") + "\"",
                     UseShellExecute = true
                 }) ?? throw new InvalidOperationException("Updated application did not start.");
 
