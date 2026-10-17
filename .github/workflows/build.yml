@@ -11,6 +11,7 @@ on:
   pull_request:
     branches:
       - main
+      - feature/v2.1-discovery-evidence
   workflow_dispatch:
 
 permissions:
