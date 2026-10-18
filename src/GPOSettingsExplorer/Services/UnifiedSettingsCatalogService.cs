@@ -326,7 +326,8 @@ public static class UnifiedSettingsCatalogService
             "ADMX template" => row.Admx is { Elements.Count: 0 },
             "Configured" => !row.IsTechnicalDetail &&
                 (row.Admx is null || row.Admx.Elements.Count == 0),
-            "MMC observed" => row.Admx is null,
+            "MMC observed" => row.Admx is null ||
+                row.Admx.Elements.Count == 0,
             _ => false
         };
 
