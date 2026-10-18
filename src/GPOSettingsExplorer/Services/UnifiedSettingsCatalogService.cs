@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using GPOSettingsExplorer.Models;
 
 namespace GPOSettingsExplorer.Services;
@@ -9,6 +10,48 @@ namespace GPOSettingsExplorer.Services;
 /// </summary>
 public static class UnifiedSettingsCatalogService
 {
+    // ADMX/ADML describe one reusable schema for a domain. The map is
+    // deliberately cached by catalog snapshot identity, not by GPO GUID.
+    // Replacing the catalog (a new immutable snapshot) creates a fresh map,
+    // while old snapshots and their indexes can be garbage collected.
+    private sealed record SchemaIndex(
+        IReadOnlyDictionary<string, List<AdmxPolicyDefinition>> ByName,
+        IReadOnlyDictionary<string, List<AdmxPolicyDefinition>> ByRegistry);
+
+    private static readonly ConditionalWeakTable<
+        IReadOnlyList<AdmxPolicyDefinition>, SchemaIndex> SchemaIndexes = new();
+
+    private static SchemaIndex IndexFor(IReadOnlyList<AdmxPolicyDefinition> definitions) =>
+        SchemaIndexes.GetValue(definitions, CreateIndex);
+
+    private static SchemaIndex CreateIndex(IReadOnlyList<AdmxPolicyDefinition> definitions)
+    {
+        var names = new Dictionary<string, List<AdmxPolicyDefinition>>(
+            StringComparer.OrdinalIgnoreCase);
+        var registry = new Dictionary<string, List<AdmxPolicyDefinition>>(
+            StringComparer.OrdinalIgnoreCase);
+
+        foreach (var policy in definitions)
+        {
+            foreach (var scope in Scopes(policy.Scope))
+            {
+                var named = Named(scope, policy.DisplayName);
+                if (!names.TryGetValue(named, out var sameName))
+                    names[named] = sameName = new List<AdmxPolicyDefinition>();
+                sameName.Add(policy);
+
+                foreach (var (key, value) in RegistryTargets(policy))
+                {
+                    var identity = RegistryIdentity(scope, key, value);
+                    if (!registry.TryGetValue(identity, out var matches))
+                        registry[identity] = matches = new List<AdmxPolicyDefinition>();
+                    if (!matches.Contains(policy))
+                        matches.Add(policy);
+                }
+            }
+        }
+        return new SchemaIndex(names, registry);
+    }
     public static UnifiedCatalogResult Build(
         IReadOnlyList<PolicySettingInfo> configured,
         IReadOnlyList<AdmxPolicyDefinition>? catalog,
@@ -26,36 +69,11 @@ public static class UnifiedSettingsCatalogService
             .Where(m => selectedGpoId is null || m.GpoId == selectedGpoId)
             .ToArray();
 
-        var lookup = new Dictionary<string, List<AdmxPolicyDefinition>>(
-            StringComparer.OrdinalIgnoreCase);
-        foreach (var policy in definitions)
-        {
-            foreach (var scope in Scopes(policy.Scope))
-            {
-                var key = Named(scope, policy.DisplayName);
-                if (!lookup.TryGetValue(key, out var list))
-                    lookup[key] = list = new List<AdmxPolicyDefinition>();
-                list.Add(policy);
-            }
-        }
-
-        // Universal ADMX field map: build once from schema, then resolve each
-        // configured GPO's actual values by exact scope + registry key + value.
-        // Display names are not stable identifiers (localization/duplicates).
-        var registryLookup = new Dictionary<string, List<AdmxPolicyDefinition>>(
-            StringComparer.OrdinalIgnoreCase);
-        foreach (var policy in definitions)
-        {
-            foreach (var scope in Scopes(policy.Scope))
-            foreach (var (key, value) in RegistryTargets(policy))
-            {
-                var identity = RegistryIdentity(scope, key, value);
-                if (!registryLookup.TryGetValue(identity, out var candidates))
-                    registryLookup[identity] = candidates = new List<AdmxPolicyDefinition>();
-                if (!candidates.Contains(policy))
-                    candidates.Add(policy);
-            }
-        }
+        // The same parsed schema/map is reused for every selected GPO.
+        // Only GPMC/MMC/source evidence below is GPO-specific.
+        var schema = IndexFor(definitions);
+        var lookup = schema.ByName;
+        var registryLookup = schema.ByRegistry;
 
         var observationsLookup = observations
             .GroupBy(m => $"{m.GpoId:B}|{Named(m.Scope, m.SettingName)}",
@@ -301,34 +319,8 @@ public static class UnifiedSettingsCatalogService
         PolicySettingInfo setting,
         IReadOnlyList<AdmxPolicyDefinition> policies)
     {
-        if (!IsAdmxSource(setting))
-            return null;
-
-        var scoped = policies
-            .Where(policy => Scopes(policy.Scope).Any(scope =>
-                scope.Equals(setting.Scope, StringComparison.OrdinalIgnoreCase)))
-            .ToArray();
-
-        if (HasRegistryIdentity(setting))
-        {
-            var matches = scoped.Where(policy =>
-                RegistryTargets(policy).Any(target =>
-                    RegistryIdentity(setting.Scope, target.Key, target.Value)
-                        .Equals(RegistryIdentity(setting.Scope,
-                            setting.RegistryKey, setting.RegistryValue),
-                            StringComparison.OrdinalIgnoreCase))).ToArray();
-            return matches.Length == 1 ? matches[0] : null;
-        }
-
-        // An incomplete registry identity is not evidence of a match.
-        if (!string.IsNullOrWhiteSpace(setting.RegistryKey))
-            return null;
-
-        var candidates = scoped.Where(policy =>
-            policy.DisplayName.Equals(setting.SettingName,
-                StringComparison.CurrentCultureIgnoreCase) &&
-            CategoriesAgree(setting.Category, policy.Category)).ToArray();
-        return candidates.Length == 1 ? candidates[0] : null;
+        var index = IndexFor(policies);
+        return FindDefinition(setting, index.ByName, index.ByRegistry);
     }
 
     /// <summary>
