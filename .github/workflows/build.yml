@@ -150,11 +150,19 @@ jobs:
           $notes = @'
           GPO Settings Explorer $projectVersion - TEST PREVIEW
 
-          Preview 16 introduces a reusable ADMX policy-field map. Configured
-          GPO settings are matched by Computer/User scope and exact registry
-          key/value identity, rather than a potentially duplicated or localized
-          display label. Double-click opens the verified native WPF policy
-          editor and focuses the corresponding ADMX input when uniquely known.
+          Preview 17 extends the reusable ADMX policy map to EVERY individual
+          input field (text, numeric, list, enum and boolean), including fields
+          in policies that have already been configured elsewhere. The schema
+          is shared across GPOs and does not claim that a field is configured.
+          Search by ADMX policy ID, field ID, label, full registry key or value
+          name, then double-click to open and focus that exact field.
+          The selected GPO's current values are read only when the editor opens.
+
+          Configured GPMC rows are mapped by Computer/User scope and exact
+          registry key/value identity, never merely by a display label. A
+          duplicated ADMX field ID or registry target disables the generic
+          writer; stale policy maps must be refreshed before changes.
+          Duplicate legacy ADMX name matching has been removed.
 
           All Settings now favors direct schema-backed editing for the selected
           GPO, without repeatedly asking for the target GPO. Security Settings
