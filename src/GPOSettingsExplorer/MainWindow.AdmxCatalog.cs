@@ -170,12 +170,18 @@ public partial class MainWindow
             return;
         }
 
-        var indexed = _settings.FirstOrDefault(item =>
+        // Do not reuse a GPMC row solely because its localized label matches.
+        // An index entry is trusted as this template's value only if the
+        // universal resolver confirms its unique schema identity.
+        var matches = _settings.Where(item =>
             item.GpoId == gpo.Id &&
             item.Scope.Equals(scope, StringComparison.OrdinalIgnoreCase) &&
-            item.SettingName.Equals(definition.DisplayName, StringComparison.CurrentCultureIgnoreCase));
+            ReferenceEquals(
+                UnifiedSettingsCatalogService.ResolveDefinition(
+                    item, _admxPolicies ?? Array.Empty<AdmxPolicyDefinition>()),
+                selectedDefinition)).ToArray();
 
-        var setting = indexed ?? new PolicySettingInfo
+        var setting = matches.Length == 1 ? matches[0] : new PolicySettingInfo
         {
             GpoId = gpo.Id,
             GpoName = gpo.DisplayName,
@@ -183,7 +189,8 @@ public partial class MainWindow
             Extension = "Administrative Templates",
             Category = definition.Category,
             SettingName = definition.DisplayName,
-            State = "NotConfigured",
+            // Absence from the GPMC index is not evidence of Not Configured.
+            State = "Not reported",
             Value = string.Empty,
             RegistryKey = definition.Key,
             RegistryValue = definition.ValueName
