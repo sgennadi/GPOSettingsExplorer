@@ -122,7 +122,8 @@ public partial class MainWindow
     private async Task ConfigureAdmxDefinitionAsync(
         AdmxPolicyDefinition selectedDefinition,
         Guid? preferredGpoId = null,
-        string? preferredScope = null)
+        string? preferredScope = null,
+        AdmxElementDefinition? preferredElement = null)
     {
         if (_domainContext is null)
             return;
@@ -154,6 +155,17 @@ public partial class MainWindow
         }
 
         var definition = WithEffectiveScope(selectedDefinition, scope);
+
+        if (preferredElement is not null &&
+            !definition.Elements.Any(element =>
+                ReferenceEquals(element, preferredElement)))
+        {
+            MessageBox.Show(this,
+                "The selected field is no longer part of this ADMX policy. " +
+                "Refresh the policy map before editing.",
+                "Policy map changed", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
 
         var unsupported = definition.Elements
             .Where(element => element.Type == AdmxElementType.Unknown)
@@ -209,7 +221,8 @@ public partial class MainWindow
 
             SetBusy(false);
 
-            var editor = new PolicyEditorWindow(gpo, setting, definition, session)
+            var editor = new PolicyEditorWindow(
+                gpo, setting, definition, session, preferredElement)
             {
                 Owner = this
             };
