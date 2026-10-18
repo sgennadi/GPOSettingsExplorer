@@ -31,6 +31,7 @@ public partial class MainWindow
     {
         UnifiedSourceCombo.ItemsSource = new[]
         {
+            "Policy map",
             "All sources",
             "Configured (GPMC)",
             "ADMX templates",
@@ -188,6 +189,12 @@ public partial class MainWindow
         if (row.IsTechnicalDetail && UnifiedShowTechnicalCheckBox?.IsChecked != true)
             return false;
 
+        // One field per ADMX element in the primary view. Legacy GPMC
+        // summaries remain available under All sources when needed.
+        if (source == "Policy map" &&
+            !UnifiedSettingsCatalogService.IsPrimaryMapRow(row))
+            return false;
+
         if (source == "Configured (GPMC)" &&
                 row.Kind is not ("Configured" or "GPMC detail") ||
             source == "ADMX templates" && row.Kind is not ("ADMX template" or "ADMX field") ||
@@ -219,7 +226,7 @@ public partial class MainWindow
             ? $" | {technicalCount:N0} technical XML details hidden (toggle Show XML details)"
             : "";
         UnifiedSettingsCountText.Text = _unifiedCatalog is null
-            ? "Unified catalog not loaded. Open this tab or click Refresh catalog."
+            ? "Policy map not loaded. Open this tab or click Refresh map."
             : $"{count:N0} shown | {_unifiedCatalog.Summary}{hiddenSuffix}";
     }
 
