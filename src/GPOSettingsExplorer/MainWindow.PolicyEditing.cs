@@ -178,6 +178,24 @@ public partial class MainWindow
                 return;
             }
 
+            // Global Search and the legacy GPMC grid must use the same
+            // catalog-wide uniqueness check as the primary policy map.
+            if (_admxPolicies is null ||
+                !UnifiedSettingsCatalogService.IsCatalogUniqueForWrite(
+                    definition, _admxPolicies, setting.Scope))
+            {
+                SetBusy(false);
+                MessageBox.Show(this,
+                    "More than one ADMX definition claims a registry target " +
+                    "used by this policy, or its target is not defined. " +
+                    "Direct editing is blocked. Review the source before modifying " +
+                    "this GPO using the native editor.",
+                    "Ambiguous ADMX catalog",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                return;
+            }
+
             definition = WithEffectiveScope(definition, setting.Scope);
 
             if (!UnifiedSettingsCatalogService.IsDirectAdmxSupported(definition))
