@@ -16,9 +16,13 @@ Download the latest portable build from:
 
 Current stable release: **v2.0.3**.
 
-## Preview 16: Policy Map and direct field editing
+## Preview 17: Complete ADMX field map
 
-[Preview 16 prerelease](https://github.com/sgennadi/GPOSettingsExplorer/releases/tag/v2.1.0-preview.16) (after successful CI publication). The stable release remains **v2.0.3**.
+[Preview 17 prerelease](https://github.com/sgennadi/GPOSettingsExplorer/releases/tag/v2.1.0-preview.17) (published after successful Windows CI). The stable release remains **v2.0.3**.
+
+**Each field is a searchable row.** The shared ADMX schema now includes each text, numeric, list, enum and boolean input separately, even if its parent policy has configured entries elsewhere. Search by field ID, value name or full registry path. Double-click to open the selected GPO's editor and scroll to that exact field. Unconfigured templates do not invent stored GPO values.
+
+**Safety:** Duplicate ADMX element IDs or registry targets disable the generic writer. Unavailable or stale schema entries cannot silently redirect to another GPO or policy.
 
 **Quick start:** Connect to the domain, select a GPO, and click **Browse fields**. The **All Settings** view uses one cached ADMX schema from the domain's PolicyDefinitions store, shared across all GPOs. Search by policy name, category, registry key, or field name. Double-click a verified ADMX setting to open its actual controls with current values read from the selected GPO.
 

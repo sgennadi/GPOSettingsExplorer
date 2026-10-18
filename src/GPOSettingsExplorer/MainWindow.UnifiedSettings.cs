@@ -188,7 +188,7 @@ public partial class MainWindow
 
         if (source == "Configured (GPMC)" &&
                 row.Kind is not ("Configured" or "GPMC detail") ||
-            source == "ADMX templates" && row.Kind != "ADMX template" ||
+            source == "ADMX templates" && row.Kind is not ("ADMX template" or "ADMX field") ||
             source == "MMC observed" && row.Mmc is null ||
             source == "Stored GPO files (read only)" && row.StoredSource is null)
             return false;
@@ -199,7 +199,7 @@ public partial class MainWindow
             "MMC Not Configured" => row.Mmc is not null &&
                 row.State.Equals("Not Configured (MMC)",
                     StringComparison.OrdinalIgnoreCase),
-            "Unknown / templates" => row.Kind == "ADMX template" ||
+            "Unknown / templates" => row.Kind is "ADMX template" or "ADMX field" ||
                 row.State.StartsWith("Not reported", StringComparison.OrdinalIgnoreCase),
             "Stored source values" => row.StoredSource is not null,
             _ => true
@@ -339,9 +339,11 @@ public partial class MainWindow
             : row.StoredSource is not null ? "View source evidence..."
             : row.IsTechnicalDetail
             ? "View XML details..."
-            : row.Kind == "ADMX template" && GetSelectedUnifiedGpoFilter() is not null
-                ? "Open selected GPO field..."
-            : row.Kind == "ADMX template" ? "Choose GPO & edit..."
+            : row.Kind is "ADMX template" or "ADMX field" &&
+              GetSelectedUnifiedGpoFilter() is not null
+                ? "Open field in selected GPO..."
+            : row.Kind is "ADMX template" or "ADMX field"
+                ? "Choose GPO & open field..."
             : row.Admx is not null ? "Edit policy..."
             : row.Mmc is { Navigation: "Exact MMC row candidate" }
                 ? "Open exact MMC row..."
@@ -390,7 +392,8 @@ public partial class MainWindow
             // Templates are intentionally unbound in the catalog, but when
             // the operator filters to one GPO there is no need to ask again.
             var targetId = row.GpoId ?? GetSelectedUnifiedGpoFilter();
-            await ConfigureAdmxDefinitionAsync(row.Admx, targetId, row.Scope);
+            await ConfigureAdmxDefinitionAsync(
+                row.Admx, targetId, row.Scope, row.AdmxElement);
             await RefreshUnifiedCatalogAsync();
             return;
         }

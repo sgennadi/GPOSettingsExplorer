@@ -200,10 +200,41 @@ public static class UnifiedSettingsCatalogService
             });
         }
 
+        // Every ADMX element exists in a *single domain-wide schema map*.
+        // Listing field definitions must not depend on whether any GPO
+        // happens to contain an already-configured policy.
         foreach (var admx in definitions)
         {
             foreach (var scope in Scopes(admx.Scope))
             {
+                foreach (var element in admx.Elements)
+                {
+                    var label = !string.IsNullOrWhiteSpace(element.Label)
+                        ? element.Label
+                        : !string.IsNullOrWhiteSpace(element.ValueName)
+                            ? element.ValueName : element.Id;
+                    rows.Add(new UnifiedSettingInfo
+                    {
+                        SettingName = label,
+                        Scope = scope,
+                        Category = admx.Category + " > " + admx.DisplayName,
+                        State = "Template - state unknown",
+                        Value = "",
+                        Sources = "ADMX field definition",
+                        Capability = IsDirectAdmxSupported(admx)
+                            ? "Open exact field (guarded)"
+                            : "Unsupported field (review only)",
+                        RegistryTarget = JoinTarget(element.Key, element.ValueName),
+                        Explanation = "Reusable ADMX element " + element.Id +
+                            " from " + admx.AdmxFile + ". This is a field schema, " +
+                            "not the current value of any GPO. The selected GPO " +
+                            "is read separately when opening the editor.",
+                        Kind = "ADMX field",
+                        Admx = admx,
+                        AdmxElement = element
+                    });
+                }
+
                 if (usedDefinitions.Contains(DefinitionId(admx, scope)))
                     continue;
 
@@ -233,8 +264,9 @@ public static class UnifiedSettingsCatalogService
                 "Configured" => 0,
                 "Stored source" => 1,
                 "MMC observed" => 2,
-                "ADMX template" => 3,
-                _ => 4
+                "ADMX field" => 3,
+                "ADMX template" => 4,
+                _ => 5
             }).ThenBy(row => row.SettingName, StringComparer.CurrentCultureIgnoreCase)
               .ThenBy(row => row.GpoName, StringComparer.CurrentCultureIgnoreCase)
               .ToArray();
@@ -257,7 +289,8 @@ public static class UnifiedSettingsCatalogService
             catalog is not null,
             message)
         {
-            SourceFileEntries = stored.Length
+            SourceFileEntries = stored.Length,
+            AdmxFieldCount = rows.Count(row => row.Kind == "ADMX field")
         };
     }
 
@@ -321,8 +354,27 @@ public static class UnifiedSettingsCatalogService
         return matches.Length == 1 ? matches[0] : null;
     }
 
-    public static bool IsDirectAdmxSupported(AdmxPolicyDefinition definition) =>
-        definition.Elements.All(e => e.Type != AdmxElementType.Unknown);
+    // A malformed vendor ADMX with duplicate IDs or colliding registry
+    // values cannot safely be written through the generic editor.
+    public static bool IsDirectAdmxSupported(AdmxPolicyDefinition definition)
+    {
+        var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var targets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var element in definition.Elements)
+        {
+            if (element.Type == AdmxElementType.Unknown ||
+                string.IsNullOrWhiteSpace(element.Id) ||
+                !ids.Add(element.Id))
+                return false;
+
+            if (!string.IsNullOrWhiteSpace(element.Key) &&
+                !string.IsNullOrWhiteSpace(element.ValueName) &&
+                !targets.Add(RegistryIdentity(
+                    definition.Scope, element.Key, element.ValueName)))
+                return false;
+        }
+        return true;
+    }
 
     private static AdmxPolicyDefinition? FindDefinition(
         PolicySettingInfo setting,
@@ -374,24 +426,34 @@ public static class UnifiedSettingsCatalogService
     }
 
     private static string RegistryIdentity(string scope, string key, string value) =>
-        scope.Trim() + "|" + NormalizeRegistryKey(key) + "|" + value.Trim();
+        scope.Trim() + "|" + NormalizeRegistryKey(scope, key) + "|" + value.Trim();
 
-    private static string NormalizeRegistryKey(string key)
+    private static string NormalizeRegistryKey(string scope, string key)
     {
         var normalized = (key ?? string.Empty).Trim()
             .Replace('/', '\\').Trim('\\');
-        foreach (var root in new[]
+        // Relative ADMX registry targets inherit the policy scope's hive.
+        // An explicitly declared *wrong* hive must never be stripped and
+        // accidentally matched to the current scope.
+        var hive = scope.Equals("User", StringComparison.OrdinalIgnoreCase)
+            ? "HKCU" : "HKLM";
+        foreach (var (prefix, specifiedHive) in new[]
         {
-            "HKEY_LOCAL_MACHINE\\", "HKLM\\", "MACHINE\\",
-            "HKEY_CURRENT_USER\\", "HKCU\\", "USER\\"
+            ("HKEY_LOCAL_MACHINE\\", "HKLM"),
+            ("HKLM\\", "HKLM"),
+            ("MACHINE\\", "HKLM"),
+            ("HKEY_CURRENT_USER\\", "HKCU"),
+            ("HKCU\\", "HKCU"),
+            ("USER\\", "HKCU")
         })
         {
-            if (!normalized.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+            if (!normalized.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
                 continue;
-            normalized = normalized[root.Length..];
+            normalized = normalized[prefix.Length..];
+            hive = specifiedHive;
             break;
         }
-        return normalized.TrimEnd('\\');
+        return hive + "\\" + normalized.TrimEnd('\\');
     }
 
     private static MmcInventoryEntry? FindObserved(

@@ -122,10 +122,21 @@ public partial class MainWindow
     private async Task ConfigureAdmxDefinitionAsync(
         AdmxPolicyDefinition selectedDefinition,
         Guid? preferredGpoId = null,
-        string? preferredScope = null)
+        string? preferredScope = null,
+        AdmxElementDefinition? preferredElement = null)
     {
         if (_domainContext is null)
             return;
+
+        if (_admxPolicies is not null &&
+            !_admxPolicies.Any(item => ReferenceEquals(item, selectedDefinition)))
+        {
+            MessageBox.Show(this,
+                "The ADMX catalog has changed since this policy map was built. " +
+                "Refresh the map and select the field again before editing.",
+                "Stale ADMX map", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
 
         // A row already bound to a GPO must open that GPO directly.
         // The target picker is only appropriate for unbound ADMX templates.
@@ -155,18 +166,25 @@ public partial class MainWindow
 
         var definition = WithEffectiveScope(selectedDefinition, scope);
 
-        var unsupported = definition.Elements
-            .Where(element => element.Type == AdmxElementType.Unknown)
-            .ToArray();
-
-        if (unsupported.Length > 0)
+        if (preferredElement is not null &&
+            !definition.Elements.Any(element =>
+                ReferenceEquals(element, preferredElement)))
         {
-            MessageBox.Show(
-                this,
-                "This ADMX policy contains an unsupported element type. Direct editing is disabled for this policy to avoid an unsafe write.",
-                "Unsupported policy",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
+            MessageBox.Show(this,
+                "The selected field is no longer part of this ADMX policy. " +
+                "Refresh the policy map before editing.",
+                "Policy map changed", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        if (!UnifiedSettingsCatalogService.IsDirectAdmxSupported(definition))
+        {
+            MessageBox.Show(this,
+                "This ADMX policy has an unsupported element type, missing/duplicate " +
+                "element IDs, or multiple fields writing the same registry value. " +
+                "Direct editing is blocked to avoid a wrong-field write.",
+                "Unsupported or ambiguous policy",
+                MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
 
@@ -209,7 +227,8 @@ public partial class MainWindow
 
             SetBusy(false);
 
-            var editor = new PolicyEditorWindow(gpo, setting, definition, session)
+            var editor = new PolicyEditorWindow(
+                gpo, setting, definition, session, preferredElement)
             {
                 Owner = this
             };

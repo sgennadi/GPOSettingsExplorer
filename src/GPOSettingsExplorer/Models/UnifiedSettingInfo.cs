@@ -23,13 +23,19 @@ public sealed record UnifiedSettingInfo
     public bool IsTechnicalDetail { get; init; }
     public PolicySettingInfo? Configured { get; init; }
     public AdmxPolicyDefinition? Admx { get; init; }
+    // Specific input definition from the universal ADMX schema; not a value
+    // read from a particular GPO. Used to focus an exact field on demand.
+    public AdmxElementDefinition? AdmxElement { get; init; }
     public MmcInventoryEntry? Mmc { get; init; }
     public RealSettingRecord? StoredSource { get; init; }
 
     public string SearchText =>
         string.Join(" ", new[] {
             GpoName, SettingName, Scope, Category, State, Value, Sources,
-            Capability, RegistryTarget, Explanation, Admx?.AdmxFile ?? ""
+            Capability, RegistryTarget, Explanation, Admx?.AdmxFile ?? "",
+            Admx?.Name ?? "", Admx?.DisplayName ?? "",
+            AdmxElement?.Id ?? "", AdmxElement?.Key ?? "",
+            AdmxElement?.ValueName ?? ""
         });
 }
 
@@ -42,9 +48,11 @@ public sealed record UnifiedCatalogResult(
     string Coverage)
 {
     public int SourceFileEntries { get; init; }
+    public int AdmxFieldCount { get; init; }
 
     public string Summary =>
         $"{Rows.Count:N0} total | {ConfiguredCount:N0} configured GPMC | " +
-        $"{TemplateCount:N0} ADMX templates | {MmcOnlyCount:N0} MMC-only | " +
+        $"{TemplateCount:N0} ADMX templates | {AdmxFieldCount:N0} ADMX fields | " +
+        $"{MmcOnlyCount:N0} MMC-only | " +
         $"{SourceFileEntries:N0} source-file records | " + Coverage;
 }
