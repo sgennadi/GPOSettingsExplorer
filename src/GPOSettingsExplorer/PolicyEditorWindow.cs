@@ -11,6 +11,7 @@ public sealed class PolicyEditorWindow : Window
     private readonly AdmxPolicyDefinition _definition;
     private readonly PolicyEditSession _session;
     private readonly ComboBox _stateCombo;
+    private readonly AdmxElementDefinition? _preferredElement;
     private readonly Dictionary<string, Control> _editors = new(StringComparer.OrdinalIgnoreCase);
 
     public PolicyEditSession Session => _session;
@@ -19,12 +20,27 @@ public sealed class PolicyEditorWindow : Window
         GpoInfo gpo,
         PolicySettingInfo setting,
         AdmxPolicyDefinition definition,
-        PolicyEditSession session)
+        PolicyEditSession session,
+        AdmxElementDefinition? preferredElement = null)
     {
         _definition = definition;
         _session = session;
+        // Field navigation must resolve to the same schema object, not a
+        // copied label that could refer to a different input.
+        if (preferredElement is not null &&
+            (!definition.Elements.Any(e => ReferenceEquals(e, preferredElement)) ||
+             definition.Elements.Count(e => string.Equals(e.Id,
+                 preferredElement.Id, StringComparison.OrdinalIgnoreCase)) != 1))
+            throw new InvalidOperationException(
+                "The requested ADMX field cannot be uniquely identified.");
 
-        Title = $"Edit Policy - {setting.SettingName}";
+        _preferredElement = preferredElement;
+
+        Title = preferredElement is null
+            ? $"Edit Policy - {setting.SettingName}"
+            : $"Edit Field - {definition.DisplayName} / " +
+                (string.IsNullOrWhiteSpace(preferredElement.Label)
+                    ? preferredElement.Id : preferredElement.Label);
         Width = 900;
         Height = 760;
         MinWidth = 720;
@@ -68,7 +84,8 @@ public sealed class PolicyEditorWindow : Window
         panel.Children.Add(Meta("Category", string.IsNullOrWhiteSpace(definition.Category) ? setting.Category : definition.Category));
         panel.Children.Add(Meta("ADMX", definition.AdmxFile));
         panel.Children.Add(Meta("Registry", BuildRegistrySummary(definition)));
-        var exactField = UnifiedSettingsCatalogService.ResolveElement(setting, definition);
+        var exactField = _preferredElement ??
+            UnifiedSettingsCatalogService.ResolveElement(setting, definition);
         if (exactField is not null)
             panel.Children.Add(Meta("Selected field",
                 (string.IsNullOrWhiteSpace(exactField.Label)
@@ -396,7 +413,8 @@ public sealed class PolicyEditorWindow : Window
         PolicySettingInfo setting,
         AdmxPolicyDefinition definition)
     {
-        var field = UnifiedSettingsCatalogService.ResolveElement(setting, definition);
+        var field = _preferredElement ??
+            UnifiedSettingsCatalogService.ResolveElement(setting, definition);
         if (field is not null && _editors.TryGetValue(field.Id, out var exact))
             return exact;
 
