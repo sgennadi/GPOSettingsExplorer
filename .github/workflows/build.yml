@@ -148,25 +148,36 @@ jobs:
             exit 0
           }
           $notes = @'
-          TEST PREVIEW - GPO Settings Explorer $projectVersion.
+          GPO Settings Explorer $projectVersion - TEST PREVIEW
 
-          Includes the Discovery & Verification interface, explicit unit reviews, and prior Preview 6 MMC crash safeguards. Preview 7 adds an explicit per-GPO, read-only Kerberos GptTmpl.inf security source check in Exact MMC Paths. It compares one typed GPMC Account value with one complete, SHA-256-bound SecEdit [Kerberos Policy] record on the pinned DC. Preview 8 adds an explicit, cancellable Verify stored Kerberos source action in individual GPMC setting value windows. It only reads the selected pinned-DC GptTmpl.inf and shares its snapshot with Exact MMC Paths. Stored agreement is not native MMC or client RSoP. Preview 10 adds a typed, scope-specific, on-demand SRP Registry.pol ItemData path and Safer security level comparison in Exact MMC Paths. It requires one GPO, same pinned DC, full source SHA-256 and unique GPMC/SRP GUID path identity. Only saved path and level are compared; enforcement, other flags and effective RSoP remain unverified. No all-GPO MMC scan or policy write is initiated. Other SRP rule families remain unsupported.
+          Preview 16 introduces a reusable ADMX policy-field map. Configured
+          GPO settings are matched by Computer/User scope and exact registry
+          key/value identity, rather than a potentially duplicated or localized
+          display label. Double-click opens the verified native WPF policy
+          editor and focuses the corresponding ADMX input when uniquely known.
 
-          Preview 10 adds typed GPMC Group Policy Preferences Registry item indexing and searchable source report details (Action/Hive/Key path/Value name). It separates GPP from Registry.pol, does not index raw value data, and classifies Software Installation Applicability as source metadata rather than a standalone setting. No GPO changes, local Regedit, bulk MMC scans, or effective client RSoP claims.
+          All Settings now favors direct schema-backed editing for the selected
+          GPO, without repeatedly asking for the target GPO. Security Settings
+          and Group Policy Preferences never inherit an ADMX editor solely
+          from an identically named registry value or policy label.
 
-          Preview 11 adds typed, pinned-DC GptTmpl.inf [System Access] stored-source number/boolean comparisons for known Password Policy and Account Lockout records. It also adds a redacted, bounded, one-GPO/scope GPP Registry.xml source metadata check: UID, order, action, hive, registry key, value name, type and targeting-filter presence, with file SHA-256. GPP VALUE DATA and item-level targeting decisions are deliberately not compared, captured into indexed text or presented as verified. Unknown/duplicate UID, unsupported layouts, changed files, wrong DC, missing/partial sources and malformed XML are blocked. Never claim MMC, client RSoP, effective account precedence or native policy writes.
+          The primary All Settings toolbar is more compact; optional diagnostic
+          and evidence tools are preserved under Advanced tools. Portable
+          update checks use the preview release channel and SHA-256 downloads.
+          Updates create rollback files and require a rendered WPF window to
+          acknowledge startup, otherwise the updater attempts restoration.
 
-          Preview 12 adds exact GPMC Registry source report navigation. A selected GPP Registry item opens the same GPO report and selects an item only when Computer/User scope, UID, original order, action and full hive/key/value target match; duplicated or stale identities fail closed. The legacy Configured GPMC list shows source registry paths/value names, with package Applicability and other XML metadata hidden by default. This is stored GPMC source, not Registry.pol or effective client RSoP.
+          Existing manual, single-GPO MMC discovery and evidence checks remain
+          available but are NOT a verified universal automation interface for
+          every Windows or vendor snap-in. Unsupported extension fields are
+          guarded/read-only; missing GPMC index entries do not prove Not Configured.
 
-          Preview 13 adds exact ADMX declaration/source file path hints in Exact MMC Paths with a metadata-only Copy source action, and an independent Open GPO editor (manual) button that never performs an automatic full native MMC inventory. Previously observed exact MMC row selection remains optional and separate. On request, a single selected Computer GPO's pinned Audit/audit.csv can be compared by exact System subcategory GUID and canonical numeric code to SHA-256-bound GPMC reports. Partial, ambiguous or other-DC values are not verified. Auditpol on clients, MMC values and effective client RSoP remain unknown.
+          This prerelease is for nonproduction verification; test native Windows
+          GPO editing, high-DPI layouts, updater installation and rollback on
+          your environment before deploying. Artifacts may be unsigned.
 
-          Preview 14 adds bounded-width, ellipsis-trimmed Exact MMC Paths grid cells with full-text tooltips for HiDPI layouts. Preview 15 adds a 250ms debounced text filter and explicit All scopes / Computer / User filtering. These controls are read-only and do not change GPOs. Manual testing at 200% scaling is still required.
-
-          Full MMC inventory must be started manually for one selected GPO and may still encounter vendor or OS snap-in defects. Review skipped/partial coverage and test on a nonproduction DC first.
-
-          NOT a production-validated 2.1.0 stable release. Verify in a nonproduction AD/DC environment first. Builds may be unsigned.
-
-          Download the win-x64 ZIP for Intel/AMD Windows or win-arm64 for Windows ARM64, unzip it, and run GPOSettingsExplorer.exe.
+          Download win-x64 for Intel/AMD Windows or win-arm64 for ARM64 Windows.
+          Extract the ZIP and run GPOSettingsExplorer.exe.
           '@
           $notes = $notes.Replace('$projectVersion', $projectVersion)
           gh release create $tag 'artifacts/GPOSettingsExplorer-win-x64-portable.zip' 'artifacts/GPOSettingsExplorer-win-arm64-portable.zip' --target $env:GITHUB_SHA --title "GPO Settings Explorer $tag" --prerelease --notes $notes
