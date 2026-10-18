@@ -230,7 +230,9 @@ public partial class MainWindow : Window
 
     private void GpoGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
     {
-        OpenSelectedGpo();
+        // Browsing fields is the primary GPO action; the separate
+        // "Open editor" button still launches the native MMC editor.
+        OpenSelectedGpoFieldMap_Click(sender, e);
     }
 
     private void OpenSelectedGpoFieldMap_Click(object sender, RoutedEventArgs e)
@@ -243,6 +245,10 @@ public partial class MainWindow : Window
         // The selected GPO provides current values only when a field opens.
         UnifiedGpoFilterCombo.SelectedItem = selected;
         UnifiedAllGposCheckBox.IsChecked = false;
+        // Reset stale source/state filters so the requested map is visible.
+        UnifiedSourceCombo.SelectedIndex = 0;
+        UnifiedStateCombo.SelectedIndex = 0;
+        UnifiedSearchBox.Text = string.Empty;
         MainTabs.SelectedItem = AllSettingsTab;
         UnifiedSearchBox.Focus();
         StatusText.Text = "Policy Map: " + selected.DisplayName +
