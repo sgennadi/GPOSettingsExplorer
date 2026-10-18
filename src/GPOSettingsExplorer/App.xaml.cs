@@ -6,6 +6,8 @@ namespace GPOSettingsExplorer;
 
 public partial class App : Application
 {
+    private string? _updateStartupHealthMarker;
+
     protected override void OnStartup(
         StartupEventArgs e)
     {
@@ -24,32 +26,17 @@ public partial class App : Application
 
         base.OnStartup(e);
 
-        // A health marker confirms that WPF startup completed without crashing.
-        var healthIndex = Array.IndexOf(e.Args, "--update-health-marker");
-        if (healthIndex >= 0 && healthIndex + 1 < e.Args.Length)
-        {
-            try
-            {
-                var marker = e.Args[healthIndex + 1];
-                if (System.IO.Path.GetFileName(marker).StartsWith(
-                        "GPOSettingsExplorer-Health-", StringComparison.Ordinal) &&
-                    System.IO.Path.GetFullPath(marker).StartsWith(
-                        System.IO.Path.GetFullPath(System.IO.Path.GetTempPath()),
-                        StringComparison.OrdinalIgnoreCase))
-                    System.IO.File.WriteAllText(marker, "started");
-            }
-            catch (Exception ex)
-            {
-                CrashLogService.Write("Update startup health marker", ex);
-            }
-        }
-
         if (UpdateInstaller.TryApply(
                 e.Args))
         {
             Shutdown();
             return;
         }
+
+        // Only a rendered, visible WPF window may acknowledge startup.
+        // Signaling at OnStartup entered too early: it could report a
+        // healthy update even if the window constructor subsequently failed.
+        _updateStartupHealthMarker = ResolveStartupHealthMarker(e.Args);
 
         if (CommandLineOptions.Current.OfflineAnalysis)
         {
@@ -70,6 +57,7 @@ public partial class App : Application
 
         var connection =
             new ConnectionWindow();
+        RegisterStartupHealthAck(connection);
 
         var connected =
             connection.ShowDialog() ==
@@ -94,6 +82,7 @@ public partial class App : Application
         var window = new GpoAdvancedAnalysisWindow(null, null);
         MainWindow = window;
         ShutdownMode = ShutdownMode.OnMainWindowClose;
+        RegisterStartupHealthAck(window);
         window.Show();
     }
 
@@ -108,10 +97,64 @@ public partial class App : Application
         MainWindow =
             window;
 
+        RegisterStartupHealthAck(window);
         window.Show();
 
         ShutdownMode =
             ShutdownMode.OnMainWindowClose;
+    }
+
+    private static string? ResolveStartupHealthMarker(string[] args)
+    {
+        const string flag = "--update-health-marker";
+        const string prefix = "GPOSettingsExplorer-Health-";
+        const string suffix = ".ok";
+        var index = Array.IndexOf(args, flag);
+        if (index < 0 || index + 1 >= args.Length)
+            return null;
+
+        try
+        {
+            var requested = Path.GetFullPath(args[index + 1]);
+            var fileName = Path.GetFileName(requested);
+            if (!fileName.StartsWith(prefix, StringComparison.Ordinal) ||
+                !fileName.EndsWith(suffix, StringComparison.Ordinal) ||
+                fileName.Length != prefix.Length + 32 + suffix.Length ||
+                !Guid.TryParseExact(fileName.Substring(prefix.Length, 32), "N", out _))
+                return null;
+
+            var expected = Path.GetFullPath(
+                Path.Combine(Path.GetTempPath(), fileName));
+            return requested.Equals(expected, StringComparison.OrdinalIgnoreCase)
+                ? requested : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private void RegisterStartupHealthAck(Window window)
+    {
+        if (_updateStartupHealthMarker is not { } marker)
+            return;
+
+        // ContentRendered fires after the dialog/main window is actually
+        // presented, not merely after the WPF application object is created.
+        window.ContentRendered += (_, _) =>
+        {
+            if (_updateStartupHealthMarker != marker)
+                return;
+            try
+            {
+                File.WriteAllText(marker, "WPF window rendered");
+                _updateStartupHealthMarker = null;
+            }
+            catch (Exception ex)
+            {
+                CrashLogService.Write("Update startup health marker", ex);
+            }
+        };
     }
 
     private void App_DispatcherUnhandledException(
