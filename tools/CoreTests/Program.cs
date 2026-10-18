@@ -1033,6 +1033,63 @@ static void TestUniversalPolicyMap()
     Assert(joined.Rows.Single(row => row.Configured == settingB).GpoId == gpoB,
         "GPO-specific state must stay bound to its original GPO.");
 
+    // The default map shows each editable ADMX field once, not both the
+    // field and the same configured-policy summary. The audit view retains
+    // the full underlying rows.
+    Assert(UnifiedSettingsCatalogService.IsPrimaryMapRow(fields[0]) &&
+           !UnifiedSettingsCatalogService.IsPrimaryMapRow(
+               joined.Rows.Single(row => row.Configured == settingA)),
+        "The primary map must show the exact ADMX field rather than its duplicate GPMC summary.");
+    Assert(joined.Rows.Any(row => row.Configured == settingA),
+        "The underlying GPMC source row must remain available for audit.");
+
+    // A new ADMX catalog must never inherit the old map's identities.
+    var refreshedSchema = new[] { duplicateLabel };
+    Assert(UnifiedSettingsCatalogService.ResolveDefinition(
+        settingA, refreshedSchema) is null,
+        "A replaced schema snapshot must invalidate the previous registry identity map.");
+
+    // Reuse one immutable schema snapshot with different GPO inputs without
+    // copying state or source values between GPOs.
+    var sharedSchema = new[] { mapped, duplicateLabel };
+    var mapA = UnifiedSettingsCatalogService.Build(
+        new[] { settingA }, sharedSchema, null, gpoA);
+    var mapB = UnifiedSettingsCatalogService.Build(
+        new[] { settingB }, sharedSchema, null, gpoB);
+    Assert(mapA.Rows.Count(row => row.Kind == "ADMX field") == 1 &&
+           mapB.Rows.Count(row => row.Kind == "ADMX field") == 1 &&
+           mapA.Rows.Single(row => row.Kind == "Configured").Value == "26H2" &&
+           mapB.Rows.Single(row => row.Kind == "Configured").Value == "25H2" &&
+           mapA.Rows.Single(row => row.Kind == "ADMX field").GpoId is null &&
+           mapB.Rows.Single(row => row.Kind == "ADMX field").GpoId is null,
+        "Shared schema must be independent from each GPO's configured source values.");
+
+    var unmatched = new PolicySettingInfo
+    {
+        GpoId = gpoA, Scope = "Computer",
+        Extension = "SecuritySettings", Category = "Account Policies",
+        SettingName = "Minimum password length", State = "Enabled"
+    };
+    var unmatchedRows = UnifiedSettingsCatalogService.Build(
+        new[] { unmatched }, sharedSchema, null, gpoA);
+    Assert(UnifiedSettingsCatalogService.IsPrimaryMapRow(
+        unmatchedRows.Rows.Single(row => row.Configured == unmatched)),
+        "Unmapped Security Settings must remain visible in the primary map.");
+
+    var toggle = new AdmxPolicyDefinition
+    {
+        AdmxFile = "system.admx", Name = "Toggle",
+        DisplayName = "Simple toggle", Category = "System",
+        Scope = "Computer",
+        Key = @"Software\Policies\Demo", ValueName = "Toggle",
+        Elements = Array.Empty<AdmxElementDefinition>()
+    };
+    var toggleRows = UnifiedSettingsCatalogService.Build(
+        Array.Empty<PolicySettingInfo>(), new[] { toggle }, null, gpoA);
+    Assert(toggleRows.Rows.Any(row => row.Kind == "ADMX template" &&
+        UnifiedSettingsCatalogService.IsPrimaryMapRow(row)),
+        "Enabled/Disabled ADMX policies without element fields must remain visible.");
+
     var explicitlyWrongHive = new PolicySettingInfo
     {
         GpoId = gpoA, Scope = "Computer",
