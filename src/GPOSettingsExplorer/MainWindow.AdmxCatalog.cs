@@ -119,23 +119,32 @@ public partial class MainWindow
     }
 
     // Reused by Unified Settings and by the advanced ADMX source grid.
-    private async Task ConfigureAdmxDefinitionAsync(AdmxPolicyDefinition selectedDefinition)
+    private async Task ConfigureAdmxDefinitionAsync(
+        AdmxPolicyDefinition selectedDefinition,
+        Guid? preferredGpoId = null,
+        string? preferredScope = null)
     {
         if (_domainContext is null)
             return;
 
-        var picker = new PolicyTargetPickerWindow(_gpos, selectedDefinition)
+        // A row already bound to a GPO must open that GPO directly.
+        // The target picker is only appropriate for unbound ADMX templates.
+        var gpo = preferredGpoId is Guid id
+            ? _gpos.FirstOrDefault(item => item.Id == id)
+            : null;
+        var scope = preferredScope ?? selectedDefinition.Scope;
+        if (gpo is null)
         {
-            Owner = this
-        };
-
-        if (picker.ShowDialog() != true || picker.SelectedGpo is null)
-        {
-            return;
+            var picker = new PolicyTargetPickerWindow(_gpos, selectedDefinition)
+            {
+                Owner = this
+            };
+            if (picker.ShowDialog() != true || picker.SelectedGpo is null)
+                return;
+            gpo = picker.SelectedGpo;
+            scope = picker.SelectedScope;
         }
 
-        var gpo = picker.SelectedGpo;
-        var scope = picker.SelectedScope;
         var definition = WithEffectiveScope(selectedDefinition, scope);
 
         var unsupported = definition.Elements
