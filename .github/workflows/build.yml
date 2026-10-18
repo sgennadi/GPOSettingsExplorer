@@ -150,6 +150,19 @@ jobs:
           $notes = @'
           GPO Settings Explorer $projectVersion - TEST PREVIEW
 
+          Preview 18 reuses one cached domain ADMX schema index and field-row
+          collection across GPO selections. The default Policy map removes
+          duplicate GPMC summary rows while preserving zero-element toggles,
+          unmapped Security Settings and native MMC observations. Choose
+          All sources to inspect the complete original evidence.
+
+          Before direct editing, both UI paths require every registry target
+          of the selected policy to be unique across the current ADMX catalog;
+          ambiguous duplicate definitions, invalid scopes and unknown targets
+          fail closed. Expanded Windows CI regression tests cover these cases.
+          This preview is not production validated. Test on a nonproduction
+          domain controller before modifying live Group Policy objects.
+
           Preview 17 extends the reusable ADMX policy map to EVERY individual
           input field (text, numeric, list, enum and boolean), including fields
           in policies that have already been configured elsewhere. The schema
