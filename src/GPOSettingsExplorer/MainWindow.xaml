@@ -119,7 +119,9 @@
                                     Style="{StaticResource UiPrimaryButton}"
                                     ToolTip="Open the combined GPO hierarchy tree and link management pane."/>
                             <Button Content="Backup selected" Click="BackupSelectedGpo_Click"/>
-                            <Button Content="Index settings" Click="BuildSettingsIndex_Click"/>
+                            <Button Content="Browse fields" Click="OpenSelectedGpoFieldMap_Click"
+                                    Style="{StaticResource UiPrimaryButton}"
+                                    ToolTip="Open the reusable ADMX field map for the selected GPO. Values are loaded from that GPO, not copied from another."/>
                             <Separator Width="12"/>
                             <Button x:Name="ToggleComputerButton" Content="Toggle Computer" Click="ToggleComputerScope_Click"/>
                             <Button x:Name="ToggleUserButton" Content="Toggle User" Click="ToggleUserScope_Click"/>
@@ -139,6 +141,7 @@
                               SelectionChanged="GpoGrid_SelectionChanged">
                         <DataGrid.ContextMenu>
                             <ContextMenu>
+                                <MenuItem Header="Browse fields (Policy Map)" Click="OpenSelectedGpoFieldMap_Click"/>
                                 <MenuItem Header="Settings (GPMC-style report)..." Click="OpenGpoSettingsReport_Click"/>
                                 <Separator/>
                                 <MenuItem Header="Open native GPO editor..." Click="OpenGpoEditor_Click"/>
