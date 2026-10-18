@@ -1013,6 +1013,20 @@ static void TestUniversalPolicyMap()
     var joined = UnifiedSettingsCatalogService.Build(
         new[] { settingA, settingB }, new[] { duplicateLabel, mapped },
         null, null);
+    var fields = joined.Rows.Where(row => row.Kind == "ADMX field").ToArray();
+    Assert(joined.AdmxFieldCount == 1 && fields.Length == 1 &&
+           ReferenceEquals(fields[0].Admx, mapped) &&
+           ReferenceEquals(fields[0].AdmxElement, mapped.Elements[0]) &&
+           fields[0].GpoId is null &&
+           fields[0].State.Contains("unknown", StringComparison.OrdinalIgnoreCase) &&
+           fields[0].SearchText.Contains(registryValue, StringComparison.Ordinal),
+        "Universal ADMX field map must expose exact element identity without reading or inferring any GPO values.");
+    var selectedGpoOnly = UnifiedSettingsCatalogService.Build(
+        new[] { settingA, settingB }, new[] { duplicateLabel, mapped },
+        null, gpoA);
+    Assert(selectedGpoOnly.Rows.Count(row => row.Kind == "ADMX field") == 1 &&
+           selectedGpoOnly.Rows.Single(row => row.Kind == "ADMX field").GpoId is null,
+        "The same ADMX field map must be reusable for any selected GPO.");
     Assert(ReferenceEquals(joined.Rows.Single(row =>
         row.Configured == settingA).Admx, mapped),
         "An indexed GPO setting must match a unique ADMX element by its exact key/value.");
@@ -1107,6 +1121,23 @@ static void TestUniversalPolicyMap()
     Assert(UnifiedSettingsCatalogService.ResolveElement(
         settingA, duplicateFields) is null,
         "Duplicate ADMX elements targeting the same field cannot be focused arbitrarily.");
+    Assert(!UnifiedSettingsCatalogService.IsDirectAdmxSupported(duplicateFields),
+        "Ambiguous duplicate ADMX registry targets must disable direct editing.");
+    var duplicateIds = new AdmxPolicyDefinition
+    {
+        Scope = "Computer",
+        Elements = new[]
+        {
+            mapped.Elements[0],
+            new AdmxElementDefinition
+            {
+                Id = mapped.Elements[0].Id, Type = AdmxElementType.Text,
+                Key = @"Software\Policies\Vendor", ValueName = "OtherField"
+            }
+        }
+    };
+    Assert(!UnifiedSettingsCatalogService.IsDirectAdmxSupported(duplicateIds),
+        "Duplicate element IDs may overwrite GUI values and must disable direct editing.");
 }
 
 static void TestMmcInventorySnapinSafety()
