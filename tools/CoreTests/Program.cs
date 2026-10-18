@@ -1089,6 +1089,33 @@ static void TestUniversalPolicyMap()
     Assert(toggleRows.Rows.Any(row => row.Kind == "ADMX template" &&
         UnifiedSettingsCatalogService.IsPrimaryMapRow(row)),
         "Enabled/Disabled ADMX policies without element fields must remain visible.");
+    var toggleValue = new PolicySettingInfo
+    {
+        GpoId = gpoA, GpoName = "Windows baseline",
+        Extension = "Administrative Templates", Scope = "Computer",
+        SettingName = toggle.DisplayName, Category = "System",
+        RegistryKey = toggle.Key, RegistryValue = toggle.ValueName,
+        State = "Enabled"
+    };
+    var configuredToggle = UnifiedSettingsCatalogService.Build(
+        new[] { toggleValue }, new[] { toggle }, null, gpoA);
+    Assert(configuredToggle.Rows.Any(row =>
+        row.Configured == toggleValue &&
+        UnifiedSettingsCatalogService.IsPrimaryMapRow(row)),
+        "A configured toggle without element fields must remain in the primary map.");
+
+    var mmcToggle = new MmcInventoryEntry
+    {
+        GpoId = gpoA, GpoName = "Windows baseline", Scope = "Computer",
+        SectionPath = "Computer Configuration > Policies > Administrative Templates > System",
+        SettingName = toggle.DisplayName, MmcState = "Enabled (MMC)",
+        Source = "MMC native list", Navigation = "Exact MMC row candidate"
+    };
+    var observedToggle = UnifiedSettingsCatalogService.Build(
+        Array.Empty<PolicySettingInfo>(), new[] { toggle }, new[] { mmcToggle }, gpoA);
+    Assert(observedToggle.Rows.Any(row => row.Mmc == mmcToggle &&
+        row.Admx == toggle && UnifiedSettingsCatalogService.IsPrimaryMapRow(row)),
+        "An observed MMC toggle without ADMX input fields must remain in the primary map.");
 
     var explicitlyWrongHive = new PolicySettingInfo
     {
