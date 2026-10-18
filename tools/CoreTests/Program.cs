@@ -38,6 +38,7 @@ var tests = new (string Name, Action Body)[]
     ("MMC inventory verifies source, path, scope and incomplete coverage", TestMmcFullInventoryReconciliation),
     ("MMC inventory skips fragile Scripts snap-ins before automation", TestMmcInventorySnapinSafety),
     ("Unified catalog joins evidence without cross-GPO or false state inference", TestUnifiedSettingsCatalog),
+    ("Universal policy map uses exact scoped registry identities and refuses unsafe matches", TestUniversalPolicyMap),
     ("Registry.pol binary parser preserves exact source values and flags malformed data", TestRealSettingsRegistryPol),
     ("Registry.pol known security namespaces are labeled without claiming applied CSE", TestRegistrySourceClassification),
     ("Security-template parser reports source values and invalid encodings safely", TestRealSettingsSecurityTemplate),
@@ -904,11 +905,11 @@ static void TestUnifiedSettingsCatalog()
     Assert(combined.ConfiguredCount == 2 && combined.MmcOnlyCount == 0,
         "Only the specific matching configured setting may consume an MMC observation.");
     var rowsA = combined.Rows.Where(row => row.Configured?.GpoId == gpoA).ToArray();
-    Assert(rowsA.Length == 1 && rowsA[0].Admx == correct &&
+    Assert(rowsA.Length == 1 && rowsA[0].Admx is null &&
            ReferenceEquals(rowsA[0].Mmc, mmc) &&
            rowsA[0].State == "Enabled" &&
            rowsA[0].Sources.Contains("MMC", StringComparison.Ordinal),
-        "Configured, ADMX and MMC evidence must join only on exact GPO, scope and category.");
+        "Security Settings must never be converted to ADMX; MMC must remain bound to its own GPO.");
     var rowsB = combined.Rows.Where(row => row.Configured?.GpoId == gpoB).ToArray();
     Assert(rowsB.Length == 1 && rowsB[0].Mmc is null &&
            rowsB[0].State == "Disabled",
@@ -952,9 +953,160 @@ static void TestUnifiedSettingsCatalog()
             }
         }) is null,
         "Legacy GPMC/Global Search editing must also reject ambiguous same-name ADMX records.");
-    Assert(ReferenceEquals(
-        UnifiedSettingsCatalogService.ResolveDefinition(a, new[] { correct, wrongCategory }),
-        correct), "A unique exact category match must remain editable.");
+    Assert(UnifiedSettingsCatalogService.ResolveDefinition(a, new[] { correct, wrongCategory })
+        is null, "Security Settings with the same label must never open an ADMX registry editor.");
+}
+
+static void TestUniversalPolicyMap()
+{
+    var gpoA = Guid.NewGuid();
+    var gpoB = Guid.NewGuid();
+    const string registryKey = @"Software\Policies\Microsoft\Windows\WindowsUpdate";
+    const string registryValue = "TargetReleaseVersionInfo";
+
+    var mapped = new AdmxPolicyDefinition
+    {
+        AdmxFile = "WindowsUpdate.admx", Name = "TargetReleaseVersion",
+        DisplayName = "Select the target Feature Update version",
+        Scope = "Computer", Category = "Windows Components > Windows Update",
+        Key = registryKey, ValueName = "TargetReleaseVersion",
+        Elements = new[]
+        {
+            new AdmxElementDefinition
+            {
+                Id = "TargetVersion", Type = AdmxElementType.Text,
+                Key = registryKey, ValueName = registryValue
+            }
+        }
+    };
+    var duplicateLabel = new AdmxPolicyDefinition
+    {
+        AdmxFile = "unrelated.admx", Name = "OtherFeature",
+        DisplayName = mapped.DisplayName, Scope = "Computer",
+        Category = mapped.Category,
+        Key = @"Software\Policies\OtherProduct",
+        ValueName = registryValue
+    };
+    var settingA = new PolicySettingInfo
+    {
+        GpoId = gpoA, GpoName = "Windows baseline",
+        Extension = "RegistrySettings", Scope = "Computer",
+        SettingName = "Target release version (localized)",
+        Category = "Unrelated XML display category",
+        RegistryKey = @"HKLM\Software\Policies\Microsoft\Windows\WindowsUpdate",
+        RegistryValue = registryValue, State = "Enabled",
+        Value = "26H2"
+    };
+    var settingB = new PolicySettingInfo
+    {
+        GpoId = gpoB, GpoName = "Other GPO",
+        Extension = "Administrative Templates", Scope = "Computer",
+        SettingName = "Same policy; different GPO", RegistryKey = registryKey,
+        RegistryValue = registryValue, State = "Enabled", Value = "25H2"
+    };
+    Assert(ReferenceEquals(UnifiedSettingsCatalogService.ResolveDefinition(
+        settingA, new[] { duplicateLabel, mapped }), mapped),
+        "Exact registry identity must resolve a policy even when the displayed name was localized.");
+    Assert(ReferenceEquals(UnifiedSettingsCatalogService.ResolveElement(
+        settingA, mapped), mapped.Elements[0]),
+        "One exact registry field must select the corresponding ADMX text input.");
+    var joined = UnifiedSettingsCatalogService.Build(
+        new[] { settingA, settingB }, new[] { duplicateLabel, mapped },
+        null, null);
+    Assert(ReferenceEquals(joined.Rows.Single(row =>
+        row.Configured == settingA).Admx, mapped),
+        "An indexed GPO setting must match a unique ADMX element by its exact key/value.");
+    Assert(joined.Rows.Single(row => row.Configured == settingB).GpoId == gpoB,
+        "GPO-specific state must stay bound to its original GPO.");
+
+    var sameNameWrongRegistry = new PolicySettingInfo
+    {
+        GpoId = gpoA, Scope = "Computer",
+        Extension = "RegistrySettings", SettingName = mapped.DisplayName,
+        Category = mapped.Category,
+        RegistryKey = @"HKLM\Software\Policies\WrongProduct",
+        RegistryValue = registryValue
+    };
+    Assert(UnifiedSettingsCatalogService.ResolveDefinition(
+        sameNameWrongRegistry, new[] { mapped }) is null,
+        "A mismatching registry identity must never fall back to a matching ADMX display name.");
+
+    var nonAdmx = new PolicySettingInfo
+    {
+        GpoId = gpoA, Scope = "Computer",
+        Extension = "SecuritySettings", SettingName = mapped.DisplayName,
+        Category = mapped.Category, RegistryKey = registryKey,
+        RegistryValue = registryValue
+    };
+    Assert(UnifiedSettingsCatalogService.ResolveDefinition(nonAdmx,
+        new[] { mapped }) is null,
+        "Security Settings cannot acquire an ADMX writer through matching registry text.");
+    Assert(UnifiedSettingsCatalogService.Build(new[] { nonAdmx },
+        new[] { mapped }, null, gpoA).Rows.Single(row =>
+            row.Configured == nonAdmx).Admx is null,
+        "The unified grid must not offer the ADMX editor for non-ADMX extensions.");
+
+    var ambiguity = new AdmxPolicyDefinition
+    {
+        AdmxFile = "vendor.admx", Name = "DifferentPolicy",
+        DisplayName = "Another label", Scope = "Computer",
+        Category = "Vendor", Key = registryKey, ValueName = registryValue
+    };
+    Assert(UnifiedSettingsCatalogService.ResolveDefinition(
+        settingA, new[] { mapped, ambiguity }) is null,
+        "Two ADMX policies targeting one registry field are ambiguous and must fail closed.");
+    Assert(UnifiedSettingsCatalogService.Build(
+        new[] { settingA }, new[] { mapped, ambiguity }, null, gpoA)
+        .Rows.Single(row => row.Configured == settingA).Admx is null,
+        "The unified grid must reject the same registry ambiguity.");
+
+    var wrongScope = new PolicySettingInfo
+    {
+        GpoId = gpoA, Scope = "User",
+        Extension = "RegistrySettings", SettingName = mapped.DisplayName,
+        RegistryKey = registryKey, RegistryValue = registryValue
+    };
+    Assert(UnifiedSettingsCatalogService.ResolveDefinition(wrongScope,
+        new[] { mapped }) is null,
+        "Identical registry key/value in User vs Computer scope must not match.");
+    Assert(UnifiedSettingsCatalogService.ResolveElement(wrongScope, mapped) is null,
+        "Cross-scope matches must never navigate to an ADMX input.");
+    var sameValueDifferentKey = new AdmxPolicyDefinition
+    {
+        Scope = "Computer", AdmxFile = "nested.admx",
+        Elements = new[]
+        {
+            new AdmxElementDefinition
+            {
+                Id = "Correct", Type = AdmxElementType.Text,
+                Key = registryKey, ValueName = registryValue
+            },
+            new AdmxElementDefinition
+            {
+                Id = "Wrong", Type = AdmxElementType.Text,
+                Key = @"Software\\Policies\\Vendor", ValueName = registryValue
+            }
+        }
+    };
+    Assert(UnifiedSettingsCatalogService.ResolveElement(
+        settingA, sameValueDifferentKey)?.Id == "Correct",
+        "Editor focus must distinguish identical value names in different registry keys.");
+    var duplicateFields = new AdmxPolicyDefinition
+    {
+        Scope = "Computer",
+        Elements = new[]
+        {
+            mapped.Elements[0],
+            new AdmxElementDefinition
+            {
+                Id = "Duplicate", Type = AdmxElementType.Text,
+                Key = registryKey, ValueName = registryValue
+            }
+        }
+    };
+    Assert(UnifiedSettingsCatalogService.ResolveElement(
+        settingA, duplicateFields) is null,
+        "Duplicate ADMX elements targeting the same field cannot be focused arbitrarily.");
 }
 
 static void TestMmcInventorySnapinSafety()

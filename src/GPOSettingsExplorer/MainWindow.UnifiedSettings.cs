@@ -339,7 +339,9 @@ public partial class MainWindow
             : row.StoredSource is not null ? "View source evidence..."
             : row.IsTechnicalDetail
             ? "View XML details..."
-            : row.Kind == "ADMX template" ? "Configure in GPO..."
+            : row.Kind == "ADMX template" && GetSelectedUnifiedGpoFilter() is not null
+                ? "Open selected GPO field..."
+            : row.Kind == "ADMX template" ? "Choose GPO & edit..."
             : row.Admx is not null ? "Edit policy..."
             : row.Mmc is { Navigation: "Exact MMC row candidate" }
                 ? "Open exact MMC row..."
@@ -379,16 +381,23 @@ public partial class MainWindow
             return;
         }
 
-        if (row.Configured is not null)
+        // ADMX is a reusable schema; a configured row supplies its GPO
+        // identity and current values. Prefer the schema-backed direct editor
+        // over generic MMC navigation and avoid prompting for a GPO twice.
+        if (row.Admx is not null)
         {
-            await EditConfiguredSettingAsync(row.Configured);
+            // ADMX schema is global; a selected GPO is the value target.
+            // Templates are intentionally unbound in the catalog, but when
+            // the operator filters to one GPO there is no need to ask again.
+            var targetId = row.GpoId ?? GetSelectedUnifiedGpoFilter();
+            await ConfigureAdmxDefinitionAsync(row.Admx, targetId, row.Scope);
             await RefreshUnifiedCatalogAsync();
             return;
         }
 
-        if (row.Admx is not null)
+        if (row.Configured is not null)
         {
-            await ConfigureAdmxDefinitionAsync(row.Admx);
+            await EditConfiguredSettingAsync(row.Configured);
             await RefreshUnifiedCatalogAsync();
             return;
         }

@@ -233,6 +233,22 @@ public partial class MainWindow : Window
         OpenSelectedGpo();
     }
 
+    private void OpenSelectedGpoFieldMap_Click(object sender, RoutedEventArgs e)
+    {
+        if (_domainContext is null || GpoGrid.SelectedItem is not GpoInfo selected)
+            return;
+
+        MarkGpoRecent(selected.Id);
+        // Do not rescan ADMX for every GPO: the domain ADMX schema is shared.
+        // The selected GPO provides current values only when a field opens.
+        UnifiedGpoFilterCombo.SelectedItem = selected;
+        UnifiedAllGposCheckBox.IsChecked = false;
+        MainTabs.SelectedItem = AllSettingsTab;
+        UnifiedSearchBox.Focus();
+        StatusText.Text = "Policy Map: " + selected.DisplayName +
+            " (ADMX schema shared; actual values are GPO-specific).";
+    }
+
     private void SettingsGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
     {
         OpenSelectedSettingGpo();

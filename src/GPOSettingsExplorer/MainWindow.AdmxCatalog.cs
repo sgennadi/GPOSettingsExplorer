@@ -119,23 +119,40 @@ public partial class MainWindow
     }
 
     // Reused by Unified Settings and by the advanced ADMX source grid.
-    private async Task ConfigureAdmxDefinitionAsync(AdmxPolicyDefinition selectedDefinition)
+    private async Task ConfigureAdmxDefinitionAsync(
+        AdmxPolicyDefinition selectedDefinition,
+        Guid? preferredGpoId = null,
+        string? preferredScope = null)
     {
         if (_domainContext is null)
             return;
 
-        var picker = new PolicyTargetPickerWindow(_gpos, selectedDefinition)
+        // A row already bound to a GPO must open that GPO directly.
+        // The target picker is only appropriate for unbound ADMX templates.
+        var gpo = preferredGpoId is Guid id
+            ? _gpos.FirstOrDefault(item => item.Id == id)
+            : null;
+        var scope = preferredScope ?? selectedDefinition.Scope;
+        if (preferredGpoId.HasValue && gpo is null)
         {
-            Owner = this
-        };
-
-        if (picker.ShowDialog() != true || picker.SelectedGpo is null)
-        {
+            MessageBox.Show(this,
+                "The GPO associated with this setting is no longer available. " +
+                "Refresh the GPO list before editing. No alternate GPO was selected.",
+                "GPO not found", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
+        if (gpo is null)
+        {
+            var picker = new PolicyTargetPickerWindow(_gpos, selectedDefinition)
+            {
+                Owner = this
+            };
+            if (picker.ShowDialog() != true || picker.SelectedGpo is null)
+                return;
+            gpo = picker.SelectedGpo;
+            scope = picker.SelectedScope;
+        }
 
-        var gpo = picker.SelectedGpo;
-        var scope = picker.SelectedScope;
         var definition = WithEffectiveScope(selectedDefinition, scope);
 
         var unsupported = definition.Elements
@@ -153,12 +170,18 @@ public partial class MainWindow
             return;
         }
 
-        var indexed = _settings.FirstOrDefault(item =>
+        // Do not reuse a GPMC row solely because its localized label matches.
+        // An index entry is trusted as this template's value only if the
+        // universal resolver confirms its unique schema identity.
+        var matches = _settings.Where(item =>
             item.GpoId == gpo.Id &&
             item.Scope.Equals(scope, StringComparison.OrdinalIgnoreCase) &&
-            item.SettingName.Equals(definition.DisplayName, StringComparison.CurrentCultureIgnoreCase));
+            ReferenceEquals(
+                UnifiedSettingsCatalogService.ResolveDefinition(
+                    item, _admxPolicies ?? Array.Empty<AdmxPolicyDefinition>()),
+                selectedDefinition)).ToArray();
 
-        var setting = indexed ?? new PolicySettingInfo
+        var setting = matches.Length == 1 ? matches[0] : new PolicySettingInfo
         {
             GpoId = gpo.Id,
             GpoName = gpo.DisplayName,
@@ -166,7 +189,8 @@ public partial class MainWindow
             Extension = "Administrative Templates",
             Category = definition.Category,
             SettingName = definition.DisplayName,
-            State = "NotConfigured",
+            // Absence from the GPMC index is not evidence of Not Configured.
+            State = "Not reported",
             Value = string.Empty,
             RegistryKey = definition.Key,
             RegistryValue = definition.ValueName

@@ -2,8 +2,8 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="GPO Settings Explorer"
-        Width="1400" Height="850"
-        MinWidth="800" MinHeight="520"
+        Width="1320" Height="790"
+        MinWidth="760" MinHeight="500"
         WindowStartupLocation="CenterScreen"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True"
@@ -11,7 +11,7 @@
         Closing="MainWindow_Closing">
     <DockPanel>
         <Border DockPanel.Dock="Top"
-                Padding="8,6"
+                Padding="6,4"
                 BorderBrush="{DynamicResource {x:Static SystemColors.ControlDarkBrushKey}}"
                 BorderThickness="0,0,0,1">
             <WrapPanel VerticalAlignment="Center">
@@ -40,7 +40,7 @@
                            MaxWidth="420"
                            Margin="0,0,10,0"/>
 
-                <Button Content="Connection..."
+                <Button Content="Connect..."
                         Click="Connection_Click"/>
 
                 <ToggleButton x:Name="WriteModeToggle"
@@ -51,7 +51,7 @@
                               ToolTip="Write operations are blocked while Safe mode is active."/>
 
                 <TextBox x:Name="GlobalSearchBox"
-                         Width="220"
+                         Width="185"
                          ToolTip="Search GPOs, settings, scripts, WMI filters and loaded preference items."
                          KeyDown="GlobalSearchBox_KeyDown"/>
 
@@ -73,7 +73,7 @@
                         Content="Check updates"
                         Click="CheckUpdates_Click"/>
 
-                <Button Content="Refresh all"
+                <Button Content="Refresh"
                         Click="RefreshAll_Click"/>
             </WrapPanel>
         </Border>
@@ -99,34 +99,33 @@
                     <StackPanel DockPanel.Dock="Top">
                         <WrapPanel>
                             <TextBlock Text="Search:" VerticalAlignment="Center"/>
-                            <TextBox x:Name="GpoSearchBox" Width="300" TextChanged="GpoSearchBox_TextChanged"/>
+                            <TextBox x:Name="GpoSearchBox" Width="260" TextChanged="GpoSearchBox_TextChanged"/>
                             <TextBlock Text="View:" VerticalAlignment="Center" Margin="8,0,0,0"/>
                             <ComboBox x:Name="GpoQuickFilterCombo"
-                                      Width="115"
-                                      SelectionChanged="GpoQuickFilterCombo_SelectionChanged"/>
-                            <Button x:Name="FavoriteGpoButton"
-                                    Content="★ Favorite"
+                                      Width="110" SelectionChanged="GpoQuickFilterCombo_SelectionChanged"/>
+                            <Button x:Name="FavoriteGpoButton" Content="★ Favorite"
                                     Click="ToggleFavoriteGpo_Click"/>
-                            <Button Content="New GPO..." Click="NewGpo_Click"/>
-                            <Button Content="Copy GPO..." Click="CopyGpo_Click"/>
-                            <Button x:Name="RenameGpoButton" Content="Rename" Click="RenameGpo_Click"/>
-                            <Button x:Name="DeleteGpoButton" Content="Delete" Click="DeleteGpo_Click"/>
-                            <Button Content="Settings report..." Click="OpenGpoSettingsReport_Click"
-                                    ToolTip="Read-only GPMC-style report of the selected GPO: General, links, WMI, security, Computer and User settings."/>
-                            <Button Content="Open editor" Click="OpenGpoEditor_Click"/>
-                            <Button Content="GPO Hierarchy &amp; Links"
-                                    Click="OpenHierarchyLinksTab_Click"
+                            <Button Content="Browse fields" Click="OpenSelectedGpoFieldMap_Click"
                                     Style="{StaticResource UiPrimaryButton}"
-                                    ToolTip="Open the combined GPO hierarchy tree and link management pane."/>
-                            <Button Content="Backup selected" Click="BackupSelectedGpo_Click"/>
-                            <Button Content="Build settings index" Click="BuildSettingsIndex_Click"/>
-                            <Separator Width="12"/>
-                            <Button x:Name="ToggleComputerButton" Content="Toggle Computer" Click="ToggleComputerScope_Click"/>
-                            <Button x:Name="ToggleUserButton" Content="Toggle User" Click="ToggleUserScope_Click"/>
-                            <Separator Width="12"/>
-                            <Button x:Name="AssignWmiButton" Content="Assign WMI filter" Click="AssignWmiFilter_Click"/>
-                            <Button x:Name="RemoveWmiButton" Content="Remove WMI filter" Click="RemoveWmiFilter_Click"/>
+                                    ToolTip="Open the universal policy-field map for the selected GPO."/>
+                            <Button Content="Open editor" Click="OpenGpoEditor_Click"/>
+                            <Button Content="New GPO..." Click="NewGpo_Click"/>
+                            <Button Content="Report..." Click="OpenGpoSettingsReport_Click"
+                                    ToolTip="Read-only GPMC report for this GPO."/>
+                            <Button Content="Hierarchy / Links" Click="OpenHierarchyLinksTab_Click"/>
                         </WrapPanel>
+                        <Expander Header="GPO management and WMI (advanced)" IsExpanded="False">
+                            <WrapPanel Margin="4,2,4,2">
+                                <Button Content="Copy GPO..." Click="CopyGpo_Click"/>
+                                <Button x:Name="RenameGpoButton" Content="Rename" Click="RenameGpo_Click"/>
+                                <Button x:Name="DeleteGpoButton" Content="Delete" Click="DeleteGpo_Click"/>
+                                <Button Content="Backup selected" Click="BackupSelectedGpo_Click"/>
+                                <Button x:Name="ToggleComputerButton" Content="Toggle Computer" Click="ToggleComputerScope_Click"/>
+                                <Button x:Name="ToggleUserButton" Content="Toggle User" Click="ToggleUserScope_Click"/>
+                                <Button x:Name="AssignWmiButton" Content="Assign WMI" Click="AssignWmiFilter_Click"/>
+                                <Button x:Name="RemoveWmiButton" Content="Remove WMI" Click="RemoveWmiFilter_Click"/>
+                            </WrapPanel>
+                        </Expander>
                         <TextBlock x:Name="SelectedGpoAccessText"
                                    Margin="4,2,4,4"
                                    TextWrapping="Wrap"
@@ -139,6 +138,7 @@
                               SelectionChanged="GpoGrid_SelectionChanged">
                         <DataGrid.ContextMenu>
                             <ContextMenu>
+                                <MenuItem Header="Browse fields (Policy Map)" Click="OpenSelectedGpoFieldMap_Click"/>
                                 <MenuItem Header="Settings (GPMC-style report)..." Click="OpenGpoSettingsReport_Click"/>
                                 <Separator/>
                                 <MenuItem Header="Open native GPO editor..." Click="OpenGpoEditor_Click"/>
@@ -199,25 +199,39 @@
                                           Checked="UnifiedFilterChanged"
                                           Unchecked="UnifiedFilterChanged"
                                           ToolTip="Show low-level GPMC XML descriptors such as security group Member and Registry ACL. These are read-only descriptions, not independently editable policies."/>
-                                <Button Content="Refresh catalog" Click="RefreshUnifiedSettings_Click"/>
-                                <Button x:Name="ImpactPreviewButton" Content="Impact / RSoP preview" Click="GpoImpactPreview_Click" ToolTip="Direct GPO link inventory plus optional logged gpresult verification on one computer. Never estimates domain-wide application."/>
-                                <Button Content="Compare DC versions..." Click="CrossDcVersions_Click" ToolTip="Explicit read-only comparison of AD versionNumber and DC-specific SYSVOL GPT.INI across up to 16 named DCs."/>
-                                <Button x:Name="GpoHealthButton" Content="Health check (AD/SYSVOL)" Click="GpoHealth_Click" ToolTip="Read-only integrity check of AD versionNumber, GPT.INI, source files on selected pinned DC."/>
+                                <Button Content="Refresh map" Click="RefreshUnifiedSettings_Click"/>
+                                
+                                
+                                
                                 <Button x:Name="ReadRealSourcesButton"
                                         Content="Read selected GPO files"
                                         Click="ReadRealSources_Click"
                                         ToolTip="Read-only inspection of Machine/User Registry.pol, Machine SecEdit GptTmpl.inf, and standard GPP XML attributes on the pinned domain controller. Select a GPO first. Never edits or applies policies."/>
-                                <Button x:Name="SecurityEditSourceButton" Content="Edit stored security..." Click="EditSecuritySource_Click" IsEnabled="False" ToolTip="Only selected, recognized existing Event Audit and System Access values. Requires WRITE ENABLED, backup, source SHA-256 match and preview."/>
+                                
                                 <Button x:Name="UnifiedActionButton"
-                                        Content="View / Edit..."
+                                        Content="Open field..."
                                         Style="{StaticResource UiPrimaryButton}"
                                         Click="EditUnifiedSetting_Click"
                                         ToolTip="The selected row determines whether this opens an editor, a read-only value, or a verified MMC row."/>
                                 <Button Content="Open GPO" Click="OpenUnifiedSettingGpo_Click"/>
+                                <Button Content="Exact paths..." Click="OpenExactPaths_Click"
+                                        ToolTip="Browse indexed GPMC settings, search source paths and open a selected exact MMC route explicitly. No automatic MMC scan."/>
                                 <Button Content="Export CSV" Click="ExportUnifiedSettings_Click"/>
-                                <Button Content="Export full evidence ZIP..." Click="ExportFullEvidence_Click" ToolTip="Local-only, explicit read-only evidence archive of source values, health, link impact and GPMC XML. May contain sensitive domain data."/>
-                                <Button Content="Unified platform (AI optional)..." Click="AdvancedAnalysis_Click" ToolTip="Offline GPMC backups, DPAPI timeline, security scan, client/DC diagnostics, baselines, GitOps and optional Intune/local AI. Read-only."/>
                             </WrapPanel>
+                            <Expander Header="Advanced tools (optional)" IsExpanded="False"
+                                      ToolTip="GPO health, RSoP, security source editing and diagnostic exports">
+                                <WrapPanel Margin="4,2,4,2">
+                                    <Button x:Name="ImpactPreviewButton" Content="Impact / RSoP preview" Click="GpoImpactPreview_Click" ToolTip="Direct GPO link inventory plus optional logged gpresult verification on one computer. Never estimates domain-wide application."/>
+                                    <Button Content="Compare DC versions..." Click="CrossDcVersions_Click" ToolTip="Explicit read-only comparison of AD versionNumber and DC-specific SYSVOL GPT.INI across up to 16 named DCs."/>
+                                    <Button x:Name="GpoHealthButton" Content="Health check (AD/SYSVOL)" Click="GpoHealth_Click" ToolTip="Read-only integrity check of AD versionNumber, GPT.INI, source files on selected pinned DC."/>
+                                    <Button x:Name="SecurityEditSourceButton" Content="Edit stored security..." Click="EditSecuritySource_Click" IsEnabled="False" ToolTip="Only selected, recognized existing Event Audit and System Access values. Requires WRITE ENABLED, backup, source SHA-256 match and preview."/>
+                                    <Button Content="Export full evidence ZIP..." Click="ExportFullEvidence_Click" ToolTip="Local-only, explicit read-only evidence archive of source values, health, link impact and GPMC XML. May contain sensitive domain data."/>
+                                    <Button Content="Unified platform (AI optional)..." Click="AdvancedAnalysis_Click" ToolTip="Offline GPMC backups, DPAPI timeline, security scan, client/DC diagnostics, baselines, GitOps and optional Intune/local AI. Read-only."/>
+                                </WrapPanel>
+                            </Expander>
+                            <!-- Primary editor remains one unified All Settings list. -->
+                                
+                                
                             <TextBlock x:Name="UnifiedSettingsCountText"
                                        Margin="4,3,4,5" TextWrapping="Wrap"
                                        Foreground="{DynamicResource UiMutedBrush}"

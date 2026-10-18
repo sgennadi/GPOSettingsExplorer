@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.1.0-preview.16 — 2026-10-18
+
+- **Universal ADMX field map:** Resolve configured GPO settings against the cached ADMX schema using scoped, normalized registry key/value identities. A single schema can be reused with many GPOs; only current values and states belong to the selected GPO.
+- **Exact value navigation:** Focus the uniquely identified ADMX input, not another control that happens to share its display name or registry value name. Selecting one GPO eliminates a redundant target picker for template entries.
+- **Safe cross-source matching:** Do not route Security Settings, GPP Registry items or other non-ADMX extensions through the ADMX editor. Duplicate registry targets, wrong scopes, stale or missing GPOs fail closed rather than selecting a different setting.
+- **Compact primary UI:** Keep All Settings as the primary workspace. Move optional GPO health, RSoP, evidence exports and other diagnostics behind the collapsed Advanced tools section while preserving the diagnostics.
+- **Preview-channel updater:** Query GitHub releases by stable/preview channel, require SHA-256 for update downloads, stage backups and support rollback. The updated EXE must render a WPF window before startup is acknowledged; startup failure triggers restoration of backed-up files where possible.
+- **Regression coverage:** Add cross-GPO, scoped field-identity, label collision, element-target and unsupported-extension tests. Windows CI builds portable x64 and ARM64 binaries.
+- **Limitations:** Preview build for nonproduction evaluation. Some MMC extension snap-ins lack exact input automation; unsupported forms remain guarded or read-only. A successful rendered-window acknowledgement is not a full end-to-end operational health check. Installation and rollback still require validation on representative Windows/AD systems.
+
 ## Unreleased
 
 - **Preview 13: unified source-first GPO navigation.** Merge prior Preview 12 exact GPP Registry UID/order/action/hive/key lookup with a separate no-scan Open GPO editor (manual) action. Exact MMC row access uses previously captured same-GPO/DC observations and does not launch native MMC full inventory from an individual setting.

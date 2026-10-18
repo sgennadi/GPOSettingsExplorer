@@ -18,7 +18,6 @@ public partial class MainWindow
 
     private IReadOnlyList<AdmxPolicyDefinition>? _admxPolicies;
     private readonly SemaphoreSlim _admxCatalogGate = new(1, 1);
-    private bool _admxCatalogLoadedFromCache;
 
     private async void EditSetting_Click(object sender, RoutedEventArgs e)
     {
@@ -312,9 +311,6 @@ public partial class MainWindow
                         cachedSnapshot.SourcePath,
                         cachedSnapshot.Language);
 
-                    _admxCatalogLoadedFromCache =
-                        true;
-
                     HeaderStatusText.Text =
                         $"ADMX: {_admxPolicies.Count:N0} policies (cached) from {cachedSnapshot.SourcePath}";
 
@@ -434,9 +430,6 @@ public partial class MainWindow
 
         _admxPolicies =
             policies;
-
-        _admxCatalogLoadedFromCache =
-            false;
 
         await Task.Run(() =>
             _admxCatalogCacheService.Save(
