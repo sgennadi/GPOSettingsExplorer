@@ -1061,7 +1061,10 @@ static void TestUniversalPolicyMap()
            mapA.Rows.Single(row => row.Kind == "Configured").Value == "26H2" &&
            mapB.Rows.Single(row => row.Kind == "Configured").Value == "25H2" &&
            mapA.Rows.Single(row => row.Kind == "ADMX field").GpoId is null &&
-           mapB.Rows.Single(row => row.Kind == "ADMX field").GpoId is null,
+           mapB.Rows.Single(row => row.Kind == "ADMX field").GpoId is null &&
+           ReferenceEquals(
+               mapA.Rows.Single(row => row.Kind == "ADMX field"),
+               mapB.Rows.Single(row => row.Kind == "ADMX field")),
         "Shared schema must be independent from each GPO's configured source values.");
 
     var unmatched = new PolicySettingInfo
