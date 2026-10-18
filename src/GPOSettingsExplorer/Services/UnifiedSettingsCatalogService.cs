@@ -298,6 +298,29 @@ public static class UnifiedSettingsCatalogService
         return candidates.Length == 1 ? candidates[0] : null;
     }
 
+    /// <summary>
+    /// Find one specific ADMX input field by its scoped registry identity,
+    /// never by localized display label or element order.
+    /// </summary>
+    public static AdmxElementDefinition? ResolveElement(
+        PolicySettingInfo setting,
+        AdmxPolicyDefinition definition)
+    {
+        if (!HasRegistryIdentity(setting) ||
+            !Scopes(definition.Scope).Any(scope =>
+                scope.Equals(setting.Scope, StringComparison.OrdinalIgnoreCase)))
+            return null;
+
+        var wanted = RegistryIdentity(setting.Scope,
+            setting.RegistryKey, setting.RegistryValue);
+        var matches = definition.Elements.Where(element =>
+            !string.IsNullOrWhiteSpace(element.Key) &&
+            !string.IsNullOrWhiteSpace(element.ValueName) &&
+            RegistryIdentity(setting.Scope, element.Key, element.ValueName)
+                .Equals(wanted, StringComparison.OrdinalIgnoreCase)).ToArray();
+        return matches.Length == 1 ? matches[0] : null;
+    }
+
     public static bool IsDirectAdmxSupported(AdmxPolicyDefinition definition) =>
         definition.Elements.All(e => e.Type != AdmxElementType.Unknown);
 
