@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.1.0-preview.17 — 2026-10-18
+
+- **Individual ADMX fields:** The reusable domain policy map now enumerates every ADMX input element as a separate searchable row, including fields inside an already configured policy. A field is never presented as an observed GPO value until it is read separately.
+- **Direct field navigation:** Select a GPO, browse fields and double-click a specific label, registry value name or element ID. The built-in editor highlights the exact field using the original schema element identity.
+- **Safe writes:** Reject duplicate element IDs, conflicting registry targets and unsupported element types across both UI editing paths and the underlying GPO write service. Missing/stale ADMX schema references fail closed.
+- **Cleanup:** Legacy ADMX lookup now calls the shared scope/registry-identity resolver rather than using a separate first-display-name match.
+- **Verification:** Expanded regression tests for field enumeration across multiple GPOs, precise navigation and ambiguous-field rejection. Portable x64/ARM64 builds require passing Windows CI.
+- **Limitations:** ADMX is not a complete representation of vendor CSE, Security Settings or GPP. Those remain in supported separate editors and source views. Native DC/GPO editing and updater rollback require testing outside CI before production use.
+
+
 ## 2.1.0-preview.16 — 2026-10-18
 
 - **Universal ADMX field map:** Resolve configured GPO settings against the cached ADMX schema using scoped, normalized registry key/value identities. A single schema can be reused with many GPOs; only current values and states belong to the selected GPO.
