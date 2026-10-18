@@ -379,16 +379,19 @@ public partial class MainWindow
             return;
         }
 
-        if (row.Configured is not null)
+        // ADMX is a reusable schema; a configured row supplies its GPO
+        // identity and current values. Prefer the schema-backed direct editor
+        // over generic MMC navigation and avoid prompting for a GPO twice.
+        if (row.Admx is not null)
         {
-            await EditConfiguredSettingAsync(row.Configured);
+            await ConfigureAdmxDefinitionAsync(row.Admx, row.GpoId, row.Scope);
             await RefreshUnifiedCatalogAsync();
             return;
         }
 
-        if (row.Admx is not null)
+        if (row.Configured is not null)
         {
-            await ConfigureAdmxDefinitionAsync(row.Admx);
+            await EditConfiguredSettingAsync(row.Configured);
             await RefreshUnifiedCatalogAsync();
             return;
         }
