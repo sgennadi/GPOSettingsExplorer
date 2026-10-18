@@ -133,6 +133,14 @@ public partial class MainWindow
             ? _gpos.FirstOrDefault(item => item.Id == id)
             : null;
         var scope = preferredScope ?? selectedDefinition.Scope;
+        if (preferredGpoId.HasValue && gpo is null)
+        {
+            MessageBox.Show(this,
+                "The GPO associated with this setting is no longer available. " +
+                "Refresh the GPO list before editing. No alternate GPO was selected.",
+                "GPO not found", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
         if (gpo is null)
         {
             var picker = new PolicyTargetPickerWindow(_gpos, selectedDefinition)
