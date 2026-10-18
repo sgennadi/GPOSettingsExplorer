@@ -1033,6 +1033,21 @@ static void TestUniversalPolicyMap()
     Assert(joined.Rows.Single(row => row.Configured == settingB).GpoId == gpoB,
         "GPO-specific state must stay bound to its original GPO.");
 
+    var explicitlyWrongHive = new PolicySettingInfo
+    {
+        GpoId = gpoA, Scope = "Computer",
+        Extension = "RegistrySettings", SettingName = mapped.DisplayName,
+        Category = mapped.Category,
+        RegistryKey = @"HKCU\Software\Policies\Microsoft\Windows\WindowsUpdate",
+        RegistryValue = registryValue
+    };
+    Assert(UnifiedSettingsCatalogService.ResolveDefinition(
+        explicitlyWrongHive, new[] { mapped }) is null,
+        "Computer policy must not accept an explicitly HKCU-scoped registry source.");
+    Assert(UnifiedSettingsCatalogService.ResolveElement(
+        explicitlyWrongHive, mapped) is null,
+        "Field focus must not strip a contradictory hive from a registry identity.");
+
     var sameNameWrongRegistry = new PolicySettingInfo
     {
         GpoId = gpoA, Scope = "Computer",
