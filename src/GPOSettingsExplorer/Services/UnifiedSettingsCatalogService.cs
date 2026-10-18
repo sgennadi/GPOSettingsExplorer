@@ -354,8 +354,27 @@ public static class UnifiedSettingsCatalogService
         return matches.Length == 1 ? matches[0] : null;
     }
 
-    public static bool IsDirectAdmxSupported(AdmxPolicyDefinition definition) =>
-        definition.Elements.All(e => e.Type != AdmxElementType.Unknown);
+    // A malformed vendor ADMX with duplicate IDs or colliding registry
+    // values cannot safely be written through the generic editor.
+    public static bool IsDirectAdmxSupported(AdmxPolicyDefinition definition)
+    {
+        var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var targets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var element in definition.Elements)
+        {
+            if (element.Type == AdmxElementType.Unknown ||
+                string.IsNullOrWhiteSpace(element.Id) ||
+                !ids.Add(element.Id))
+                return false;
+
+            if (!string.IsNullOrWhiteSpace(element.Key) &&
+                !string.IsNullOrWhiteSpace(element.ValueName) &&
+                !targets.Add(RegistryIdentity(
+                    definition.Scope, element.Key, element.ValueName)))
+                return false;
+        }
+        return true;
+    }
 
     private static AdmxPolicyDefinition? FindDefinition(
         PolicySettingInfo setting,
