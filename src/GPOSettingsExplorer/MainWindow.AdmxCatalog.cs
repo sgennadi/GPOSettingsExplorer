@@ -188,6 +188,23 @@ public partial class MainWindow
             return;
         }
 
+        // A field may be unique inside one ADMX and still collide with a
+        // different policy from another vendor's template. Never open a
+        // generic writer until the complete catalog proves uniqueness.
+        if (_admxPolicies is null ||
+            !UnifiedSettingsCatalogService.IsCatalogUniqueForWrite(
+                selectedDefinition, _admxPolicies, scope))
+        {
+            MessageBox.Show(this,
+                "The selected ADMX policy is missing a verifiable registry target " +
+                "or shares a target with another ADMX definition. " +
+                "Direct editing is blocked. Inspect the source in All sources " +
+                "or open the native GPO editor for manual review.",
+                "Ambiguous ADMX catalog",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
         // Do not reuse a GPMC row solely because its localized label matches.
         // An index entry is trusted as this template's value only if the
         // universal resolver confirms its unique schema identity.
