@@ -396,6 +396,38 @@ public static class UnifiedSettingsCatalogService
         return true;
     }
 
+    /// <summary>
+    /// A template may be edited only when ALL its registry targets map to
+    /// exactly this one definition in the current ADMX snapshot. Looking up
+    /// just the selected field is insufficient: another policy can share
+    /// a different target written by the same editor.
+    /// </summary>
+    public static bool IsCatalogUniqueForWrite(
+        AdmxPolicyDefinition definition,
+        IReadOnlyList<AdmxPolicyDefinition> policies,
+        string scope)
+    {
+        if (!IsDirectAdmxSupported(definition) ||
+            !Scopes(definition.Scope).Any(s =>
+                s.Equals(scope, StringComparison.OrdinalIgnoreCase)) ||
+            !policies.Any(item => ReferenceEquals(item, definition)))
+            return false;
+
+        var targets = RegistryTargets(definition)
+            .Select(t => RegistryIdentity(scope, t.Key, t.Value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        // A generic writer without a known target must not claim a write.
+        if (targets.Length == 0)
+            return false;
+
+        var lookup = IndexFor(policies).ByRegistry;
+        return targets.All(target =>
+            lookup.TryGetValue(target, out var matches) &&
+            matches.Count == 1 &&
+            ReferenceEquals(matches[0], definition));
+    }
+
     private static AdmxPolicyDefinition? FindDefinition(
         PolicySettingInfo setting,
         IReadOnlyDictionary<string, List<AdmxPolicyDefinition>> nameLookup,
