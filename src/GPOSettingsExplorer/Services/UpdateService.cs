@@ -878,53 +878,61 @@ public static class UpdateInstaller
                 throw;
             }
 
-            CleanupOldRollbacks(
-                Path.GetDirectoryName(
-                    rollback)!,
-                keep:
-                    3);
-
-            var executable =
-                Path.Combine(
-                    targetDirectory,
-                    executableName);
-
+            // Every failure after CopyTree (including Process.Start failure)
+            // must restore the original backed-up files, not only timeout.
             var healthMarker = Path.Combine(
                 Path.GetTempPath(),
                 "GPOSettingsExplorer-Health-" + Guid.NewGuid().ToString("N") + ".ok");
-            using var launched = Process.Start(
-                new ProcessStartInfo
+            try
+            {
+                CleanupOldRollbacks(Path.GetDirectoryName(rollback)!, keep: 3);
+
+                var executable = Path.Combine(targetDirectory, executableName);
+                using var launched = Process.Start(new ProcessStartInfo
                 {
                     FileName = executable,
                     WorkingDirectory = targetDirectory,
-                    Arguments = "--updated --update-health-marker \"" + healthMarker.Replace("\"", "\\\"") + "\"",
+                    Arguments = "--updated --update-health-marker \"" +
+                        healthMarker.Replace("\"", "\\\"") + "\"",
                     UseShellExecute = true
-                }) ?? throw new InvalidOperationException("Updated application did not start.");
+                }) ?? throw new InvalidOperationException(
+                    "The updated executable did not start.");
 
-            // The detached updater remains alive until the new GUI reports startup.
-            var healthy = false;
-            for (var attempt = 0; attempt < 60; attempt++)
-            {
-                if (File.Exists(healthMarker))
+                var healthy = false;
+                for (var attempt = 0; attempt < 60; attempt++)
                 {
-                    healthy = !launched.HasExited;
-                    break;
+                    if (File.Exists(healthMarker))
+                    {
+                        healthy = !launched.HasExited;
+                        break;
+                    }
+                    if (launched.HasExited)
+                        break;
+                    System.Threading.Thread.Sleep(500);
                 }
-                if (launched.HasExited)
-                    break;
-                System.Threading.Thread.Sleep(500);
+
+                if (!healthy)
+                {
+                    if (!launched.HasExited)
+                    {
+                        launched.Kill(entireProcessTree: true);
+                        if (!launched.WaitForExit(5000))
+                            throw new InvalidOperationException(
+                                "Updated application could not be stopped for rollback.");
+                    }
+                    throw new InvalidOperationException(
+                        "Updated application did not render a healthy WPF window " +
+                        "within 30 seconds. Rolling back the updated files.");
+                }
             }
-            try { File.Delete(healthMarker); } catch { }
-            if (!healthy)
+            catch
             {
-                if (!launched.HasExited)
-                {
-                    launched.Kill(entireProcessTree: true);
-                    launched.WaitForExit(5000);
-                }
                 RestoreRollback(rollback, manifest);
-                throw new InvalidOperationException(
-                    "The updated application did not confirm startup within 30 seconds. Previous files were restored.");
+                throw;
+            }
+            finally
+            {
+                try { File.Delete(healthMarker); } catch { }
             }
         }
         catch (Exception ex)
