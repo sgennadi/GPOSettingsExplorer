@@ -312,6 +312,24 @@ public static class UnifiedSettingsCatalogService
         };
     }
 
+    /// <summary>
+    /// One clean field-oriented view over the joined evidence. ADMX field
+    /// rows replace the duplicate configured-policy summary when element
+    /// controls are available. Policy toggles without elements, unmatched
+    /// GPMC settings, and unmapped MMC rows remain visible. The full source
+    /// catalog is retained under All sources for audits and troubleshooting.
+    /// </summary>
+    public static bool IsPrimaryMapRow(UnifiedSettingInfo row) =>
+        row.Kind switch
+        {
+            "ADMX field" => true,
+            "ADMX template" => row.Admx is { Elements.Count: 0 },
+            "Configured" => !row.IsTechnicalDetail &&
+                (row.Admx is null || row.Admx.Elements.Count == 0),
+            "MMC observed" => row.Admx is null,
+            _ => false
+        };
+
     // Shared resolver used by All Settings, Global Search and the legacy
     // GPMC grid. A non-ADMX extension (Security, GPP Registry, etc.) must
     // never be treated as an Administrative Template merely by its label.
