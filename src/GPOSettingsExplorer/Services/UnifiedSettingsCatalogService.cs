@@ -200,10 +200,41 @@ public static class UnifiedSettingsCatalogService
             });
         }
 
+        // Every ADMX element exists in a *single domain-wide schema map*.
+        // Listing field definitions must not depend on whether any GPO
+        // happens to contain an already-configured policy.
         foreach (var admx in definitions)
         {
             foreach (var scope in Scopes(admx.Scope))
             {
+                foreach (var element in admx.Elements)
+                {
+                    var label = !string.IsNullOrWhiteSpace(element.Label)
+                        ? element.Label
+                        : !string.IsNullOrWhiteSpace(element.ValueName)
+                            ? element.ValueName : element.Id;
+                    rows.Add(new UnifiedSettingInfo
+                    {
+                        SettingName = label,
+                        Scope = scope,
+                        Category = admx.Category + " > " + admx.DisplayName,
+                        State = "Template - state unknown",
+                        Value = "",
+                        Sources = "ADMX field definition",
+                        Capability = IsDirectAdmxSupported(admx)
+                            ? "Open exact field (guarded)"
+                            : "Unsupported field (review only)",
+                        RegistryTarget = JoinTarget(element.Key, element.ValueName),
+                        Explanation = "Reusable ADMX element " + element.Id +
+                            " from " + admx.AdmxFile + ". This is a field schema, " +
+                            "not the current value of any GPO. The selected GPO " +
+                            "is read separately when opening the editor.",
+                        Kind = "ADMX field",
+                        Admx = admx,
+                        AdmxElement = element
+                    });
+                }
+
                 if (usedDefinitions.Contains(DefinitionId(admx, scope)))
                     continue;
 
@@ -233,8 +264,9 @@ public static class UnifiedSettingsCatalogService
                 "Configured" => 0,
                 "Stored source" => 1,
                 "MMC observed" => 2,
-                "ADMX template" => 3,
-                _ => 4
+                "ADMX field" => 3,
+                "ADMX template" => 4,
+                _ => 5
             }).ThenBy(row => row.SettingName, StringComparer.CurrentCultureIgnoreCase)
               .ThenBy(row => row.GpoName, StringComparer.CurrentCultureIgnoreCase)
               .ToArray();
@@ -257,7 +289,8 @@ public static class UnifiedSettingsCatalogService
             catalog is not null,
             message)
         {
-            SourceFileEntries = stored.Length
+            SourceFileEntries = stored.Length,
+            AdmxFieldCount = rows.Count(row => row.Kind == "ADMX field")
         };
     }
 
