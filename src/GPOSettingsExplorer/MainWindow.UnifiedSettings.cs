@@ -91,7 +91,9 @@ public partial class MainWindow
 
             // Snapshot mutable WPF collections on the UI thread.
             var gpmc = _settings.ToArray();
-            var admx = _admxPolicies?.ToArray();
+            // ADMX policy definitions are immutable snapshots. Keep their
+            // reference stable so the domain-wide schema index is reused.
+            var admx = _admxPolicies;
             var mmc = _mmcInventoryResult?.Rows.ToArray();
             var mmcCoverage = _mmcInventoryResult?.Coverage ?? "";
             var target = GetSelectedUnifiedGpoFilter();
