@@ -44,13 +44,19 @@ public static class UnifiedSettingsCatalogService
                     names[named] = sameName = new List<AdmxPolicyDefinition>();
                 sameName.Add(policy);
 
+                // One policy can mention the same target through its base
+                // value and an element. Count it once *per catalog entry*,
+                // but never erase duplicated entries: two identical ADMX
+                // definitions are ambiguous for safe MMC/editor routing.
+                var ownTargets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (var (key, value) in RegistryTargets(policy))
                 {
                     var identity = RegistryIdentity(scope, key, value);
+                    if (!ownTargets.Add(identity))
+                        continue;
                     if (!registry.TryGetValue(identity, out var matches))
                         registry[identity] = matches = new List<AdmxPolicyDefinition>();
-                    if (!matches.Contains(policy))
-                        matches.Add(policy);
+                    matches.Add(policy);
                 }
 
                 var supported = IsDirectAdmxSupported(policy);
