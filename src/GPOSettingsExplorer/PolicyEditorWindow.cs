@@ -185,14 +185,17 @@ public sealed class PolicyEditorWindow : Window
                     setting,
                     definition);
 
-            target.BringIntoView();
-            // Disabled inputs cannot accept keyboard focus. Keep the exact
-            // row visible and focus the policy-state switch instead.
+            // When an unconfigured policy disables its input controls,
+            // focus the Enabled/Disabled selector first and only then
+            // scroll to the requested field. Focusing the selector last
+            // would scroll the requested field back out of view.
             if (!target.IsEnabled)
             {
                 _stateCombo.Focus();
+                target.BringIntoView();
                 return;
             }
+            target.BringIntoView();
             target.Focus();
 
             if (target is TextBox textBox)
