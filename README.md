@@ -16,6 +16,14 @@ Download the latest portable build from:
 
 Current stable release: **v2.0.3**.
 
+## Preview 18: One cached policy map for every GPO
+
+**[Download Preview 18](https://github.com/sgennadi/GPOSettingsExplorer/releases/tag/v2.1.0-preview.18)** (portable Windows x64 and ARM64).
+
+The default **Policy map** lists individual ADMX input fields without repeated GPMC summaries. Choose a GPO, click **Browse fields**, search by field label, policy ID or registry key/value, and double-click to open that field with values read from the selected GPO. The domain-wide ADMX schema index and field rows are reused when you select another GPO; changed policy definitions trigger a new schema snapshot.
+
+For a complete audit, switch **Source** to **All sources**. Security Settings, Group Policy Preferences and MMC-only settings remain visible when supported. A duplicate target anywhere in the ADMX catalog blocks the generic editor instead of guessing.
+
 ## Preview 17: Complete ADMX field map
 
 [Preview 17 prerelease](https://github.com/sgennadi/GPOSettingsExplorer/releases/tag/v2.1.0-preview.17) (published after successful Windows CI). The stable release remains **v2.0.3**.

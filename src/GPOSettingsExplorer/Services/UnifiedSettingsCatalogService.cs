@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using GPOSettingsExplorer.Models;
 
 namespace GPOSettingsExplorer.Services;
@@ -9,6 +10,105 @@ namespace GPOSettingsExplorer.Services;
 /// </summary>
 public static class UnifiedSettingsCatalogService
 {
+    // ADMX/ADML describe one reusable schema for a domain. The map is
+    // deliberately cached by catalog snapshot identity, not by GPO GUID.
+    // Replacing the catalog (a new immutable snapshot) creates a fresh map,
+    // while old snapshots and their indexes can be garbage collected.
+    private sealed record SchemaIndex(
+        IReadOnlyDictionary<string, List<AdmxPolicyDefinition>> ByName,
+        IReadOnlyDictionary<string, List<AdmxPolicyDefinition>> ByRegistry,
+        IReadOnlyList<UnifiedSettingInfo> Fields,
+        IReadOnlyList<(string Identity, UnifiedSettingInfo Row)> Policies);
+
+    private static readonly ConditionalWeakTable<
+        IReadOnlyList<AdmxPolicyDefinition>, SchemaIndex> SchemaIndexes = new();
+
+    private static SchemaIndex IndexFor(IReadOnlyList<AdmxPolicyDefinition> definitions) =>
+        SchemaIndexes.GetValue(definitions, CreateIndex);
+
+    private static SchemaIndex CreateIndex(IReadOnlyList<AdmxPolicyDefinition> definitions)
+    {
+        var names = new Dictionary<string, List<AdmxPolicyDefinition>>(
+            StringComparer.OrdinalIgnoreCase);
+        var registry = new Dictionary<string, List<AdmxPolicyDefinition>>(
+            StringComparer.OrdinalIgnoreCase);
+        var fields = new List<UnifiedSettingInfo>();
+        var policies = new List<(string Identity, UnifiedSettingInfo Row)>();
+
+        foreach (var policy in definitions)
+        {
+            foreach (var scope in Scopes(policy.Scope))
+            {
+                var named = Named(scope, policy.DisplayName);
+                if (!names.TryGetValue(named, out var sameName))
+                    names[named] = sameName = new List<AdmxPolicyDefinition>();
+                sameName.Add(policy);
+
+                // One policy can mention the same target through its base
+                // value and an element. Count it once *per catalog entry*,
+                // but never erase duplicated entries: two identical ADMX
+                // definitions are ambiguous for safe MMC/editor routing.
+                var ownTargets = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var (key, value) in RegistryTargets(policy))
+                {
+                    var identity = RegistryIdentity(scope, key, value);
+                    if (!ownTargets.Add(identity))
+                        continue;
+                    if (!registry.TryGetValue(identity, out var matches))
+                        registry[identity] = matches = new List<AdmxPolicyDefinition>();
+                    matches.Add(policy);
+                }
+
+                var supported = IsDirectAdmxSupported(policy);
+                foreach (var element in policy.Elements)
+                {
+                    var label = !string.IsNullOrWhiteSpace(element.Label)
+                        ? element.Label
+                        : !string.IsNullOrWhiteSpace(element.ValueName)
+                            ? element.ValueName : element.Id;
+                    fields.Add(new UnifiedSettingInfo
+                    {
+                        SettingName = label,
+                        Scope = scope,
+                        Category = policy.Category + " > " + policy.DisplayName,
+                        State = "Template - state unknown",
+                        Value = "",
+                        Sources = "ADMX field definition",
+                        Capability = supported
+                            ? "Open exact field (guarded)"
+                            : "Unsupported field (review only)",
+                        RegistryTarget = JoinTarget(element.Key, element.ValueName),
+                        Explanation = "Reusable ADMX element " + element.Id +
+                            " from " + policy.AdmxFile + ". This is a field schema, " +
+                            "not the current value of any GPO. The selected GPO " +
+                            "is read separately when opening the editor.",
+                        Kind = "ADMX field",
+                        Admx = policy,
+                        AdmxElement = element
+                    });
+                }
+                policies.Add((DefinitionId(policy, scope), new UnifiedSettingInfo
+                {
+                    SettingName = policy.DisplayName,
+                    Scope = scope,
+                    Category = policy.Category,
+                    State = "Template - state unknown",
+                    Value = "",
+                    Sources = "ADMX definition",
+                    Capability = supported
+                        ? "Configure in GPO (guarded)"
+                        : "Native GPMC / review",
+                    RegistryTarget = JoinTarget(policy.Key, policy.ValueName),
+                    Explanation = "Available ADMX template, not a configured setting. " +
+                        "Choose a target GPO before reading its actual current state or configuring. " +
+                        "Nothing is presumed Not Configured.",
+                    Kind = "ADMX template",
+                    Admx = policy
+                }));
+            }
+        }
+        return new SchemaIndex(names, registry, fields, policies);
+    }
     public static UnifiedCatalogResult Build(
         IReadOnlyList<PolicySettingInfo> configured,
         IReadOnlyList<AdmxPolicyDefinition>? catalog,
@@ -26,36 +126,11 @@ public static class UnifiedSettingsCatalogService
             .Where(m => selectedGpoId is null || m.GpoId == selectedGpoId)
             .ToArray();
 
-        var lookup = new Dictionary<string, List<AdmxPolicyDefinition>>(
-            StringComparer.OrdinalIgnoreCase);
-        foreach (var policy in definitions)
-        {
-            foreach (var scope in Scopes(policy.Scope))
-            {
-                var key = Named(scope, policy.DisplayName);
-                if (!lookup.TryGetValue(key, out var list))
-                    lookup[key] = list = new List<AdmxPolicyDefinition>();
-                list.Add(policy);
-            }
-        }
-
-        // Universal ADMX field map: build once from schema, then resolve each
-        // configured GPO's actual values by exact scope + registry key + value.
-        // Display names are not stable identifiers (localization/duplicates).
-        var registryLookup = new Dictionary<string, List<AdmxPolicyDefinition>>(
-            StringComparer.OrdinalIgnoreCase);
-        foreach (var policy in definitions)
-        {
-            foreach (var scope in Scopes(policy.Scope))
-            foreach (var (key, value) in RegistryTargets(policy))
-            {
-                var identity = RegistryIdentity(scope, key, value);
-                if (!registryLookup.TryGetValue(identity, out var candidates))
-                    registryLookup[identity] = candidates = new List<AdmxPolicyDefinition>();
-                if (!candidates.Contains(policy))
-                    candidates.Add(policy);
-            }
-        }
+        // The same parsed schema/map is reused for every selected GPO.
+        // Only GPMC/MMC/source evidence below is GPO-specific.
+        var schema = IndexFor(definitions);
+        var lookup = schema.ByName;
+        var registryLookup = schema.ByRegistry;
 
         var observationsLookup = observations
             .GroupBy(m => $"{m.GpoId:B}|{Named(m.Scope, m.SettingName)}",
@@ -66,7 +141,8 @@ public static class UnifiedSettingsCatalogService
         var usedDefinitions = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var usedMmc = new HashSet<MmcInventoryEntry>();
         var rows = new List<UnifiedSettingInfo>(
-            source.Length + definitions.Count + observations.Length);
+            source.Length + schema.Fields.Count + schema.Policies.Count +
+            observations.Length);
 
         foreach (var setting in source)
         {
@@ -200,63 +276,14 @@ public static class UnifiedSettingsCatalogService
             });
         }
 
-        // Every ADMX element exists in a *single domain-wide schema map*.
-        // Listing field definitions must not depend on whether any GPO
-        // happens to contain an already-configured policy.
-        foreach (var admx in definitions)
+        // Field rows and template metadata are allocated once per ADMX
+        // snapshot, independent of the chosen GPO. Only GPO evidence rows
+        // above are rebuilt when the selection or state changes.
+        rows.AddRange(schema.Fields);
+        foreach (var (identity, template) in schema.Policies)
         {
-            foreach (var scope in Scopes(admx.Scope))
-            {
-                foreach (var element in admx.Elements)
-                {
-                    var label = !string.IsNullOrWhiteSpace(element.Label)
-                        ? element.Label
-                        : !string.IsNullOrWhiteSpace(element.ValueName)
-                            ? element.ValueName : element.Id;
-                    rows.Add(new UnifiedSettingInfo
-                    {
-                        SettingName = label,
-                        Scope = scope,
-                        Category = admx.Category + " > " + admx.DisplayName,
-                        State = "Template - state unknown",
-                        Value = "",
-                        Sources = "ADMX field definition",
-                        Capability = IsDirectAdmxSupported(admx)
-                            ? "Open exact field (guarded)"
-                            : "Unsupported field (review only)",
-                        RegistryTarget = JoinTarget(element.Key, element.ValueName),
-                        Explanation = "Reusable ADMX element " + element.Id +
-                            " from " + admx.AdmxFile + ". This is a field schema, " +
-                            "not the current value of any GPO. The selected GPO " +
-                            "is read separately when opening the editor.",
-                        Kind = "ADMX field",
-                        Admx = admx,
-                        AdmxElement = element
-                    });
-                }
-
-                if (usedDefinitions.Contains(DefinitionId(admx, scope)))
-                    continue;
-
-                rows.Add(new UnifiedSettingInfo
-                {
-                    SettingName = admx.DisplayName,
-                    Scope = scope,
-                    Category = admx.Category,
-                    State = "Template - state unknown",
-                    Value = "",
-                    Sources = "ADMX definition",
-                    Capability = IsDirectAdmxSupported(admx)
-                        ? "Configure in GPO (guarded)"
-                        : "Native GPMC / review",
-                    RegistryTarget = JoinTarget(admx.Key, admx.ValueName),
-                    Explanation = "Available ADMX template, not a configured setting. " +
-                        "Choose a target GPO before reading its actual current state or configuring. " +
-                        "Nothing is presumed Not Configured.",
-                    Kind = "ADMX template",
-                    Admx = admx
-                });
-            }
+            if (!usedDefinitions.Contains(identity))
+                rows.Add(template);
         }
 
         var ordered = rows.OrderBy(row => row.Kind switch
@@ -290,9 +317,28 @@ public static class UnifiedSettingsCatalogService
             message)
         {
             SourceFileEntries = stored.Length,
-            AdmxFieldCount = rows.Count(row => row.Kind == "ADMX field")
+            AdmxFieldCount = schema.Fields.Count
         };
     }
+
+    /// <summary>
+    /// One clean field-oriented view over the joined evidence. ADMX field
+    /// rows replace the duplicate configured-policy summary when element
+    /// controls are available. Policy toggles without elements, unmatched
+    /// GPMC settings, and unmapped MMC rows remain visible. The full source
+    /// catalog is retained under All sources for audits and troubleshooting.
+    /// </summary>
+    public static bool IsPrimaryMapRow(UnifiedSettingInfo row) =>
+        row.Kind switch
+        {
+            "ADMX field" => true,
+            "ADMX template" => row.Admx is { Elements.Count: 0 },
+            "Configured" => !row.IsTechnicalDetail &&
+                (row.Admx is null || row.Admx.Elements.Count == 0),
+            "MMC observed" => row.Admx is null ||
+                row.Admx.Elements.Count == 0,
+            _ => false
+        };
 
     // Shared resolver used by All Settings, Global Search and the legacy
     // GPMC grid. A non-ADMX extension (Security, GPP Registry, etc.) must
@@ -301,34 +347,8 @@ public static class UnifiedSettingsCatalogService
         PolicySettingInfo setting,
         IReadOnlyList<AdmxPolicyDefinition> policies)
     {
-        if (!IsAdmxSource(setting))
-            return null;
-
-        var scoped = policies
-            .Where(policy => Scopes(policy.Scope).Any(scope =>
-                scope.Equals(setting.Scope, StringComparison.OrdinalIgnoreCase)))
-            .ToArray();
-
-        if (HasRegistryIdentity(setting))
-        {
-            var matches = scoped.Where(policy =>
-                RegistryTargets(policy).Any(target =>
-                    RegistryIdentity(setting.Scope, target.Key, target.Value)
-                        .Equals(RegistryIdentity(setting.Scope,
-                            setting.RegistryKey, setting.RegistryValue),
-                            StringComparison.OrdinalIgnoreCase))).ToArray();
-            return matches.Length == 1 ? matches[0] : null;
-        }
-
-        // An incomplete registry identity is not evidence of a match.
-        if (!string.IsNullOrWhiteSpace(setting.RegistryKey))
-            return null;
-
-        var candidates = scoped.Where(policy =>
-            policy.DisplayName.Equals(setting.SettingName,
-                StringComparison.CurrentCultureIgnoreCase) &&
-            CategoriesAgree(setting.Category, policy.Category)).ToArray();
-        return candidates.Length == 1 ? candidates[0] : null;
+        var index = IndexFor(policies);
+        return FindDefinition(setting, index.ByName, index.ByRegistry);
     }
 
     /// <summary>
@@ -374,6 +394,38 @@ public static class UnifiedSettingsCatalogService
                 return false;
         }
         return true;
+    }
+
+    /// <summary>
+    /// A template may be edited only when ALL its registry targets map to
+    /// exactly this one definition in the current ADMX snapshot. Looking up
+    /// just the selected field is insufficient: another policy can share
+    /// a different target written by the same editor.
+    /// </summary>
+    public static bool IsCatalogUniqueForWrite(
+        AdmxPolicyDefinition definition,
+        IReadOnlyList<AdmxPolicyDefinition> policies,
+        string scope)
+    {
+        if (!IsDirectAdmxSupported(definition) ||
+            !Scopes(definition.Scope).Any(s =>
+                s.Equals(scope, StringComparison.OrdinalIgnoreCase)) ||
+            !policies.Any(item => ReferenceEquals(item, definition)))
+            return false;
+
+        var targets = RegistryTargets(definition)
+            .Select(t => RegistryIdentity(scope, t.Key, t.Value))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        // A generic writer without a known target must not claim a write.
+        if (targets.Length == 0)
+            return false;
+
+        var lookup = IndexFor(policies).ByRegistry;
+        return targets.All(target =>
+            lookup.TryGetValue(target, out var matches) &&
+            matches.Count == 1 &&
+            ReferenceEquals(matches[0], definition));
     }
 
     private static AdmxPolicyDefinition? FindDefinition(

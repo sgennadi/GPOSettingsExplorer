@@ -95,7 +95,8 @@ public sealed class AdmxCatalogService
     public AdmxPolicyDefinition? Find(
         IEnumerable<AdmxPolicyDefinition> policies,
         PolicySettingInfo setting) =>
-        UnifiedSettingsCatalogService.ResolveDefinition(setting, policies.ToArray());
+        UnifiedSettingsCatalogService.ResolveDefinition(
+            setting, policies as IReadOnlyList<AdmxPolicyDefinition> ?? policies.ToArray());
 
     private static string BuildStoreFingerprint(
         string store,

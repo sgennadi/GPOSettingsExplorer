@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.1.0-preview.18 — 2026-10-18
+
+- **Reusable schema index:** Parse and index ADMX policies once per immutable catalog snapshot; reuse scoped registry identity lookups and field rows when switching between GPOs. Refreshing the ADMX snapshot invalidates the old map automatically.
+- **Cleaner All Settings:** Default to **Policy map** with one row per ADMX input field, avoiding duplicate GPMC summaries while keeping zero-element toggle policies, Security Settings, and unmatched native MMC rows visible. Original records remain available under **All sources**.
+- **Safer editing:** A policy is editable only if all declared registry targets uniquely identify one definition in the current catalog. Duplicated or ambiguous definitions, wrong scope, and missing targets fail closed in both the main editor and legacy search route.
+- **Regression tests:** Exercise cached row reuse across different GPOs, source-value isolation, refreshed schemas, duplicate declarations, and presence of Security/MMC-only settings.
+- **Validation:** Windows CI and regression tests are mandatory. Editing real GPOs and updater rollback must still be tested on a nonproduction domain controller before production use.
+
 ## 2.1.0-preview.17 — 2026-10-18
 
 - **Individual ADMX fields:** The reusable domain policy map now enumerates every ADMX input element as a separate searchable row, including fields inside an already configured policy. A field is never presented as an observed GPO value until it is read separately.

@@ -1010,6 +1010,13 @@ static void TestUniversalPolicyMap()
     Assert(ReferenceEquals(UnifiedSettingsCatalogService.ResolveElement(
         settingA, mapped), mapped.Elements[0]),
         "One exact registry field must select the corresponding ADMX text input.");
+    Assert(UnifiedSettingsCatalogService.ResolveDefinition(
+        settingA, new[] { mapped, mapped }) is null,
+        "A duplicate ADMX catalog entry must remain ambiguous even when both entries share the same object.");
+    Assert(UnifiedSettingsCatalogService.Build(
+        new[] { settingA }, new[] { mapped, mapped }, null, gpoA)
+        .Rows.Single(row => row.Configured == settingA).Admx is null,
+        "The cached catalog must never deduplicate repeated policy entries into a false unique match.");
     var joined = UnifiedSettingsCatalogService.Build(
         new[] { settingA, settingB }, new[] { duplicateLabel, mapped },
         null, null);
@@ -1032,6 +1039,93 @@ static void TestUniversalPolicyMap()
         "An indexed GPO setting must match a unique ADMX element by its exact key/value.");
     Assert(joined.Rows.Single(row => row.Configured == settingB).GpoId == gpoB,
         "GPO-specific state must stay bound to its original GPO.");
+
+    // The default map shows each editable ADMX field once, not both the
+    // field and the same configured-policy summary. The audit view retains
+    // the full underlying rows.
+    Assert(UnifiedSettingsCatalogService.IsPrimaryMapRow(fields[0]) &&
+           !UnifiedSettingsCatalogService.IsPrimaryMapRow(
+               joined.Rows.Single(row => row.Configured == settingA)),
+        "The primary map must show the exact ADMX field rather than its duplicate GPMC summary.");
+    Assert(joined.Rows.Any(row => row.Configured == settingA),
+        "The underlying GPMC source row must remain available for audit.");
+
+    // A new ADMX catalog must never inherit the old map's identities.
+    var refreshedSchema = new[] { duplicateLabel };
+    Assert(UnifiedSettingsCatalogService.ResolveDefinition(
+        settingA, refreshedSchema) is null,
+        "A replaced schema snapshot must invalidate the previous registry identity map.");
+
+    // Reuse one immutable schema snapshot with different GPO inputs without
+    // copying state or source values between GPOs.
+    var sharedSchema = new[] { mapped, duplicateLabel };
+    var mapA = UnifiedSettingsCatalogService.Build(
+        new[] { settingA }, sharedSchema, null, gpoA);
+    var mapB = UnifiedSettingsCatalogService.Build(
+        new[] { settingB }, sharedSchema, null, gpoB);
+    Assert(mapA.Rows.Count(row => row.Kind == "ADMX field") == 1 &&
+           mapB.Rows.Count(row => row.Kind == "ADMX field") == 1 &&
+           mapA.Rows.Single(row => row.Kind == "Configured").Value == "26H2" &&
+           mapB.Rows.Single(row => row.Kind == "Configured").Value == "25H2" &&
+           mapA.Rows.Single(row => row.Kind == "ADMX field").GpoId is null &&
+           mapB.Rows.Single(row => row.Kind == "ADMX field").GpoId is null &&
+           ReferenceEquals(
+               mapA.Rows.Single(row => row.Kind == "ADMX field"),
+               mapB.Rows.Single(row => row.Kind == "ADMX field")),
+        "Shared schema must be independent from each GPO's configured source values.");
+
+    var unmatched = new PolicySettingInfo
+    {
+        GpoId = gpoA, Scope = "Computer",
+        Extension = "SecuritySettings", Category = "Account Policies",
+        SettingName = "Minimum password length", State = "Enabled"
+    };
+    var unmatchedRows = UnifiedSettingsCatalogService.Build(
+        new[] { unmatched }, sharedSchema, null, gpoA);
+    Assert(UnifiedSettingsCatalogService.IsPrimaryMapRow(
+        unmatchedRows.Rows.Single(row => row.Configured == unmatched)),
+        "Unmapped Security Settings must remain visible in the primary map.");
+
+    var toggle = new AdmxPolicyDefinition
+    {
+        AdmxFile = "system.admx", Name = "Toggle",
+        DisplayName = "Simple toggle", Category = "System",
+        Scope = "Computer",
+        Key = @"Software\Policies\Demo", ValueName = "Toggle",
+        Elements = Array.Empty<AdmxElementDefinition>()
+    };
+    var toggleRows = UnifiedSettingsCatalogService.Build(
+        Array.Empty<PolicySettingInfo>(), new[] { toggle }, null, gpoA);
+    Assert(toggleRows.Rows.Any(row => row.Kind == "ADMX template" &&
+        UnifiedSettingsCatalogService.IsPrimaryMapRow(row)),
+        "Enabled/Disabled ADMX policies without element fields must remain visible.");
+    var toggleValue = new PolicySettingInfo
+    {
+        GpoId = gpoA, GpoName = "Windows baseline",
+        Extension = "Administrative Templates", Scope = "Computer",
+        SettingName = toggle.DisplayName, Category = "System",
+        RegistryKey = toggle.Key, RegistryValue = toggle.ValueName,
+        State = "Enabled"
+    };
+    var configuredToggle = UnifiedSettingsCatalogService.Build(
+        new[] { toggleValue }, new[] { toggle }, null, gpoA);
+    Assert(configuredToggle.Rows.Any(row =>
+        row.Configured == toggleValue &&
+        UnifiedSettingsCatalogService.IsPrimaryMapRow(row)),
+        "A configured toggle without element fields must remain in the primary map.");
+
+    var mmcToggle = new MmcInventoryEntry
+    {
+        GpoId = gpoA, GpoName = "Windows baseline", Scope = "Computer",
+        SectionPath = "Computer Configuration > Policies > Administrative Templates > System",
+        SettingName = toggle.DisplayName, MmcState = "Enabled (MMC)",
+        Source = "MMC native list", Navigation = "Exact MMC row candidate"
+    };
+    var observedToggle = UnifiedSettingsCatalogService.Build(
+        Array.Empty<PolicySettingInfo>(), new[] { toggle }, new[] { mmcToggle }, gpoA);
+    Assert(observedToggle.Rows.Any(row => row.Mmc == mmcToggle &&
+        row.Admx == toggle && UnifiedSettingsCatalogService.IsPrimaryMapRow(row)),
+        "An observed MMC toggle without ADMX input fields must remain in the primary map.");
 
     var explicitlyWrongHive = new PolicySettingInfo
     {
@@ -1084,6 +1178,21 @@ static void TestUniversalPolicyMap()
     Assert(UnifiedSettingsCatalogService.ResolveDefinition(
         settingA, new[] { mapped, ambiguity }) is null,
         "Two ADMX policies targeting one registry field are ambiguous and must fail closed.");
+    Assert(UnifiedSettingsCatalogService.IsCatalogUniqueForWrite(
+        mapped, new[] { mapped, duplicateLabel }, "Computer"),
+        "A unique scoped ADMX policy with mapped registry inputs should remain editable.");
+    Assert(!UnifiedSettingsCatalogService.IsCatalogUniqueForWrite(
+        mapped, new[] { mapped, ambiguity }, "Computer"),
+        "A duplicate target anywhere in the ADMX schema must block writing the whole policy.");
+    Assert(!UnifiedSettingsCatalogService.IsCatalogUniqueForWrite(
+        mapped, new[] { mapped, mapped }, "Computer"),
+        "Repeated identical ADMX catalog entries must not permit generic writes.");
+    Assert(!UnifiedSettingsCatalogService.IsCatalogUniqueForWrite(
+        mapped, new[] { mapped }, "User"),
+        "The generic writer must not switch a Computer-only policy into User scope.");
+    Assert(!UnifiedSettingsCatalogService.IsCatalogUniqueForWrite(
+        mapped, new[] { duplicateLabel }, "Computer"),
+        "A schema element removed from the current ADMX snapshot must fail closed.");
     Assert(UnifiedSettingsCatalogService.Build(
         new[] { settingA }, new[] { mapped, ambiguity }, null, gpoA)
         .Rows.Single(row => row.Configured == settingA).Admx is null,
