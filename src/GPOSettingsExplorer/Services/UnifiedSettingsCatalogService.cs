@@ -426,24 +426,34 @@ public static class UnifiedSettingsCatalogService
     }
 
     private static string RegistryIdentity(string scope, string key, string value) =>
-        scope.Trim() + "|" + NormalizeRegistryKey(key) + "|" + value.Trim();
+        scope.Trim() + "|" + NormalizeRegistryKey(scope, key) + "|" + value.Trim();
 
-    private static string NormalizeRegistryKey(string key)
+    private static string NormalizeRegistryKey(string scope, string key)
     {
         var normalized = (key ?? string.Empty).Trim()
             .Replace('/', '\\').Trim('\\');
-        foreach (var root in new[]
+        // Relative ADMX registry targets inherit the policy scope's hive.
+        // An explicitly declared *wrong* hive must never be stripped and
+        // accidentally matched to the current scope.
+        var hive = scope.Equals("User", StringComparison.OrdinalIgnoreCase)
+            ? "HKCU" : "HKLM";
+        foreach (var (prefix, specifiedHive) in new[]
         {
-            "HKEY_LOCAL_MACHINE\\", "HKLM\\", "MACHINE\\",
-            "HKEY_CURRENT_USER\\", "HKCU\\", "USER\\"
+            ("HKEY_LOCAL_MACHINE\\", "HKLM"),
+            ("HKLM\\", "HKLM"),
+            ("MACHINE\\", "HKLM"),
+            ("HKEY_CURRENT_USER\\", "HKCU"),
+            ("HKCU\\", "HKCU"),
+            ("USER\\", "HKCU")
         })
         {
-            if (!normalized.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+            if (!normalized.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
                 continue;
-            normalized = normalized[root.Length..];
+            normalized = normalized[prefix.Length..];
+            hive = specifiedHive;
             break;
         }
-        return normalized.TrimEnd('\\');
+        return hive + "\\" + normalized.TrimEnd('\\');
     }
 
     private static MmcInventoryEntry? FindObserved(
