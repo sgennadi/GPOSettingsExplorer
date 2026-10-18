@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using GPOSettingsExplorer.Models;
+using GPOSettingsExplorer.Services;
 
 namespace GPOSettingsExplorer;
 
@@ -67,6 +68,12 @@ public sealed class PolicyEditorWindow : Window
         panel.Children.Add(Meta("Category", string.IsNullOrWhiteSpace(definition.Category) ? setting.Category : definition.Category));
         panel.Children.Add(Meta("ADMX", definition.AdmxFile));
         panel.Children.Add(Meta("Registry", BuildRegistrySummary(definition)));
+        var exactField = UnifiedSettingsCatalogService.ResolveElement(setting, definition);
+        if (exactField is not null)
+            panel.Children.Add(Meta("Selected field",
+                (string.IsNullOrWhiteSpace(exactField.Label)
+                    ? exactField.Id : exactField.Label) +
+                " (" + exactField.ValueName + ")"));
 
         if (!string.IsNullOrWhiteSpace(definition.ExplainText))
         {
@@ -162,12 +169,17 @@ public sealed class PolicyEditorWindow : Window
                     definition);
 
             target.BringIntoView();
+            // Disabled inputs cannot accept keyboard focus. Keep the exact
+            // row visible and focus the policy-state switch instead.
+            if (!target.IsEnabled)
+            {
+                _stateCombo.Focus();
+                return;
+            }
             target.Focus();
 
             if (target is TextBox textBox)
-            {
                 textBox.SelectAll();
-            }
         };
     }
 
@@ -384,55 +396,16 @@ public sealed class PolicyEditorWindow : Window
         PolicySettingInfo setting,
         AdmxPolicyDefinition definition)
     {
+        var field = UnifiedSettingsCatalogService.ResolveElement(setting, definition);
+        if (field is not null && _editors.TryGetValue(field.Id, out var exact))
+            return exact;
+
+        // Never focus another field just because it shares the same value
+        // name under a different registry key.
         if (_session.State == PolicyEditState.Enabled)
-        {
-            var wantedValueName =
-                NormalizeValueName(
-                    setting.RegistryValue);
-
-            if (!string.IsNullOrWhiteSpace(wantedValueName))
-            {
-                var matchingElement =
-                    definition.Elements.FirstOrDefault(element =>
-                        NormalizeValueName(element.ValueName)
-                            .Equals(
-                                wantedValueName,
-                                StringComparison.OrdinalIgnoreCase));
-
-                if (matchingElement is not null &&
-                    _editors.TryGetValue(
-                        matchingElement.Id,
-                        out var matchingEditor))
-                {
-                    return matchingEditor;
-                }
-            }
-
-            var firstValueEditor =
-                _editors.Values.FirstOrDefault();
-
-            if (firstValueEditor is not null)
-            {
-                return firstValueEditor;
-            }
-        }
+            return _editors.Values.FirstOrDefault() ?? _stateCombo;
 
         return _stateCombo;
-    }
-
-    private static string NormalizeValueName(
-        string value)
-    {
-        var text =
-            (value ?? string.Empty)
-            .Trim();
-
-        var equals =
-            text.IndexOf('=');
-
-        return equals >= 0
-            ? text[(equals + 1)..].Trim()
-            : text;
     }
 
     private static FrameworkElement Meta(string name, string value)
