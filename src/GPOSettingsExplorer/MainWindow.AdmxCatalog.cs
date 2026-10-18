@@ -128,6 +128,16 @@ public partial class MainWindow
         if (_domainContext is null)
             return;
 
+        if (_admxPolicies is not null &&
+            !_admxPolicies.Any(item => ReferenceEquals(item, selectedDefinition)))
+        {
+            MessageBox.Show(this,
+                "The ADMX catalog has changed since this policy map was built. " +
+                "Refresh the map and select the field again before editing.",
+                "Stale ADMX map", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
         // A row already bound to a GPO must open that GPO directly.
         // The target picker is only appropriate for unbound ADMX templates.
         var gpo = preferredGpoId is Guid id
