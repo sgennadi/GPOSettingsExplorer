@@ -1010,6 +1010,13 @@ static void TestUniversalPolicyMap()
     Assert(ReferenceEquals(UnifiedSettingsCatalogService.ResolveElement(
         settingA, mapped), mapped.Elements[0]),
         "One exact registry field must select the corresponding ADMX text input.");
+    Assert(UnifiedSettingsCatalogService.ResolveDefinition(
+        settingA, new[] { mapped, mapped }) is null,
+        "A duplicate ADMX catalog entry must remain ambiguous even when both entries share the same object.");
+    Assert(UnifiedSettingsCatalogService.Build(
+        new[] { settingA }, new[] { mapped, mapped }, null, gpoA)
+        .Rows.Single(row => row.Configured == settingA).Admx is null,
+        "The cached catalog must never deduplicate repeated policy entries into a false unique match.");
     var joined = UnifiedSettingsCatalogService.Build(
         new[] { settingA, settingB }, new[] { duplicateLabel, mapped },
         null, null);
