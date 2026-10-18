@@ -1007,6 +1007,9 @@ static void TestUniversalPolicyMap()
     Assert(ReferenceEquals(UnifiedSettingsCatalogService.ResolveDefinition(
         settingA, new[] { duplicateLabel, mapped }), mapped),
         "Exact registry identity must resolve a policy even when the displayed name was localized.");
+    Assert(ReferenceEquals(UnifiedSettingsCatalogService.ResolveElement(
+        settingA, mapped), mapped.Elements[0]),
+        "One exact registry field must select the corresponding ADMX text input.");
     var joined = UnifiedSettingsCatalogService.Build(
         new[] { settingA, settingB }, new[] { duplicateLabel, mapped },
         null, null);
@@ -1066,6 +1069,44 @@ static void TestUniversalPolicyMap()
     Assert(UnifiedSettingsCatalogService.ResolveDefinition(wrongScope,
         new[] { mapped }) is null,
         "Identical registry key/value in User vs Computer scope must not match.");
+    Assert(UnifiedSettingsCatalogService.ResolveElement(wrongScope, mapped) is null,
+        "Cross-scope matches must never navigate to an ADMX input.");
+    var sameValueDifferentKey = new AdmxPolicyDefinition
+    {
+        Scope = "Computer", AdmxFile = "nested.admx",
+        Elements = new[]
+        {
+            new AdmxElementDefinition
+            {
+                Id = "Correct", Type = AdmxElementType.Text,
+                Key = registryKey, ValueName = registryValue
+            },
+            new AdmxElementDefinition
+            {
+                Id = "Wrong", Type = AdmxElementType.Text,
+                Key = @"Software\\Policies\\Vendor", ValueName = registryValue
+            }
+        }
+    };
+    Assert(UnifiedSettingsCatalogService.ResolveElement(
+        settingA, sameValueDifferentKey)?.Id == "Correct",
+        "Editor focus must distinguish identical value names in different registry keys.");
+    var duplicateFields = new AdmxPolicyDefinition
+    {
+        Scope = "Computer",
+        Elements = new[]
+        {
+            mapped.Elements[0],
+            new AdmxElementDefinition
+            {
+                Id = "Duplicate", Type = AdmxElementType.Text,
+                Key = registryKey, ValueName = registryValue
+            }
+        }
+    };
+    Assert(UnifiedSettingsCatalogService.ResolveElement(
+        settingA, duplicateFields) is null,
+        "Duplicate ADMX elements targeting the same field cannot be focused arbitrarily.");
 }
 
 static void TestMmcInventorySnapinSafety()
