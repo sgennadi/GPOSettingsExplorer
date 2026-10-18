@@ -1178,6 +1178,21 @@ static void TestUniversalPolicyMap()
     Assert(UnifiedSettingsCatalogService.ResolveDefinition(
         settingA, new[] { mapped, ambiguity }) is null,
         "Two ADMX policies targeting one registry field are ambiguous and must fail closed.");
+    Assert(UnifiedSettingsCatalogService.IsCatalogUniqueForWrite(
+        mapped, new[] { mapped, duplicateLabel }, "Computer"),
+        "A unique scoped ADMX policy with mapped registry inputs should remain editable.");
+    Assert(!UnifiedSettingsCatalogService.IsCatalogUniqueForWrite(
+        mapped, new[] { mapped, ambiguity }, "Computer"),
+        "A duplicate target anywhere in the ADMX schema must block writing the whole policy.");
+    Assert(!UnifiedSettingsCatalogService.IsCatalogUniqueForWrite(
+        mapped, new[] { mapped, mapped }, "Computer"),
+        "Repeated identical ADMX catalog entries must not permit generic writes.");
+    Assert(!UnifiedSettingsCatalogService.IsCatalogUniqueForWrite(
+        mapped, new[] { mapped }, "User"),
+        "The generic writer must not switch a Computer-only policy into User scope.");
+    Assert(!UnifiedSettingsCatalogService.IsCatalogUniqueForWrite(
+        mapped, new[] { duplicateLabel }, "Computer"),
+        "A schema element removed from the current ADMX snapshot must fail closed.");
     Assert(UnifiedSettingsCatalogService.Build(
         new[] { settingA }, new[] { mapped, ambiguity }, null, gpoA)
         .Rows.Single(row => row.Configured == settingA).Admx is null,
