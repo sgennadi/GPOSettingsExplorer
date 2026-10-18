@@ -180,16 +180,11 @@ public partial class MainWindow
 
             definition = WithEffectiveScope(definition, setting.Scope);
 
-            var unsupported = definition.Elements
-                .Where(e => e.Type == AdmxElementType.Unknown)
-                .Select(e => e.Id)
-                .ToArray();
-
-            if (unsupported.Length > 0)
+            if (!UnifiedSettingsCatalogService.IsDirectAdmxSupported(definition))
             {
                 var answer = MessageBox.Show(
                     this,
-                    "This policy contains ADMX element types that the built-in editor does not safely support yet.\n\nOpen the selected GPO in the standard Group Policy editor?",
+                    "This policy has unsupported or ambiguous ADMX fields (duplicate IDs/targets or unknown types). Direct editing is blocked.\n\nOpen the selected GPO in the standard Group Policy editor?",
                     "Unsupported ADMX element",
                     MessageBoxButton.YesNo,
                     MessageBoxImage.Information);
