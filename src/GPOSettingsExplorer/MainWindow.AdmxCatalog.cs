@@ -167,18 +167,14 @@ public partial class MainWindow
             return;
         }
 
-        var unsupported = definition.Elements
-            .Where(element => element.Type == AdmxElementType.Unknown)
-            .ToArray();
-
-        if (unsupported.Length > 0)
+        if (!UnifiedSettingsCatalogService.IsDirectAdmxSupported(definition))
         {
-            MessageBox.Show(
-                this,
-                "This ADMX policy contains an unsupported element type. Direct editing is disabled for this policy to avoid an unsafe write.",
-                "Unsupported policy",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
+            MessageBox.Show(this,
+                "This ADMX policy has an unsupported element type, missing/duplicate " +
+                "element IDs, or multiple fields writing the same registry value. " +
+                "Direct editing is blocked to avoid a wrong-field write.",
+                "Unsupported or ambiguous policy",
+                MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
 
