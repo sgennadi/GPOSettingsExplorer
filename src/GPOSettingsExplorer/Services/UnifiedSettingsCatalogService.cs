@@ -39,6 +39,24 @@ public static class UnifiedSettingsCatalogService
             }
         }
 
+        // Universal ADMX field map: build once from schema, then resolve each
+        // configured GPO's actual values by exact scope + registry key + value.
+        // Display names are not stable identifiers (localization/duplicates).
+        var registryLookup = new Dictionary<string, List<AdmxPolicyDefinition>>(
+            StringComparer.OrdinalIgnoreCase);
+        foreach (var policy in definitions)
+        {
+            foreach (var scope in Scopes(policy.Scope))
+            foreach (var (key, value) in RegistryTargets(policy))
+            {
+                var identity = RegistryIdentity(scope, key, value);
+                if (!registryLookup.TryGetValue(identity, out var candidates))
+                    registryLookup[identity] = candidates = new List<AdmxPolicyDefinition>();
+                if (!candidates.Contains(policy))
+                    candidates.Add(policy);
+            }
+        }
+
         var observationsLookup = observations
             .GroupBy(m => $"{m.GpoId:B}|{Named(m.Scope, m.SettingName)}",
                 StringComparer.OrdinalIgnoreCase)
@@ -55,7 +73,7 @@ public static class UnifiedSettingsCatalogService
             var technical = SecurityXmlEntryClassifier.IsTechnicalDetail(setting);
             // Low-level GPMC XML leaf entries must never match an ADMX
             // editor by their generic label ('Registry', 'Member', etc.).
-            var admx = technical ? null : FindDefinition(setting, lookup);
+            var admx = technical ? null : FindDefinition(setting, lookup, registryLookup);
             if (admx is not null)
                 usedDefinitions.Add(DefinitionId(admx, setting.Scope));
             var observed = technical ? null : FindObserved(setting, observationsLookup);
@@ -116,9 +134,12 @@ public static class UnifiedSettingsCatalogService
                 GpoName = observed.GpoName,
                 Scope = observed.Scope,
                 SettingName = observed.SettingName,
-                Category = observed.SectionPath
+                Category = observed.SectionPath,
+                Extension = observed.SectionPath.Contains(
+                    "Administrative Templates", StringComparison.OrdinalIgnoreCase)
+                    ? "Administrative Templates" : string.Empty
             };
-            var admx = FindDefinition(synthetic, lookup);
+            var admx = FindDefinition(synthetic, lookup, registryLookup);
             if (admx is not null)
                 usedDefinitions.Add(DefinitionId(admx, observed.Scope));
 
@@ -240,42 +261,41 @@ public static class UnifiedSettingsCatalogService
         };
     }
 
+    // Shared resolver used by All Settings, Global Search and the legacy
+    // GPMC grid. A non-ADMX extension (Security, GPP Registry, etc.) must
+    // never be treated as an Administrative Template merely by its label.
     public static AdmxPolicyDefinition? ResolveDefinition(
         PolicySettingInfo setting,
         IReadOnlyList<AdmxPolicyDefinition> policies)
     {
-        // A setting opened from Global Search or the advanced GPMC grid must
-        // use the same conservative identity rules as Unified Settings.
-        // In particular, a shared display name is NOT sufficient.
+        if (!IsAdmxSource(setting))
+            return null;
+
         var scoped = policies
             .Where(policy => Scopes(policy.Scope).Any(scope =>
                 scope.Equals(setting.Scope, StringComparison.OrdinalIgnoreCase)))
-            .Where(policy => policy.DisplayName.Equals(
-                setting.SettingName, StringComparison.CurrentCultureIgnoreCase))
             .ToArray();
 
-        if (scoped.Length == 0)
+        if (HasRegistryIdentity(setting))
+        {
+            var matches = scoped.Where(policy =>
+                RegistryTargets(policy).Any(target =>
+                    RegistryIdentity(setting.Scope, target.Key, target.Value)
+                        .Equals(RegistryIdentity(setting.Scope,
+                            setting.RegistryKey, setting.RegistryValue),
+                            StringComparison.OrdinalIgnoreCase))).ToArray();
+            return matches.Length == 1 ? matches[0] : null;
+        }
+
+        // An incomplete registry identity is not evidence of a match.
+        if (!string.IsNullOrWhiteSpace(setting.RegistryKey))
             return null;
 
-        var sameCategory = scoped.Where(policy =>
+        var candidates = scoped.Where(policy =>
+            policy.DisplayName.Equals(setting.SettingName,
+                StringComparison.CurrentCultureIgnoreCase) &&
             CategoriesAgree(setting.Category, policy.Category)).ToArray();
-        if (sameCategory.Length == 1)
-            return sameCategory[0];
-
-        if (string.IsNullOrWhiteSpace(setting.RegistryKey) ||
-            string.IsNullOrWhiteSpace(setting.RegistryValue))
-            return null;
-
-        var sameRegistry = scoped.Where(policy =>
-            (KeyEqual(setting.RegistryKey, policy.Key) &&
-             setting.RegistryValue.Equals(policy.ValueName,
-                 StringComparison.OrdinalIgnoreCase)) ||
-            policy.Elements.Any(element =>
-                KeyEqual(setting.RegistryKey, element.Key) &&
-                setting.RegistryValue.Equals(element.ValueName,
-                    StringComparison.OrdinalIgnoreCase)))
-            .ToArray();
-        return sameRegistry.Length == 1 ? sameRegistry[0] : null;
+        return candidates.Length == 1 ? candidates[0] : null;
     }
 
     public static bool IsDirectAdmxSupported(AdmxPolicyDefinition definition) =>
@@ -283,32 +303,72 @@ public static class UnifiedSettingsCatalogService
 
     private static AdmxPolicyDefinition? FindDefinition(
         PolicySettingInfo setting,
-        IReadOnlyDictionary<string, List<AdmxPolicyDefinition>> lookup)
+        IReadOnlyDictionary<string, List<AdmxPolicyDefinition>> nameLookup,
+        IReadOnlyDictionary<string, List<AdmxPolicyDefinition>> registryLookup)
     {
-        if (!lookup.TryGetValue(Named(setting.Scope, setting.SettingName), out var group))
+        if (!IsAdmxSource(setting))
             return null;
 
-        var byCategory = group.Where(p =>
-            CategoriesAgree(setting.Category, p.Category)).ToArray();
+        if (HasRegistryIdentity(setting))
+        {
+            return registryLookup.TryGetValue(
+                    RegistryIdentity(setting.Scope, setting.RegistryKey,
+                        setting.RegistryValue), out var matches) &&
+                   matches.Count == 1
+                ? matches[0] : null;
+        }
 
-        if (byCategory.Length == 1)
-            return byCategory[0];
-
-        // Two different ADMXs may share a display label. Registry targets
-        // can resolve only an *exact*, unique same-scope target, not a guess.
-        if (string.IsNullOrWhiteSpace(setting.RegistryKey) ||
-            string.IsNullOrWhiteSpace(setting.RegistryValue))
+        if (!string.IsNullOrWhiteSpace(setting.RegistryKey) ||
+            !nameLookup.TryGetValue(Named(setting.Scope, setting.SettingName),
+                out var named))
             return null;
 
-        var registry = group.Where(p =>
-            (KeyEqual(setting.RegistryKey, p.Key) &&
-             setting.RegistryValue.Equals(p.ValueName, StringComparison.OrdinalIgnoreCase)) ||
-            p.Elements.Any(e =>
-                KeyEqual(setting.RegistryKey, e.Key) &&
-                setting.RegistryValue.Equals(e.ValueName, StringComparison.OrdinalIgnoreCase)))
-            .ToArray();
+        var categories = named.Where(policy =>
+            CategoriesAgree(setting.Category, policy.Category)).ToArray();
+        return categories.Length == 1 ? categories[0] : null;
+    }
 
-        return registry.Length == 1 ? registry[0] : null;
+    private static bool IsAdmxSource(PolicySettingInfo setting) =>
+        setting.Extension.Equals("RegistrySettings", StringComparison.OrdinalIgnoreCase) ||
+        setting.Extension.Equals("Administrative Templates",
+            StringComparison.OrdinalIgnoreCase);
+
+    private static bool HasRegistryIdentity(PolicySettingInfo setting) =>
+        GpoSettingSourceProvenance.IsVerifiedRegistryTarget(setting) &&
+        !string.IsNullOrWhiteSpace(setting.RegistryValue);
+
+    private static IEnumerable<(string Key, string Value)> RegistryTargets(
+        AdmxPolicyDefinition policy)
+    {
+        if (!string.IsNullOrWhiteSpace(policy.Key) &&
+            !string.IsNullOrWhiteSpace(policy.ValueName))
+            yield return (policy.Key, policy.ValueName);
+
+        foreach (var element in policy.Elements)
+            if (!string.IsNullOrWhiteSpace(element.Key) &&
+                !string.IsNullOrWhiteSpace(element.ValueName))
+                yield return (element.Key, element.ValueName);
+    }
+
+    private static string RegistryIdentity(string scope, string key, string value) =>
+        scope.Trim() + "|" + NormalizeRegistryKey(key) + "|" + value.Trim();
+
+    private static string NormalizeRegistryKey(string key)
+    {
+        var normalized = (key ?? string.Empty).Trim()
+            .Replace('/', '\\').Trim('\\');
+        foreach (var root in new[]
+        {
+            "HKEY_LOCAL_MACHINE\\", "HKLM\\", "MACHINE\\",
+            "HKEY_CURRENT_USER\\", "HKCU\\", "USER\\"
+        })
+        {
+            if (!normalized.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+                continue;
+            normalized = normalized[root.Length..];
+            break;
+        }
+        return normalized.TrimEnd('\\');
     }
 
     private static MmcInventoryEntry? FindObserved(
