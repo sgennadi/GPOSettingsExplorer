@@ -18,7 +18,6 @@ public partial class MainWindow
 
     private IReadOnlyList<AdmxPolicyDefinition>? _admxPolicies;
     private readonly SemaphoreSlim _admxCatalogGate = new(1, 1);
-    private bool _admxCatalogLoadedFromCache;
 
     private async void EditSetting_Click(object sender, RoutedEventArgs e)
     {
@@ -78,20 +77,52 @@ public partial class MainWindow
                     !technical && _gpoEditorNavigatorService.CanNavigateExactly(
                         setting);
 
-                var valueWindow =
-                    new SettingValueWindow(
+                // Explicit opt-in per row. The comparison reads only the
+                // selected pinned-DC GptTmpl.inf when its button is clicked;
+                // startup/index navigation never triggers a security scan.
+                Func<IProgress<string>, CancellationToken,
+                    Task<GpoKerberosStoredSourceEvidenceService.Result>>?
+                    kerberosSourceVerifier =
+                    !technical && KerberosPolicyMetadataService.IsKnownKerberosSetting(setting)
+                        ? (progress, token) => VerifyKerberosStoredSourceAsync(
+                            gpo, setting, progress, token)
+                        : null;
+
+                SettingValueWindow? valueWindow = null;
+                valueWindow = new SettingValueWindow(
+                    gpo,
+                    setting,
+                    canEditBoolean,
+                    exactNavigationAvailable,
+                    progress => _gpoEditorNavigatorService.OpenAtSettingAsync(
                         gpo,
+                        _domainContext.DomainDistinguishedName,
                         setting,
-                        canEditBoolean,
-                        exactNavigationAvailable,
-                        progress => _gpoEditorNavigatorService.OpenAtSettingAsync(
-                            gpo,
-                            _domainContext.DomainDistinguishedName,
-                            setting,
-                            progress))
+                        progress),
+                    progress => DiscoverAndOpenExactMmcRouteAsync(
+                        gpo, setting, (Window?)valueWindow ?? this, progress),
+                    verifyStoredKerberos: kerberosSourceVerifier,
+                    openGpmcReport: () => OpenGpoSettingsReportForGpoAsync(
+                        gpo, (Window?)valueWindow ?? this, setting.SettingName,
+                        setting),
+                    openManualGpoEditor: () =>
                     {
-                        Owner = this
-                    };
+                        var context = DomainConnectionState.Context;
+                        if (_domainContext is null || context is null ||
+                            !_gpos.Any(item => item.Id == gpo.Id) ||
+                            !gpo.DomainName.Equals(_domainContext.DomainName,
+                                StringComparison.OrdinalIgnoreCase) ||
+                            !context.DomainName.Equals(gpo.DomainName,
+                                StringComparison.OrdinalIgnoreCase) ||
+                            !context.ConnectedServer.Equals(_domainContext.ConnectedServer,
+                                StringComparison.OrdinalIgnoreCase))
+                            throw new InvalidOperationException(
+                                "GPO/domain/pinned DC changed; reconnect before opening MMC.");
+                        _gpmService.OpenEditor(gpo, _domainContext.DomainDistinguishedName);
+                    })
+                {
+                    Owner = this
+                };
 
                 if (valueWindow.ShowDialog() == true &&
                     canEditBoolean &&
@@ -147,18 +178,31 @@ public partial class MainWindow
                 return;
             }
 
+            // Global Search and the legacy GPMC grid must use the same
+            // catalog-wide uniqueness check as the primary policy map.
+            if (_admxPolicies is null ||
+                !UnifiedSettingsCatalogService.IsCatalogUniqueForWrite(
+                    definition, _admxPolicies, setting.Scope))
+            {
+                SetBusy(false);
+                MessageBox.Show(this,
+                    "More than one ADMX definition claims a registry target " +
+                    "used by this policy, or its target is not defined. " +
+                    "Direct editing is blocked. Review the source before modifying " +
+                    "this GPO using the native editor.",
+                    "Ambiguous ADMX catalog",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Warning);
+                return;
+            }
+
             definition = WithEffectiveScope(definition, setting.Scope);
 
-            var unsupported = definition.Elements
-                .Where(e => e.Type == AdmxElementType.Unknown)
-                .Select(e => e.Id)
-                .ToArray();
-
-            if (unsupported.Length > 0)
+            if (!UnifiedSettingsCatalogService.IsDirectAdmxSupported(definition))
             {
                 var answer = MessageBox.Show(
                     this,
-                    "This policy contains ADMX element types that the built-in editor does not safely support yet.\n\nOpen the selected GPO in the standard Group Policy editor?",
+                    "This policy has unsupported or ambiguous ADMX fields (duplicate IDs/targets or unknown types). Direct editing is blocked.\n\nOpen the selected GPO in the standard Group Policy editor?",
                     "Unsupported ADMX element",
                     MessageBoxButton.YesNo,
                     MessageBoxImage.Information);
@@ -280,9 +324,6 @@ public partial class MainWindow
                         cachedSnapshot.SourcePath,
                         cachedSnapshot.Language);
 
-                    _admxCatalogLoadedFromCache =
-                        true;
-
                     HeaderStatusText.Text =
                         $"ADMX: {_admxPolicies.Count:N0} policies (cached) from {cachedSnapshot.SourcePath}";
 
@@ -402,9 +443,6 @@ public partial class MainWindow
 
         _admxPolicies =
             policies;
-
-        _admxCatalogLoadedFromCache =
-            false;
 
         await Task.Run(() =>
             _admxCatalogCacheService.Save(

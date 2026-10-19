@@ -11,11 +11,28 @@ namespace GPOSettingsExplorer.Services;
 /// XML entities/DTDs are forbidden and tree node counts are bounded.
 /// </summary>
 public sealed record GpoReportNode(
-    string Label, string Details, IReadOnlyList<GpoReportNode> Children);
+    string Label, string Details, IReadOnlyList<GpoReportNode> Children)
+{
+    // Only typed GPMC GPP Registry items populate this. Generic XML names
+    // cannot create a path or silently authorize registry editing.
+    public string RegistryTarget { get; init; } = string.Empty;
+
+    // Used only for exact read-only lookup inside a freshly generated GPMC
+    // report. A display label or registry path alone is not unique.
+    public string GppRegistryUid { get; init; } = string.Empty;
+    public int GppRegistryOrder { get; init; }
+    public string GppRegistryScope { get; init; } = string.Empty;
+    public string GppRegistryAction { get; init; } = string.Empty;
+}
 
 public sealed record GpoSettingsReport(
     string GpoName, DateTimeOffset CapturedUtc,
-    IReadOnlyList<GpoReportNode> Sections, bool Limited, int XmlNodes);
+    IReadOnlyList<GpoReportNode> Sections, bool Limited, int XmlNodes)
+{
+    // A report from one GPO must never be used to locate a preference
+    // selected from a different GPO, even if names and UID happen to match.
+    public Guid GpoId { get; init; }
+}
 
 public static class GpoSettingsReportService
 {
@@ -69,7 +86,10 @@ public static class GpoSettingsReportService
         sections.Add(Scope(gpo, root, "Computer", budget));
         sections.Add(Scope(gpo, root, "User", budget));
         return new GpoSettingsReport(
-            gpo.DisplayName, DateTimeOffset.UtcNow, sections, budget.Limited, count);
+            gpo.DisplayName, DateTimeOffset.UtcNow, sections, budget.Limited, count)
+        {
+            GpoId = gpo.Id
+        };
     }
 
     private static GpoReportNode General(
@@ -141,8 +161,15 @@ public static class GpoSettingsReportService
                 type = type[(type.LastIndexOf(':') + 1)..];
             if (type.Length == 0)
                 type = ext.Name.NamespaceName.Split('/').LastOrDefault() ?? "Other";
-            var group = ExtensionSection(type);
-            var bucket = IsPreference(type) ? preferenceBuckets : policyBuckets;
+            // GPMC may use a RegistrySettings-like extension name for
+            // different CSE sources. A GPP Registry classification needs
+            // concrete Registry/Properties XML, not only a type substring.
+            var containsGppRegistry = ext.Descendants()
+                .Any(GpmcRegistryPreferenceReportService.IsStructuralRegistryItem);
+            var group = containsGppRegistry
+                ? "Windows Settings > Registry" : ExtensionSection(type);
+            var bucket = containsGppRegistry || IsPreference(type)
+                ? preferenceBuckets : policyBuckets;
             if (!bucket.TryGetValue(group, out var sections))
                 bucket[group] = sections = new List<GpoReportNode>();
 
@@ -152,10 +179,16 @@ public static class GpoSettingsReportService
             {
                 if (ext.Elements().Skip(200).Any())
                     budget.Limited = true;
-                sections.Add(new GpoReportNode(Display(type),
-                    "GPMC source extension: " + type + ". Values are stored GPO source, not RSoP.",
+                sections.Add(new GpoReportNode(containsGppRegistry
+                        ? "Registry Preferences" : Display(type),
+                    "GPMC source extension: " + type +
+                    ". Values are stored GPO source, not RSoP." +
+                    (containsGppRegistry
+                        ? " GPP Registry items are not Registry.pol policies; " +
+                          "value data is intentionally omitted from this report."
+                        : ""),
                     ext.Elements().Take(200).Select(node =>
-                        XmlNode(node, budget, 0)).ToArray()));
+                        XmlNode(node, budget, 0, scopeName)).ToArray()));
             }
         }
 
@@ -219,7 +252,7 @@ public static class GpoSettingsReportService
     }
 
     private static GpoReportNode XmlNode(
-        XElement element, RenderBudget budget, int depth)
+        XElement element, RenderBudget budget, int depth, string scopeName = "")
     {
         if (budget.Remaining-- <= 0 || depth >= MaxDepth)
         {
@@ -228,18 +261,58 @@ public static class GpoSettingsReportService
                 "Read-only display limit reached; inspect the original GPMC report.",
                 Array.Empty<GpoReportNode>());
         }
+        if (GpmcRegistryPreferenceReportService.IsStructuralRegistryItem(element))
+        {
+            if (!GpmcRegistryPreferenceReportService.TryRead(element, out var pref))
+                return new GpoReportNode("Registry Preference: UNVERIFIED",
+                    "GPMC Registry Properties are invalid, incomplete or unsupported. " +
+                    "No registry path or value was inferred.",
+                    Array.Empty<GpoReportNode>());
+
+            // GPMC can show multiple same-named Registry preferences with
+            // different actions. Keep the native sibling order and UID in
+            // the selected details rather than collapsing by display name.
+            var order = element.ElementsBeforeSelf()
+                .Count(x => Eq(x, "Registry")) + 1;
+            var source = pref with { Order = order };
+            return new GpoReportNode("Registry Preference: " + Cut(source.DisplayName, 130) +
+                " (Order " + order.ToString(System.Globalization.CultureInfo.InvariantCulture) +
+                ") [" + source.Action + "]", source.Details,
+                Array.Empty<GpoReportNode>())
+            {
+                RegistryTarget = source.RegistryTarget,
+                GppRegistryUid = source.Uid,
+                GppRegistryOrder = source.Order,
+                GppRegistryScope = scopeName,
+                GppRegistryAction = source.Action
+            };
+        }
         if (KerberosPolicyMetadataService.TryDescribeGpmcNode(element, out var kerberos))
             return new GpoReportNode(kerberos.DisplayName, XmlDetails(element),
                 Array.Empty<GpoReportNode>());
         var name = element.Name.LocalName;
         var label = Display(name);
+        // A nested Applicability element describes its parent software
+        // installation package. Present the context instead of a misleading
+        // standalone policy name; the source XML is still read-only.
+        if (name.Equals("Applicability", StringComparison.OrdinalIgnoreCase) &&
+            element.Parent is XElement package)
+        {
+            var packageName = package.Attributes()
+                .FirstOrDefault(a => a.Name.LocalName.Equals(
+                    "name", StringComparison.OrdinalIgnoreCase))?.Value;
+            var parentLabel = package.Name.LocalName;
+            label = "Package applicability (" + Cut(
+                string.IsNullOrWhiteSpace(packageName) ? parentLabel : packageName,
+                130) + ")";
+        }
         var nameAttr = element.Attributes().FirstOrDefault(a =>
             a.Name.LocalName.Equals("name", StringComparison.OrdinalIgnoreCase));
         if (nameAttr is not null && !string.IsNullOrWhiteSpace(nameAttr.Value))
             label += ": " + (IsSensitive(element.Name.LocalName)
                 ? "[redacted]" : Cut(nameAttr.Value, 130));
         var children = element.Elements().Take(180).Select(e =>
-            XmlNode(e, budget, depth + 1)).ToArray();
+            XmlNode(e, budget, depth + 1, scopeName)).ToArray();
         if (element.Elements().Skip(180).Any())
             budget.Limited = true;
         return new GpoReportNode(label, XmlDetails(element), children);
@@ -302,7 +375,9 @@ public static class GpoSettingsReportService
 
     private static bool IsPreference(string type) =>
         type.Contains("Preference", StringComparison.OrdinalIgnoreCase) ||
-        type is "Drives" or "Folders" or "Files" or "Shortcuts" or
+        type is "Registry" or "RegistryPreference" or
+            "RegistryPreferencesSettings" or "PreferencesRegistrySettings" or
+            "Drives" or "Folders" or "Files" or "Shortcuts" or
             "Printers" or "ScheduledTasks" or "Services" or "EnvironmentVariables" or
             "LocalUsersAndGroups";
 

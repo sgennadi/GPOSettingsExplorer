@@ -4,6 +4,7 @@ using System.DirectoryServices;
 using System.Runtime.InteropServices;
 using System.Security.AccessControl;
 using System.Security.Principal;
+using System.Xml;
 using System.Xml.Linq;
 using GPOSettingsExplorer.Models;
 
@@ -1290,9 +1291,62 @@ public sealed class GpmService
             ?? throw new InvalidOperationException("Unable to create the GPMC automation object.");
     }
 
+    /// <summary>
+    /// Parse the exact same GPMC XML structure as a domain-generated report
+    /// without GPMC COM. Also allows safe offline regression fixtures. Never
+    /// derives registry targets from arbitrary XML/SoftwareInstallation fields.
+    /// </summary>
+    private const int MaxIndexXmlCharacters = 64 * 1024 * 1024;
+
+    public static IReadOnlyList<PolicySettingInfo> ParseXmlSettings(
+        string xml, GpoInfo gpo)
+    {
+        ArgumentNullException.ThrowIfNull(gpo);
+        if (string.IsNullOrWhiteSpace(xml) ||
+            xml.Length > MaxIndexXmlCharacters)
+            throw new InvalidDataException("GPMC XML is absent or exceeds the safe parsing limit.");
+        using var reader = XmlReader.Create(new StringReader(xml), SafeReportXmlSettings());
+        var document = ReadGpmcIndexXml(reader);
+        return ParseReportDocument(document, gpo).ToArray();
+    }
+
+    private static XmlReaderSettings SafeReportXmlSettings() => new()
+    {
+        DtdProcessing = DtdProcessing.Prohibit,
+        XmlResolver = null,
+        MaxCharactersInDocument = MaxIndexXmlCharacters,
+        MaxCharactersFromEntities = 0
+    };
+
+    // Normalize prohibited DTD/entity and malformed XML failures into one
+    // explicit source-read rejection. DtdProcessing stays Prohibit; never
+    // enable resolver or external entity expansion just to satisfy a report.
+    private static XDocument ReadGpmcIndexXml(XmlReader reader)
+    {
+        try
+        {
+            var document = XDocument.Load(reader, LoadOptions.None);
+            if (document.Root?.Name.LocalName != "GPO")
+                throw new InvalidDataException("Expected GPMC GPO root.");
+            return document;
+        }
+        catch (XmlException ex)
+        {
+            throw new InvalidDataException(
+                "GPMC report XML is malformed or contains a prohibited DTD/entity.", ex);
+        }
+    }
+
     private static IEnumerable<PolicySettingInfo> ParseReport(string path, GpoInfo gpo)
     {
-        var document = XDocument.Load(path, LoadOptions.None);
+        using var reader = XmlReader.Create(path, SafeReportXmlSettings());
+        var document = ReadGpmcIndexXml(reader);
+        return ParseReportDocument(document, gpo);
+    }
+
+    private static IEnumerable<PolicySettingInfo> ParseReportDocument(
+        XDocument document, GpoInfo gpo)
+    {
         var settings = new List<PolicySettingInfo>();
 
         foreach (var scopeName in new[] { "Computer", "User" })
@@ -1462,6 +1516,42 @@ public sealed class GpmService
                     extension,
                     scopeName,
                     gpo));
+        }
+
+        // GPMC's GPP Registry items have structured Registry/Properties
+        // records. Treat them as preference source, never as Registry.pol,
+        // Security Settings KeyName or generic XML fields.
+        var gppRegistryNodes = extension.Descendants()
+            .Where(GpmcRegistryPreferenceReportService.IsStructuralRegistryItem).ToArray();
+        if (gppRegistryNodes.Length > 0)
+        {
+            foreach (var candidate in gppRegistryNodes)
+            {
+                if (!GpmcRegistryPreferenceReportService.TryRead(candidate, out var item))
+                {
+                    rows.Add(new PolicySettingInfo
+                    {
+                        GpoId = gpo.Id, GpoName = gpo.DisplayName,
+                        Scope = scopeName, Extension = "GppRegistry",
+                        Category = "Preferences > Windows Settings > Registry",
+                        SettingName = "Registry preference (unparsed)",
+                        State = "Unknown / source not verified",
+                        Value = "GPMC Registry preference Properties are incomplete or unsupported; " +
+                            "no registry target was inferred."
+                    });
+                    continue;
+                }
+
+                // The source report can contain the same visible name and
+                // target more than once. Preserve each item's order and UID;
+                // never silently deduplicate two Delete/Update operations.
+                var order = candidate.ElementsBeforeSelf()
+                    .Count(x => x.Name.LocalName.Equals("Registry",
+                        StringComparison.OrdinalIgnoreCase)) + 1;
+                rows.Add(GpmcRegistryPreferenceReportService.ToPolicySetting(
+                    gpo, scopeName, item with { Order = order }));
+            }
+            return rows;
         }
 
         if (extensionType.Equals(

@@ -70,6 +70,14 @@ public static class MmcFullSettingsInventoryService
             UseShellExecute = true
         }) ?? throw new InvalidOperationException("Failed to start MMC.");
 
+        // Native MMC snap-ins can show a fatal modal while UI Automation is
+        // blocked inside Expand/Select. Poll from another thread so the scan
+        // is canceled promptly instead of waiting for the next tree node.
+        using var linkedScan = CancellationTokenSource.CreateLinkedTokenSource(token);
+        token = linkedScan.Token;
+        using var modalWatchdog = new MmcInventoryErrorWatchdog(
+            process.Id, linkedScan, progress);
+
         progress?.Report("Opening a dedicated MMC editor for read-only inventory...");
         AutomationElement? root = null;
         var startDeadline = DateTime.UtcNow.AddSeconds(55);
@@ -220,7 +228,10 @@ public static class MmcFullSettingsInventoryService
             }
             // Categories may contain both subfolders AND policy rows. Reading
             // leaves only would silently miss policies directly in a parent.
-            if (!Select(node))
+            var selected = Select(node);
+            token.ThrowIfCancellationRequested();
+            MmcInventoryDialogGuard.ThrowIfDialogOpen(process);
+            if (!selected)
             {
                 sections.Add(new MmcInventorySection(sectionPath, "Selection failed", 0,
                     "MMC did not expose verifiable selection; potential rows in this category are unknown."));
@@ -336,13 +347,35 @@ public static class MmcFullSettingsInventoryService
         catch (OperationCanceledException)
         {
             interrupted = true;
-            reason = "Canceled by user; captured records are retained.";
+            if (modalWatchdog.DialogDetected)
+            {
+                reason = "STOPPED: a native MMC modal snap-in error was detected at " +
+                    currentSection + ". " + modalWatchdog.Diagnostic +
+                    ". Close MMC manually. No dialog was acknowledged or suppressed.";
+                sections.Add(new MmcInventorySection(
+                    currentSection, "Scan aborted", 0, reason));
+            }
+            else
+            {
+                reason = "Canceled by user; captured records are retained.";
+            }
         }
         catch (Exception ex) when (ex is TimeoutException or InvalidOperationException
                                    or COMException or ElementNotAvailableException)
         {
             interrupted = true;
             reason = "At " + currentSection + ": " + ex.Message;
+            sections.Add(new MmcInventorySection(
+                currentSection, "Scan aborted", 0, reason));
+        }
+
+        // A dialog can appear in the last few milliseconds after Visit
+        // returns. Never publish this snapshot as successfully scanned.
+        if (modalWatchdog.DialogDetected && !interrupted)
+        {
+            interrupted = true;
+            reason = "STOPPED: native MMC modal dialog detected. " +
+                modalWatchdog.Diagnostic + ". No automatic dismissal attempted.";
             sections.Add(new MmcInventorySection(
                 currentSection, "Scan aborted", 0, reason));
         }

@@ -31,6 +31,7 @@ public partial class MainWindow
     {
         UnifiedSourceCombo.ItemsSource = new[]
         {
+            "Policy map",
             "All sources",
             "Configured (GPMC)",
             "ADMX templates",
@@ -91,7 +92,9 @@ public partial class MainWindow
 
             // Snapshot mutable WPF collections on the UI thread.
             var gpmc = _settings.ToArray();
-            var admx = _admxPolicies?.ToArray();
+            // ADMX policy definitions are immutable snapshots. Keep their
+            // reference stable so the domain-wide schema index is reused.
+            var admx = _admxPolicies;
             var mmc = _mmcInventoryResult?.Rows.ToArray();
             var mmcCoverage = _mmcInventoryResult?.Coverage ?? "";
             var target = GetSelectedUnifiedGpoFilter();
@@ -186,9 +189,16 @@ public partial class MainWindow
         if (row.IsTechnicalDetail && UnifiedShowTechnicalCheckBox?.IsChecked != true)
             return false;
 
+        // One field per ADMX element in the primary view. Legacy GPMC
+        // summaries remain available under All sources when needed.
+        if (source == "Policy map" &&
+            !UnifiedSettingsCatalogService.IsPrimaryMapRow(
+                row, UnifiedStateCombo?.SelectedItem as string))
+            return false;
+
         if (source == "Configured (GPMC)" &&
                 row.Kind is not ("Configured" or "GPMC detail") ||
-            source == "ADMX templates" && row.Kind != "ADMX template" ||
+            source == "ADMX templates" && row.Kind is not ("ADMX template" or "ADMX field") ||
             source == "MMC observed" && row.Mmc is null ||
             source == "Stored GPO files (read only)" && row.StoredSource is null)
             return false;
@@ -199,7 +209,7 @@ public partial class MainWindow
             "MMC Not Configured" => row.Mmc is not null &&
                 row.State.Equals("Not Configured (MMC)",
                     StringComparison.OrdinalIgnoreCase),
-            "Unknown / templates" => row.Kind == "ADMX template" ||
+            "Unknown / templates" => row.Kind is "ADMX template" or "ADMX field" ||
                 row.State.StartsWith("Not reported", StringComparison.OrdinalIgnoreCase),
             "Stored source values" => row.StoredSource is not null,
             _ => true
@@ -217,7 +227,7 @@ public partial class MainWindow
             ? $" | {technicalCount:N0} technical XML details hidden (toggle Show XML details)"
             : "";
         UnifiedSettingsCountText.Text = _unifiedCatalog is null
-            ? "Unified catalog not loaded. Open this tab or click Refresh catalog."
+            ? "Policy map not loaded. Open this tab or click Refresh map."
             : $"{count:N0} shown | {_unifiedCatalog.Summary}{hiddenSuffix}";
     }
 
@@ -339,13 +349,32 @@ public partial class MainWindow
             : row.StoredSource is not null ? "View source evidence..."
             : row.IsTechnicalDetail
             ? "View XML details..."
-            : row.Kind == "ADMX template" ? "Configure in GPO..."
+            : row.Kind is "ADMX template" or "ADMX field" &&
+              GetSelectedUnifiedGpoFilter() is not null
+                ? "Open field in selected GPO..."
+            : row.Kind is "ADMX template" or "ADMX field"
+                ? "Choose GPO & open field..."
             : row.Admx is not null ? "Edit policy..."
             : row.Mmc is { Navigation: "Exact MMC row candidate" }
                 ? "Open exact MMC row..."
                 : "View / open section...";
-        UnifiedSelectedDetailsText.Text =
-            $"{row.Sources} | {row.Capability} | {row.Explanation}";
+        if (row.Configured is { } preference &&
+            GpoSettingSourceProvenance.IsGppRegistrySource(preference))
+        {
+            UnifiedSelectedDetailsText.Text = "GPP Registry SOURCE: " +
+                "Action=" + preference.GppRegistryAction +
+                "; Hive=" + preference.GppRegistryHive +
+                "; Key path=" + preference.GppRegistryKeyPath +
+                "; Value name=" + (preference.GppRegistryValueName.Length == 0
+                    ? "(default/key item)" : preference.GppRegistryValueName) +
+                "; Order=" + preference.GppRegistryOrder + ". " +
+                row.Explanation;
+        }
+        else
+        {
+            UnifiedSelectedDetailsText.Text =
+                $"{row.Sources} | {row.Capability} | {row.Explanation}";
+        }
     }
 
     private async Task EditSelectedUnifiedSettingAsync()
@@ -364,16 +393,24 @@ public partial class MainWindow
             return;
         }
 
-        if (row.Configured is not null)
+        // ADMX is a reusable schema; a configured row supplies its GPO
+        // identity and current values. Prefer the schema-backed direct editor
+        // over generic MMC navigation and avoid prompting for a GPO twice.
+        if (row.Admx is not null)
         {
-            await EditConfiguredSettingAsync(row.Configured);
+            // ADMX schema is global; a selected GPO is the value target.
+            // Templates are intentionally unbound in the catalog, but when
+            // the operator filters to one GPO there is no need to ask again.
+            var targetId = row.GpoId ?? GetSelectedUnifiedGpoFilter();
+            await ConfigureAdmxDefinitionAsync(
+                row.Admx, targetId, row.Scope, row.AdmxElement);
             await RefreshUnifiedCatalogAsync();
             return;
         }
 
-        if (row.Admx is not null)
+        if (row.Configured is not null)
         {
-            await ConfigureAdmxDefinitionAsync(row.Admx);
+            await EditConfiguredSettingAsync(row.Configured);
             await RefreshUnifiedCatalogAsync();
             return;
         }

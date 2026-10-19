@@ -24,6 +24,26 @@ public static class MmcInventoryDialogGuard
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool IsWindowVisible(IntPtr window);
 
+    private const uint GwOwner = 4;
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetWindow(IntPtr window, uint command);
+
+    private static bool IsInMmcWindowFamily(IntPtr window, uint mmcPid)
+    {
+        // Snap-in dialogs may be owned by a different helper process.
+        // Follow only the native owner chain, not arbitrary process names or
+        // desktop-wide popups, to prevent acting on unrelated applications.
+        for (var count = 0; window != IntPtr.Zero && count < 8; count++)
+        {
+            GetWindowThreadProcessId(window, out var candidate);
+            if (candidate == mmcPid)
+                return true;
+            window = GetWindow(window, GwOwner);
+        }
+        return false;
+    }
+
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern int GetClassName(
         IntPtr window, StringBuilder className, int capacity);
@@ -40,8 +60,7 @@ public static class MmcInventoryDialogGuard
             if (!IsWindowVisible(handle))
                 return true;
 
-            GetWindowThreadProcessId(handle, out var ownerProcessId);
-            if (ownerProcessId != unchecked((uint)mmcProcessId))
+            if (!IsInMmcWindowFamily(handle, unchecked((uint)mmcProcessId)))
                 return true;
 
             var className = new StringBuilder(128);

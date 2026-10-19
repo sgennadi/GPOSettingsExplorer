@@ -66,6 +66,13 @@ public sealed class RegistryPolicyService
         EditingGuard.EnsureEnabled(
             "Edit Administrative Template policy");
 
+        // Protect the writer independently of the UI route. Malformed
+        // vendor ADMX definitions must not silently write a second field
+        // when element IDs or registry targets collide.
+        if (!UnifiedSettingsCatalogService.IsDirectAdmxSupported(definition))
+            throw new InvalidOperationException(
+                "This ADMX schema contains ambiguous or unsupported fields. No GPO values were written.");
+
         var before =
             Read(
                 gpo,

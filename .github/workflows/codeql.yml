@@ -4,9 +4,12 @@ on:
   push:
     branches:
       - main
+      - dev/preview13-merged-evidence
+      - feature/v2.1-discovery-evidence
   pull_request:
     branches:
       - main
+      - feature/v2.1-discovery-evidence
   workflow_dispatch:
   schedule:
     - cron: "17 3 * * 1"

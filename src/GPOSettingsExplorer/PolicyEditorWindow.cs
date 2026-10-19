@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using GPOSettingsExplorer.Models;
+using GPOSettingsExplorer.Services;
 
 namespace GPOSettingsExplorer;
 
@@ -10,6 +11,7 @@ public sealed class PolicyEditorWindow : Window
     private readonly AdmxPolicyDefinition _definition;
     private readonly PolicyEditSession _session;
     private readonly ComboBox _stateCombo;
+    private readonly AdmxElementDefinition? _preferredElement;
     private readonly Dictionary<string, Control> _editors = new(StringComparer.OrdinalIgnoreCase);
 
     public PolicyEditSession Session => _session;
@@ -18,12 +20,27 @@ public sealed class PolicyEditorWindow : Window
         GpoInfo gpo,
         PolicySettingInfo setting,
         AdmxPolicyDefinition definition,
-        PolicyEditSession session)
+        PolicyEditSession session,
+        AdmxElementDefinition? preferredElement = null)
     {
         _definition = definition;
         _session = session;
+        // Field navigation must resolve to the same schema object, not a
+        // copied label that could refer to a different input.
+        if (preferredElement is not null &&
+            (!definition.Elements.Any(e => ReferenceEquals(e, preferredElement)) ||
+             definition.Elements.Count(e => string.Equals(e.Id,
+                 preferredElement.Id, StringComparison.OrdinalIgnoreCase)) != 1))
+            throw new InvalidOperationException(
+                "The requested ADMX field cannot be uniquely identified.");
 
-        Title = $"Edit Policy - {setting.SettingName}";
+        _preferredElement = preferredElement;
+
+        Title = preferredElement is null
+            ? $"Edit Policy - {setting.SettingName}"
+            : $"Edit Field - {definition.DisplayName} / " +
+                (string.IsNullOrWhiteSpace(preferredElement.Label)
+                    ? preferredElement.Id : preferredElement.Label);
         Width = 900;
         Height = 760;
         MinWidth = 720;
@@ -67,6 +84,13 @@ public sealed class PolicyEditorWindow : Window
         panel.Children.Add(Meta("Category", string.IsNullOrWhiteSpace(definition.Category) ? setting.Category : definition.Category));
         panel.Children.Add(Meta("ADMX", definition.AdmxFile));
         panel.Children.Add(Meta("Registry", BuildRegistrySummary(definition)));
+        var exactField = _preferredElement ??
+            UnifiedSettingsCatalogService.ResolveElement(setting, definition);
+        if (exactField is not null)
+            panel.Children.Add(Meta("Selected field",
+                (string.IsNullOrWhiteSpace(exactField.Label)
+                    ? exactField.Id : exactField.Label) +
+                " (" + exactField.ValueName + ")"));
 
         if (!string.IsNullOrWhiteSpace(definition.ExplainText))
         {
@@ -161,13 +185,21 @@ public sealed class PolicyEditorWindow : Window
                     setting,
                     definition);
 
+            // When an unconfigured policy disables its input controls,
+            // focus the Enabled/Disabled selector first and only then
+            // scroll to the requested field. Focusing the selector last
+            // would scroll the requested field back out of view.
+            if (!target.IsEnabled)
+            {
+                _stateCombo.Focus();
+                target.BringIntoView();
+                return;
+            }
             target.BringIntoView();
             target.Focus();
 
             if (target is TextBox textBox)
-            {
                 textBox.SelectAll();
-            }
         };
     }
 
@@ -384,55 +416,17 @@ public sealed class PolicyEditorWindow : Window
         PolicySettingInfo setting,
         AdmxPolicyDefinition definition)
     {
+        var field = _preferredElement ??
+            UnifiedSettingsCatalogService.ResolveElement(setting, definition);
+        if (field is not null && _editors.TryGetValue(field.Id, out var exact))
+            return exact;
+
+        // Never focus another field just because it shares the same value
+        // name under a different registry key.
         if (_session.State == PolicyEditState.Enabled)
-        {
-            var wantedValueName =
-                NormalizeValueName(
-                    setting.RegistryValue);
-
-            if (!string.IsNullOrWhiteSpace(wantedValueName))
-            {
-                var matchingElement =
-                    definition.Elements.FirstOrDefault(element =>
-                        NormalizeValueName(element.ValueName)
-                            .Equals(
-                                wantedValueName,
-                                StringComparison.OrdinalIgnoreCase));
-
-                if (matchingElement is not null &&
-                    _editors.TryGetValue(
-                        matchingElement.Id,
-                        out var matchingEditor))
-                {
-                    return matchingEditor;
-                }
-            }
-
-            var firstValueEditor =
-                _editors.Values.FirstOrDefault();
-
-            if (firstValueEditor is not null)
-            {
-                return firstValueEditor;
-            }
-        }
+            return _editors.Values.FirstOrDefault() ?? _stateCombo;
 
         return _stateCombo;
-    }
-
-    private static string NormalizeValueName(
-        string value)
-    {
-        var text =
-            (value ?? string.Empty)
-            .Trim();
-
-        var equals =
-            text.IndexOf('=');
-
-        return equals >= 0
-            ? text[(equals + 1)..].Trim()
-            : text;
     }
 
     private static FrameworkElement Meta(string name, string value)

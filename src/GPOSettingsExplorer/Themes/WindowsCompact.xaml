@@ -86,6 +86,14 @@
         </Style.Triggers>
     </Style>
 
+    <!-- Per-GPO script-search occurrence button, deliberately distinct
+         from the older cross-GPO identical-file copy counter. -->
+    <Style x:Key="UiScriptMatchesButton" TargetType="{x:Type Button}"
+           BasedOn="{StaticResource UiScriptCopiesButton}">
+        <Setter Property="MinWidth" Value="105"/>
+        <Setter Property="ToolTip" Value="Show all matching lines and open a chosen line in this one physical GPO script."/>
+    </Style>
+
     <Style x:Key="UiPendingDiagnosticsButton" TargetType="{x:Type Button}"
            BasedOn="{StaticResource {x:Type Button}}">
         <Setter Property="Background" Value="{StaticResource UiPartialRowBrush}"/>
