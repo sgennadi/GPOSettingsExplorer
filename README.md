@@ -20,7 +20,7 @@ Current stable release: **v2.0.3**.
 
 **[Download Preview 19](https://github.com/sgennadi/GPOSettingsExplorer/releases/tag/v2.1.0-preview.19)** (available after the Windows build and release workflow succeeds).
 
-**Install on exit** now launches the update helper when the main window closes. The GitHub release asset's SHA-256 digest is checked before the helper starts and checked again after the original process exits, before extracting the archive. An altered ZIP or missing digest blocks installation. Existing backup, startup health acknowledgment and rollback are retained.
+**Install on exit** now stages the update only after the main window has actually closed, rather than at the earlier cancelable Closing event. The GitHub release asset's SHA-256 digest is checked before the helper starts and checked again after the original process exits, before extracting the archive. An altered ZIP or missing digest blocks installation. Existing backup, startup health acknowledgment and rollback are retained.
 
 Stable version tags correctly outrank previews sharing the same base version number. The preview update channel remains separate from stable releases. Test restart and rollback on a nonproduction Windows domain controller before production use.
 
