@@ -813,6 +813,32 @@ public partial class MainWindow : Window
         _indexCancellation?.Cancel();
         _mmcInventoryCancellation?.Cancel();
         _realSourceCancellation?.Cancel();
+
+        // Install on exit is scheduled, not executed, at the button click.
+        // Start the verified helper only when the window actually closes.
+        // It waits for this process to exit before replacing binaries.
+        var pendingPackage = _pendingUpdatePackage;
+        var pendingDigest = _pendingUpdateDigest;
+        _pendingUpdatePackage = null;
+        _pendingUpdateDigest = null;
+        if (!string.IsNullOrWhiteSpace(pendingPackage))
+        {
+            try
+            {
+                UpdateService.StageInstallerAndRestart(
+                    pendingPackage, pendingDigest ?? string.Empty);
+            }
+            catch (Exception ex)
+            {
+                CrashLogService.Write("Stage Install on exit", ex);
+                MessageBox.Show(
+                    "The scheduled update was not started. Your current installation remains unchanged.\n\n" +
+                    ex.Message,
+                    "GPO Settings Explorer Update", MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+        }
+
         base.OnClosed(e);
     }
 }

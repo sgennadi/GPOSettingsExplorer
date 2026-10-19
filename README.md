@@ -16,6 +16,14 @@ Download the latest portable build from:
 
 Current stable release: **v2.0.3**.
 
+## Preview 19: Reliable portable updates
+
+**[Download Preview 19](https://github.com/sgennadi/GPOSettingsExplorer/releases/tag/v2.1.0-preview.19)** (available after the Windows build and release workflow succeeds).
+
+**Install on exit** now launches the update helper when the main window closes. The GitHub release asset's SHA-256 digest is checked before the helper starts and checked again after the original process exits, before extracting the archive. An altered ZIP or missing digest blocks installation. Existing backup, startup health acknowledgment and rollback are retained.
+
+Stable version tags correctly outrank previews sharing the same base version number. The preview update channel remains separate from stable releases. Test restart and rollback on a nonproduction Windows domain controller before production use.
+
 ## Preview 18: One cached policy map for every GPO
 
 **[Download Preview 18](https://github.com/sgennadi/GPOSettingsExplorer/releases/tag/v2.1.0-preview.18)** (portable Windows x64 and ARM64).

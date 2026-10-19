@@ -23,6 +23,7 @@ public partial class MainWindow
         new();
 
     private string? _pendingUpdatePackage;
+    private string? _pendingUpdateDigest;
 
 
     private void Connection_Click(
@@ -716,8 +717,8 @@ public partial class MainWindow
 
             UpdateButton.ToolTip =
                 automatic
-                    ? $"A newer version is available. Current: {update.CurrentVersion}; latest: {update.LatestVersion}. Click to review and install."
-                    : $"Current: {update.CurrentVersion}; latest: {update.LatestVersion}.";
+                    ? $"A newer version is available. Current: {update.CurrentVersionLabel}; latest: {update.LatestVersion}. Click to review and install."
+                    : $"Current: {update.CurrentVersionLabel}; latest: {update.LatestVersion}.";
 
             if (automatic)
             {
@@ -732,7 +733,7 @@ public partial class MainWindow
             "Up to date";
 
         UpdateButton.ToolTip =
-            $"GPO Settings Explorer {update.CurrentVersion} is current. Last checked: {DateTime.Now:g}.";
+            $"GPO Settings Explorer {update.CurrentVersionLabel} is current. Last checked: {DateTime.Now:g}.";
     }
 
     private async void CheckUpdates_Click(
@@ -776,7 +777,7 @@ public partial class MainWindow
             {
                 MessageBox.Show(
                     this,
-                    $"GPO Settings Explorer {update.CurrentVersion} is the latest release.",
+                    $"GPO Settings Explorer {update.CurrentVersionLabel} is the latest release.",
                     "Check for Updates",
                     MessageBoxButton.OK,
                     MessageBoxImage.Information);
@@ -831,6 +832,7 @@ public partial class MainWindow
             {
                 _pendingUpdatePackage =
                     package;
+                _pendingUpdateDigest = update.Asset?.Digest;
 
                 UpdateButton.Content =
                     $"Install {update.TagName} on exit";
@@ -854,9 +856,11 @@ public partial class MainWindow
                 "The application will restart after the staged update is installed.";
 
             UpdateService.StageInstallerAndRestart(
-                package);
+                package, update.Asset?.Digest ?? string.Empty);
 
             _pendingUpdatePackage =
+                null;
+            _pendingUpdateDigest =
                 null;
 
             Application.Current.Shutdown();

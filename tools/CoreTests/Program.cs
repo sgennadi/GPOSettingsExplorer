@@ -22,6 +22,8 @@ var tests = new (string Name, Action Body)[]
     ("GPP XML cache refreshes after file change", TestGppXmlCache),
     ("Script inventory cache invalidates on GPO modification", TestScriptCache),
     ("Automatic update checks respect 24-hour and retry windows", TestUpdateCheckSchedule),
+    ("Release version order ranks stable above same-version preview", TestReleaseTagPrecedence),
+    ("Downloaded update digest is pinned and verified again before install", TestUpdatePackageDigestVerification),
     ("Diagnostic queue never removes unsent logs, archives only after confirmation", TestDiagnosticQueue),
     ("Public diagnostic reports redact identifiers and omit raw logs by default", TestGitHubDiagnosticsPrivacy),
     ("Blocked GitHub socket is treated as expected connectivity failure", TestBlockedUpdateConnectivity),
@@ -129,6 +131,59 @@ foreach (var failure in failures)
 }
 
 return 1;
+
+static void TestReleaseTagPrecedence()
+{
+    Assert(UpdateService.IsNewerReleaseTag("v2.1.0-preview.19", "2.1.0-preview.18"),
+        "Newer preview revisions must be offered on the preview channel.");
+    Assert(!UpdateService.IsNewerReleaseTag("v2.1.0-preview.18", "2.1.0-preview.19"),
+        "Older previews must never be offered as updates.");
+    Assert(UpdateService.IsNewerReleaseTag("v2.1.0", "2.1.0-preview.19"),
+        "Stable must outrank prerelease with the same base version.");
+    Assert(!UpdateService.IsNewerReleaseTag("v2.1.0-preview.19", "2.1.0"),
+        "Prerelease must not downgrade an equal-version stable install.");
+    Assert(UpdateService.IsNewerReleaseTag("v2.2.0-preview.1", "v2.1.0"),
+        "A newer base release outranks an older stable version.");
+    Assert(!UpdateService.IsNewerReleaseTag("v2.1.0-beta.1", "v2.1.0"),
+        "Unsupported release suffixes must fail closed.");
+    Assert(!UpdateService.IsNewerReleaseTag("", "v2.1.0"),
+        "An empty release tag must not become an update.");
+
+    var stable = new UpdateInfo(new Version(2, 1, 0, 0),
+        new Version(2, 1, 0, 19), "v2.1.0-preview.19",
+        "", "", null, null) { CurrentTagName = "2.1.0" };
+    Assert(!stable.IsUpdateAvailable,
+        "UpdateInfo must not call same-base previews upgrades over stable.");
+}
+
+static void TestUpdatePackageDigestVerification()
+{
+    var package = Path.Combine(Path.GetTempPath(),
+        "GPOSE-update-hash-" + Guid.NewGuid().ToString("N") + ".zip");
+    try
+    {
+        File.WriteAllBytes(package, new byte[] { 1, 2, 3, 4, 5 });
+        var hash = "sha256:" +
+            Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
+                File.ReadAllBytes(package))).ToLowerInvariant();
+
+        UpdateService.VerifyDownloadedPackage(package, hash);
+        var badDigestRejected = false;
+        try { UpdateService.VerifyDownloadedPackage(package, "sha256:wrong"); }
+        catch (InvalidOperationException) { badDigestRejected = true; }
+        Assert(badDigestRejected, "Malformed digest must block installation.");
+
+        File.WriteAllBytes(package, new byte[] { 1, 2, 3, 4, 6 });
+        var tamperingRejected = false;
+        try { UpdateService.VerifyDownloadedPackage(package, hash); }
+        catch (InvalidOperationException) { tamperingRejected = true; }
+        Assert(tamperingRejected, "Archive changed after download must not install.");
+    }
+    finally
+    {
+        try { File.Delete(package); } catch { }
+    }
+}
 
 static void TestDiagnosticQueue()
 {

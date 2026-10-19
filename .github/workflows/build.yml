@@ -150,6 +150,12 @@ jobs:
           $notes = @'
           GPO Settings Explorer $projectVersion - TEST PREVIEW
 
+          Preview 19 fixes deferred Install on exit, verifies the downloaded
+          GitHub release SHA-256 again at staging and in the external
+          updater after the parent process exits, and rejects changed ZIPs.
+          Stable releases rank above previews of the same base version.
+          Existing rollback safeguards remain; validate on a nonproduction DC.
+
           Preview 18 reuses one cached domain ADMX schema index and field-row
           collection across GPO selections. The default Policy map removes
           duplicate GPMC summary rows while preserving zero-element toggles,
