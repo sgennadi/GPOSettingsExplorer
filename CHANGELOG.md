@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.1.0-preview.19 — 2026-10-19
+
+- **Install on exit lifecycle:** The previously existing deferred update path ran in WPF **Closing**, before cancellation was impossible. Move it into **OnClosed**, after the close is committed; preserve workspace persistence in Closing, and prevent duplicate installer launches. The helper still waits for the original process before replacing portable binaries. Failed staging reports an error without modifying the installation.
+- **Pinned update integrity:** The expected GitHub release-asset SHA-256 is passed directly to the update helper and verified both at staging and after the original process exits, before extraction. Missing or altered digests block installation.
+- **Release ordering:** Stable releases rank above preview builds of the same base version. Preview revisions still identify newer preview builds; malformed tag suffixes cannot become upgrades.
+- **All Settings filter fix:** With the default Policy map selected, the explicit **Configured only** filter now reveals actual GPMC configured records (including ADMX policies with input fields) rather than accidentally hiding them under template fields. **MMC Not Configured** and **Stored source values** likewise show their corresponding evidence without claiming effective client state.
+- **Regression tests:** Add stable/preview ordering, SHA-256 format, mutation and All Settings explicit-filter checks. Remove one duplicate Advanced Audit filter branch.
+- **Validation:** Windows x64/ARM64 CI and CodeQL are required; on-DC installation, updater restart, rollback and 200% DPI layout still require nonproduction smoke testing.
+
 ## 2.1.0-preview.18 — 2026-10-18
 
 - **Reusable schema index:** Parse and index ADMX policies once per immutable catalog snapshot; reuse scoped registry identity lookups and field rows when switching between GPOs. Refreshing the ADMX snapshot invalidates the old map automatically.

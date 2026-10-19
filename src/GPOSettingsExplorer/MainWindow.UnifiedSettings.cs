@@ -192,7 +192,8 @@ public partial class MainWindow
         // One field per ADMX element in the primary view. Legacy GPMC
         // summaries remain available under All sources when needed.
         if (source == "Policy map" &&
-            !UnifiedSettingsCatalogService.IsPrimaryMapRow(row))
+            !UnifiedSettingsCatalogService.IsPrimaryMapRow(
+                row, UnifiedStateCombo?.SelectedItem as string))
             return false;
 
         if (source == "Configured (GPMC)" &&

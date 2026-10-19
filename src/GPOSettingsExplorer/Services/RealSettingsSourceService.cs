@@ -63,8 +63,6 @@ public sealed class RealSettingsSourceService
             sources = sources.Where(source => source.Kind == "Security").ToArray();
         else if (auditOnly)
             sources = sources.Where(source => source.Kind == "AdvancedAudit").ToArray();
-        else if (auditOnly)
-            sources = sources.Where(source => source.Kind == "AdvancedAudit").ToArray();
 
         var rows = new List<RealSettingRecord>();
         var files = new List<RealSettingsFileEvidence>();
