@@ -1105,6 +1105,28 @@ static void TestUniversalPolicyMap()
     Assert(joined.Rows.Any(row => row.Configured == settingA),
         "The underlying GPMC source row must remain available for audit.");
 
+    // Explicit evidence filters must not be silently suppressed by the
+    // default de-duplicated field map. These were empty before Preview 19.
+    var configuredRow = joined.Rows.Single(row => row.Configured == settingA);
+    Assert(UnifiedSettingsCatalogService.IsPrimaryMapRow(
+        configuredRow, "Configured only") &&
+        !UnifiedSettingsCatalogService.IsPrimaryMapRow(
+            fields[0], "Configured only"),
+        "Configured-only in Policy map must expose GPMC values even when the ADMX policy has fields.");
+    Assert(UnifiedSettingsCatalogService.IsPrimaryMapRow(
+        new UnifiedSettingInfo
+        {
+            Kind = "Stored source", StoredSource = new RealSettingRecord()
+        }, "Stored source values"),
+        "Policy map stored-source filter must not hide every read-only source row.");
+    Assert(UnifiedSettingsCatalogService.IsPrimaryMapRow(
+        new UnifiedSettingInfo
+        {
+            Kind = "MMC observed", State = "Not Configured (MMC)",
+            Mmc = new MmcInventoryEntry()
+        }, "MMC Not Configured"),
+        "Policy map MMC filter must not suppress matched Administrative Templates rows.");
+
     // A new ADMX catalog must never inherit the old map's identities.
     var refreshedSchema = new[] { duplicateLabel };
     Assert(UnifiedSettingsCatalogService.ResolveDefinition(

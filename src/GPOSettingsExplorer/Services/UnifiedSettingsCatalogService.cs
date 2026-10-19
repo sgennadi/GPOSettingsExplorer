@@ -328,8 +328,23 @@ public static class UnifiedSettingsCatalogService
     /// GPMC settings, and unmapped MMC rows remain visible. The full source
     /// catalog is retained under All sources for audits and troubleshooting.
     /// </summary>
-    public static bool IsPrimaryMapRow(UnifiedSettingInfo row) =>
-        row.Kind switch
+    public static bool IsPrimaryMapRow(
+        UnifiedSettingInfo row, string? stateFilter = null)
+    {
+        // An explicit state filter takes precedence over the de-duplicated
+        // schema map. Otherwise the default "Policy map" + "Configured only"
+        // intersection hides ALL configured ADMX policies with input fields,
+        // and "Stored source values" always appears empty.
+        if (stateFilter == "Configured only")
+            return row.Kind == "Configured" && !row.IsTechnicalDetail;
+        if (stateFilter == "MMC Not Configured")
+            return row.Mmc is not null &&
+                row.State.Equals("Not Configured (MMC)",
+                    StringComparison.OrdinalIgnoreCase);
+        if (stateFilter == "Stored source values")
+            return row.StoredSource is not null;
+
+        return row.Kind switch
         {
             "ADMX field" => true,
             "ADMX template" => row.Admx is { Elements.Count: 0 },
@@ -339,6 +354,7 @@ public static class UnifiedSettingsCatalogService
                 row.Admx.Elements.Count == 0,
             _ => false
         };
+    }
 
     // Shared resolver used by All Settings, Global Search and the legacy
     // GPMC grid. A non-ADMX extension (Security, GPP Registry, etc.) must
