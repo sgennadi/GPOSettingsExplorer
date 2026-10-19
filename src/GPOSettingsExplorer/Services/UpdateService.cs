@@ -24,9 +24,19 @@ public sealed record UpdateInfo(
     DateTimeOffset? PublishedAt,
     UpdateAsset? Asset)
 {
+    // System.Version does not encode stable vs prerelease precedence.
+    public string CurrentTagName { get; init; } = string.Empty;
+
+    public string CurrentVersionLabel =>
+        string.IsNullOrWhiteSpace(CurrentTagName)
+            ? "v" + CurrentVersion
+            : CurrentTagName.StartsWith("v", StringComparison.OrdinalIgnoreCase)
+                ? CurrentTagName : "v" + CurrentTagName;
+
     public bool IsUpdateAvailable =>
-        LatestVersion >
-        CurrentVersion;
+        string.IsNullOrWhiteSpace(CurrentTagName)
+            ? LatestVersion > CurrentVersion
+            : UpdateService.IsNewerReleaseTag(TagName, CurrentTagName);
 }
 
 public sealed class UpdateService
@@ -275,7 +285,10 @@ public sealed class UpdateService
             releaseUrl,
             releaseNotes,
             publishedAt,
-            asset);
+            asset)
+        {
+            CurrentTagName = currentTag
+        };
     }
 
     public async Task<string> DownloadAsync(
@@ -418,16 +431,37 @@ public sealed class UpdateService
         return destination;
     }
 
-    public static void StageInstallerAndRestart(
-        string packagePath)
+    /// <summary>
+    /// Verify the pinned GitHub release-asset SHA-256 at both handoff and
+    /// install time. Do not trust a mutable digest sidecar next to the ZIP.
+    /// </summary>
+    public static void VerifyDownloadedPackage(
+        string packagePath, string expectedDigest)
     {
-        if (!File.Exists(
-                packagePath))
-        {
+        if (string.IsNullOrWhiteSpace(packagePath) || !File.Exists(packagePath))
             throw new FileNotFoundException(
-                "The downloaded update package was not found.",
-                packagePath);
-        }
+                "The downloaded update package was not found.", packagePath);
+
+        if (string.IsNullOrWhiteSpace(expectedDigest) ||
+            !expectedDigest.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase) ||
+            expectedDigest.Length != 71 ||
+            !expectedDigest[7..].All(Uri.IsHexDigit))
+            throw new InvalidOperationException(
+                "Missing or malformed pinned SHA-256 digest. Installation is blocked.");
+
+        using var stream = new FileStream(packagePath, FileMode.Open,
+            FileAccess.Read, FileShare.Read, 128 * 1024, FileOptions.SequentialScan);
+        var actualHash = SHA256.HashData(stream);
+        var expectedHash = Convert.FromHexString(expectedDigest[7..]);
+        if (!CryptographicOperations.FixedTimeEquals(actualHash, expectedHash))
+            throw new InvalidOperationException(
+                "Update ZIP SHA-256 differs from the GitHub release digest. Installation is blocked.");
+    }
+
+    public static void StageInstallerAndRestart(
+        string packagePath, string expectedDigest)
+    {
+        VerifyDownloadedPackage(packagePath, expectedDigest);
 
         var executable =
             Environment.ProcessPath
@@ -465,7 +499,8 @@ public sealed class UpdateService
                 Quote(
                     targetExecutable),
                 Environment.ProcessId.ToString(
-                    System.Globalization.CultureInfo.InvariantCulture));
+                    System.Globalization.CultureInfo.InvariantCulture),
+                Quote(expectedDigest));
 
         Process.Start(
             new ProcessStartInfo
@@ -646,6 +681,34 @@ public sealed class UpdateService
             StringComparison.Ordinal) +
         "\"";
 
+    /// <summary>
+    /// Stable outranks preview at an equal base version; preview revisions
+    /// are ordered within their own channel. Unknown tags fail closed.
+    /// </summary>
+    public static bool IsNewerReleaseTag(string candidateTag, string installedTag)
+    {
+        if (string.IsNullOrWhiteSpace(candidateTag) ||
+            string.IsNullOrWhiteSpace(installedTag))
+            return false;
+
+        var candidate = ParseVersion(candidateTag);
+        var installed = ParseVersion(installedTag);
+        if (candidate.Major == 0 || installed.Major == 0)
+            return false;
+
+        var baseComparison = new Version(candidate.Major, candidate.Minor, candidate.Build)
+            .CompareTo(new Version(installed.Major, installed.Minor, installed.Build));
+        if (baseComparison != 0)
+            return baseComparison > 0;
+
+        var candidatePreview = candidateTag.Contains("-preview.", StringComparison.OrdinalIgnoreCase);
+        var installedPreview = installedTag.Contains("-preview.", StringComparison.OrdinalIgnoreCase);
+        if (candidatePreview != installedPreview)
+            return !candidatePreview && installedPreview;
+
+        return candidate.Revision > installed.Revision;
+    }
+
     private static Version ParseVersion(string value)
     {
         var text = value.Trim().TrimStart('v', 'V');
@@ -720,7 +783,8 @@ public static class UpdateInstaller
         IReadOnlyList<string> args,
         int index)
     {
-        if (index + 4 >=
+        // Never accept a legacy unpinned update invocation.
+        if (index + 5 >=
             args.Count)
         {
             return false;
@@ -739,6 +803,8 @@ public static class UpdateInstaller
             int.TryParse(
                 args[index + 4],
                 out var parentProcessId);
+
+        var expectedDigest = args[index + 5];
 
         var staging =
             Path.Combine(
@@ -760,6 +826,10 @@ public static class UpdateInstaller
         {
             WaitForParent(
                 parentProcessId);
+
+            // The archive can change while the user is working or while the
+            // helper waits for the original process. Verify after that wait.
+            UpdateService.VerifyDownloadedPackage(package, expectedDigest);
 
             Directory.CreateDirectory(
                 staging);
