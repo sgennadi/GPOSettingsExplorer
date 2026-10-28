@@ -98,7 +98,7 @@ jobs:
           7z a -tzip artifacts\GPOSettingsExplorer-win-arm64-portable.zip .\artifacts\win-arm64\*
 
       - name: Upload portable builds
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: GPOSettingsExplorer-portable
           path: |
@@ -251,7 +251,7 @@ jobs:
       attestations: write
     steps:
       - name: Download release artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: GPOSettingsExplorer-portable
           path: artifacts
