@@ -77,7 +77,7 @@ public sealed class UpdateAvailableWindow : Window
             new TextBlock
             {
                 Text =
-                    $"Current: {update.CurrentVersion}    Latest: {update.LatestVersion}" +
+                    $"Current: {update.CurrentVersionLabel}    Latest: {update.TagName}" +
                     (update.PublishedAt is null
                         ? string.Empty
                         : $"    Published: {update.PublishedAt.Value.LocalDateTime:g}"),

@@ -24,16 +24,26 @@ public sealed record UpdateInfo(
     DateTimeOffset? PublishedAt,
     UpdateAsset? Asset)
 {
+    // System.Version does not encode stable vs prerelease precedence.
+    public string CurrentTagName { get; init; } = string.Empty;
+
+    public string CurrentVersionLabel =>
+        string.IsNullOrWhiteSpace(CurrentTagName)
+            ? "v" + CurrentVersion
+            : CurrentTagName.StartsWith("v", StringComparison.OrdinalIgnoreCase)
+                ? CurrentTagName : "v" + CurrentTagName;
+
     public bool IsUpdateAvailable =>
-        LatestVersion >
-        CurrentVersion;
+        string.IsNullOrWhiteSpace(CurrentTagName)
+            ? LatestVersion > CurrentVersion
+            : UpdateService.IsNewerReleaseTag(TagName, CurrentTagName);
 }
 
 public sealed class UpdateService
 {
     private static readonly Uri LatestReleaseUri =
         new(
-            "https://api.github.com/repos/sgennadi/GPOSettingsExplorer/releases/latest");
+            "https://api.github.com/repos/sgennadi/GPOSettingsExplorer/releases?per_page=30");
 
     private readonly HttpClient _client;
 
@@ -138,8 +148,31 @@ public sealed class UpdateService
                 cancellationToken:
                     cancellationToken);
 
-        var root =
-            document.RootElement;
+        var releases = document.RootElement;
+        if (releases.ValueKind != JsonValueKind.Array)
+            throw new InvalidOperationException("Invalid GitHub releases response.");
+        var currentTag = Assembly.GetExecutingAssembly()
+            .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
+            .InformationalVersion?.Split('+')[0] ?? string.Empty;
+        var previewChannel = currentTag.Contains("-preview.", StringComparison.OrdinalIgnoreCase);
+        JsonElement root = default;
+        Version best = new(0, 0, 0, 0);
+        foreach (var candidate in releases.EnumerateArray())
+        {
+            if (candidate.TryGetProperty("draft", out var draft) &&
+                draft.ValueKind == JsonValueKind.True)
+                continue;
+            var candidateTag = ReadString(candidate, "tag_name");
+            if (candidateTag.Contains("-preview.", StringComparison.OrdinalIgnoreCase) != previewChannel)
+                continue;
+            var version = ParseVersion(candidateTag);
+            if (version <= best)
+                continue;
+            best = version;
+            root = candidate;
+        }
+        if (root.ValueKind == JsonValueKind.Undefined)
+            throw new InvalidOperationException("No release exists for the selected update channel.");
 
         var tag =
             ReadString(
@@ -176,14 +209,10 @@ public sealed class UpdateService
             ParseVersion(
                 tag);
 
-        var current =
-            Assembly.GetExecutingAssembly()
-                .GetName()
-                .Version
-            ?? new Version(
-                0,
-                0,
-                0);
+        var current = ParseVersion(currentTag);
+        if (current.Major == 0)
+            current = NormalizeVersion(Assembly.GetExecutingAssembly()
+                .GetName().Version ?? new Version(0, 0, 0));
 
         var expectedAsset =
             RuntimeInformation.ProcessArchitecture ==
@@ -256,7 +285,10 @@ public sealed class UpdateService
             releaseUrl,
             releaseNotes,
             publishedAt,
-            asset);
+            asset)
+        {
+            CurrentTagName = currentTag
+        };
     }
 
     public async Task<string> DownloadAsync(
@@ -286,9 +318,19 @@ public sealed class UpdateService
                 directory,
                 update.Asset.Name);
 
+        if (!Uri.TryCreate(update.Asset.DownloadUrl, UriKind.Absolute, out var assetUri) ||
+            assetUri.Scheme != Uri.UriSchemeHttps ||
+            !assetUri.Host.Equals("github.com", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("Update asset must be downloaded from GitHub over HTTPS.");
+
+        if (!update.Asset.Digest.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase) ||
+            update.Asset.Digest.Length != 71 ||
+            !update.Asset.Digest[7..].All(Uri.IsHexDigit))
+            throw new InvalidOperationException("GitHub release asset is missing a valid SHA-256 digest. Automatic installation is blocked.");
+
         using var response =
             await _client.GetAsync(
-                update.Asset.DownloadUrl,
+                assetUri,
                 HttpCompletionOption.ResponseHeadersRead,
                 cancellationToken);
 
@@ -364,9 +406,7 @@ public sealed class UpdateService
                     hash.GetHashAndReset())
                 .ToLowerInvariant();
 
-        if (!string.IsNullOrWhiteSpace(
-                update.Asset.Digest) &&
-            !computedDigest.Equals(
+        if (!computedDigest.Equals(
                 update.Asset.Digest.Trim(),
                 StringComparison.OrdinalIgnoreCase))
         {
@@ -391,16 +431,37 @@ public sealed class UpdateService
         return destination;
     }
 
-    public static void StageInstallerAndRestart(
-        string packagePath)
+    /// <summary>
+    /// Verify the pinned GitHub release-asset SHA-256 at both handoff and
+    /// install time. Do not trust a mutable digest sidecar next to the ZIP.
+    /// </summary>
+    public static void VerifyDownloadedPackage(
+        string packagePath, string expectedDigest)
     {
-        if (!File.Exists(
-                packagePath))
-        {
+        if (string.IsNullOrWhiteSpace(packagePath) || !File.Exists(packagePath))
             throw new FileNotFoundException(
-                "The downloaded update package was not found.",
-                packagePath);
-        }
+                "The downloaded update package was not found.", packagePath);
+
+        if (string.IsNullOrWhiteSpace(expectedDigest) ||
+            !expectedDigest.StartsWith("sha256:", StringComparison.OrdinalIgnoreCase) ||
+            expectedDigest.Length != 71 ||
+            !expectedDigest[7..].All(Uri.IsHexDigit))
+            throw new InvalidOperationException(
+                "Missing or malformed pinned SHA-256 digest. Installation is blocked.");
+
+        using var stream = new FileStream(packagePath, FileMode.Open,
+            FileAccess.Read, FileShare.Read, 128 * 1024, FileOptions.SequentialScan);
+        var actualHash = SHA256.HashData(stream);
+        var expectedHash = Convert.FromHexString(expectedDigest[7..]);
+        if (!CryptographicOperations.FixedTimeEquals(actualHash, expectedHash))
+            throw new InvalidOperationException(
+                "Update ZIP SHA-256 differs from the GitHub release digest. Installation is blocked.");
+    }
+
+    public static void StageInstallerAndRestart(
+        string packagePath, string expectedDigest)
+    {
+        VerifyDownloadedPackage(packagePath, expectedDigest);
 
         var executable =
             Environment.ProcessPath
@@ -438,7 +499,8 @@ public sealed class UpdateService
                 Quote(
                     targetExecutable),
                 Environment.ProcessId.ToString(
-                    System.Globalization.CultureInfo.InvariantCulture));
+                    System.Globalization.CultureInfo.InvariantCulture),
+                Quote(expectedDigest));
 
         Process.Start(
             new ProcessStartInfo
@@ -589,15 +651,13 @@ public sealed class UpdateService
                 '\\',
                 '/');
 
-        return normalized.StartsWith(
-                   "/",
-                   StringComparison.Ordinal) ||
-               normalized.Contains(
-                   "../",
-                   StringComparison.Ordinal) ||
-               normalized.Contains(
-                   ":",
-                   StringComparison.Ordinal);
+        return string.IsNullOrWhiteSpace(normalized) ||
+               normalized.StartsWith("/", StringComparison.Ordinal) ||
+               normalized.StartsWith("../", StringComparison.Ordinal) ||
+               normalized.Contains("/../", StringComparison.Ordinal) ||
+               normalized.EndsWith("/..", StringComparison.Ordinal) ||
+               normalized.StartsWith("./", StringComparison.Ordinal) ||
+               normalized.Contains(":", StringComparison.Ordinal);
     }
 
     private static string ReadString(
@@ -621,44 +681,56 @@ public sealed class UpdateService
             StringComparison.Ordinal) +
         "\"";
 
-    private static Version ParseVersion(
-        string value)
+    /// <summary>
+    /// Stable outranks preview at an equal base version; preview revisions
+    /// are ordered within their own channel. Unknown tags fail closed.
+    /// </summary>
+    public static bool IsNewerReleaseTag(string candidateTag, string installedTag)
     {
-        var text =
-            value.Trim();
+        if (string.IsNullOrWhiteSpace(candidateTag) ||
+            string.IsNullOrWhiteSpace(installedTag))
+            return false;
 
-        if (text.StartsWith(
-                'v') ||
-            text.StartsWith(
-                'V'))
-        {
-            text =
-                text[1..];
-        }
+        var candidate = ParseVersion(candidateTag);
+        var installed = ParseVersion(installedTag);
+        if (candidate.Major == 0 || installed.Major == 0)
+            return false;
 
-        return Version.TryParse(
-                   text,
-                   out var version)
-            ? NormalizeVersion(
-                version)
-            : new Version(
-                0,
-                0,
-                0);
+        var baseComparison = new Version(candidate.Major, candidate.Minor, candidate.Build)
+            .CompareTo(new Version(installed.Major, installed.Minor, installed.Build));
+        if (baseComparison != 0)
+            return baseComparison > 0;
+
+        var candidatePreview = candidateTag.Contains("-preview.", StringComparison.OrdinalIgnoreCase);
+        var installedPreview = installedTag.Contains("-preview.", StringComparison.OrdinalIgnoreCase);
+        if (candidatePreview != installedPreview)
+            return !candidatePreview && installedPreview;
+
+        return candidate.Revision > installed.Revision;
     }
 
-    private static Version NormalizeVersion(
-        Version version) =>
-        new(
-            Math.Max(
-                0,
-                version.Major),
-            Math.Max(
-                0,
-                version.Minor),
-            Math.Max(
-                0,
-                version.Build));
+    private static Version ParseVersion(string value)
+    {
+        var text = value.Trim().TrimStart('v', 'V');
+        var previewIndex = text.IndexOf("-preview.", StringComparison.OrdinalIgnoreCase);
+        var revision = 0;
+        if (previewIndex >= 0)
+        {
+            if (!int.TryParse(text[(previewIndex + "-preview.".Length)..], out revision) || revision < 0)
+                return new Version(0, 0, 0, 0);
+            text = text[..previewIndex];
+        }
+        else if (text.Contains('-'))
+            return new Version(0, 0, 0, 0);
+        if (!Version.TryParse(text, out var version))
+            return new Version(0, 0, 0, 0);
+        return new Version(Math.Max(0, version.Major), Math.Max(0, version.Minor),
+            Math.Max(0, version.Build), previewIndex >= 0 ? revision : Math.Max(0, version.Revision));
+    }
+
+    private static Version NormalizeVersion(Version version) =>
+        new(Math.Max(0, version.Major), Math.Max(0, version.Minor),
+            Math.Max(0, version.Build), Math.Max(0, version.Revision));
 
     private static string RollbackRoot =>
         Path.Combine(
@@ -711,7 +783,8 @@ public static class UpdateInstaller
         IReadOnlyList<string> args,
         int index)
     {
-        if (index + 4 >=
+        // Never accept a legacy unpinned update invocation.
+        if (index + 5 >=
             args.Count)
         {
             return false;
@@ -730,6 +803,8 @@ public static class UpdateInstaller
             int.TryParse(
                 args[index + 4],
                 out var parentProcessId);
+
+        var expectedDigest = args[index + 5];
 
         var staging =
             Path.Combine(
@@ -751,6 +826,10 @@ public static class UpdateInstaller
         {
             WaitForParent(
                 parentProcessId);
+
+            // The archive can change while the user is working or while the
+            // helper waits for the original process. Verify after that wait.
+            UpdateService.VerifyDownloadedPackage(package, expectedDigest);
 
             Directory.CreateDirectory(
                 staging);
@@ -869,29 +948,62 @@ public static class UpdateInstaller
                 throw;
             }
 
-            CleanupOldRollbacks(
-                Path.GetDirectoryName(
-                    rollback)!,
-                keep:
-                    3);
+            // Every failure after CopyTree (including Process.Start failure)
+            // must restore the original backed-up files, not only timeout.
+            var healthMarker = Path.Combine(
+                Path.GetTempPath(),
+                "GPOSettingsExplorer-Health-" + Guid.NewGuid().ToString("N") + ".ok");
+            try
+            {
+                CleanupOldRollbacks(Path.GetDirectoryName(rollback)!, keep: 3);
 
-            var executable =
-                Path.Combine(
-                    targetDirectory,
-                    executableName);
-
-            Process.Start(
-                new ProcessStartInfo
+                var executable = Path.Combine(targetDirectory, executableName);
+                using var launched = Process.Start(new ProcessStartInfo
                 {
-                    FileName =
-                        executable,
-                    WorkingDirectory =
-                        targetDirectory,
-                    Arguments =
-                        "--updated",
-                    UseShellExecute =
-                        true
-                });
+                    FileName = executable,
+                    WorkingDirectory = targetDirectory,
+                    Arguments = "--updated --update-health-marker \"" +
+                        healthMarker.Replace("\"", "\\\"") + "\"",
+                    UseShellExecute = true
+                }) ?? throw new InvalidOperationException(
+                    "The updated executable did not start.");
+
+                var healthy = false;
+                for (var attempt = 0; attempt < 60; attempt++)
+                {
+                    if (File.Exists(healthMarker))
+                    {
+                        healthy = !launched.HasExited;
+                        break;
+                    }
+                    if (launched.HasExited)
+                        break;
+                    System.Threading.Thread.Sleep(500);
+                }
+
+                if (!healthy)
+                {
+                    if (!launched.HasExited)
+                    {
+                        launched.Kill(entireProcessTree: true);
+                        if (!launched.WaitForExit(5000))
+                            throw new InvalidOperationException(
+                                "Updated application could not be stopped for rollback.");
+                    }
+                    throw new InvalidOperationException(
+                        "Updated application did not render a healthy WPF window " +
+                        "within 30 seconds. Rolling back the updated files.");
+                }
+            }
+            catch
+            {
+                RestoreRollback(rollback, manifest);
+                throw;
+            }
+            finally
+            {
+                try { File.Delete(healthMarker); } catch { }
+            }
         }
         catch (Exception ex)
         {

@@ -4,11 +4,14 @@ on:
   push:
     branches:
       - main
+      - feature/v2.1-discovery-evidence
+      - dev/preview13-merged-evidence
     tags:
       - "v*"
   pull_request:
     branches:
       - main
+      - feature/v2.1-discovery-evidence
   workflow_dispatch:
 
 permissions:
@@ -102,6 +105,113 @@ jobs:
             artifacts/GPOSettingsExplorer-win-x64-portable.zip
             artifacts/GPOSettingsExplorer-win-arm64-portable.zip
 
+      - name: Verify 2.1 preview EXE versions
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/feature/v2.1-discovery-evidence' || github.ref == 'refs/heads/dev/preview13-merged-evidence')
+        shell: pwsh
+        run: |
+          [xml]$project = Get-Content -LiteralPath 'src/GPOSettingsExplorer/GPOSettingsExplorer.csproj'
+          $projectVersion = [string]$project.Project.PropertyGroup.Version
+          if ($projectVersion -notmatch '^2\.1\.0-preview\.\d+$') {
+            throw "Unexpected preview version: $projectVersion"
+          }
+          foreach ($runtime in @('win-x64', 'win-arm64')) {
+            $exe = Join-Path (Join-Path $env:GITHUB_WORKSPACE "artifacts/$runtime") 'GPOSettingsExplorer.exe'
+            $info = (Get-Item -LiteralPath $exe).VersionInfo
+            if ($info.FileVersion -ne '2.1.0.0') {
+              throw "Wrong $runtime FileVersion: $($info.FileVersion)"
+            }
+            if (!$info.ProductVersion.StartsWith($projectVersion, [StringComparison]::OrdinalIgnoreCase)) {
+              throw "Wrong $runtime ProductVersion: $($info.ProductVersion)"
+            }
+            Write-Host "$runtime : FileVersion=$($info.FileVersion); ProductVersion=$($info.ProductVersion)"
+          }
+
+      - name: Create GitHub 2.1 Preview release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/feature/v2.1-discovery-evidence'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [xml]$project = Get-Content -LiteralPath 'src/GPOSettingsExplorer/GPOSettingsExplorer.csproj'
+          $projectVersion = [string]$project.Project.PropertyGroup.Version
+          if ($projectVersion -notmatch '^2\.1\.0-preview\.\d+$') {
+            throw "Unexpected preview version: $projectVersion"
+          }
+          $tag = "v$projectVersion"
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -eq 0) {
+            $existingTarget = gh release view $tag --json targetCommitish --jq '.targetCommitish'
+            if ($LASTEXITCODE -ne 0 -or $existingTarget.Trim() -ne $env:GITHUB_SHA) {
+              throw "Preview tag $tag already points to another build; never silently replace an existing EXE."
+            }
+            Write-Host "Matching preview release already exists: $tag"
+            exit 0
+          }
+          $notes = @'
+          GPO Settings Explorer $projectVersion - TEST PREVIEW
+
+          Preview 19 fixes deferred Install on exit, verifies the downloaded
+          GitHub release SHA-256 again at staging and in the external
+          updater after the parent process exits, and rejects changed ZIPs.
+          Stable releases rank above previews of the same base version.
+          Existing rollback safeguards remain; validate on a nonproduction DC.
+
+          Preview 18 reuses one cached domain ADMX schema index and field-row
+          collection across GPO selections. The default Policy map removes
+          duplicate GPMC summary rows while preserving zero-element toggles,
+          unmapped Security Settings and native MMC observations. Choose
+          All sources to inspect the complete original evidence.
+
+          Before direct editing, both UI paths require every registry target
+          of the selected policy to be unique across the current ADMX catalog;
+          ambiguous duplicate definitions, invalid scopes and unknown targets
+          fail closed. Expanded Windows CI regression tests cover these cases.
+          This preview is not production validated. Test on a nonproduction
+          domain controller before modifying live Group Policy objects.
+
+          Preview 17 extends the reusable ADMX policy map to EVERY individual
+          input field (text, numeric, list, enum and boolean), including fields
+          in policies that have already been configured elsewhere. The schema
+          is shared across GPOs and does not claim that a field is configured.
+          Search by ADMX policy ID, field ID, label, full registry key or value
+          name, then double-click to open and focus that exact field.
+          The selected GPO's current values are read only when the editor opens.
+
+          Configured GPMC rows are mapped by Computer/User scope and exact
+          registry key/value identity, never merely by a display label. A
+          duplicated ADMX field ID or registry target disables the generic
+          writer; stale policy maps must be refreshed before changes.
+          Duplicate legacy ADMX name matching has been removed.
+
+          All Settings now favors direct schema-backed editing for the selected
+          GPO, without repeatedly asking for the target GPO. Security Settings
+          and Group Policy Preferences never inherit an ADMX editor solely
+          from an identically named registry value or policy label.
+
+          The primary All Settings toolbar is more compact; optional diagnostic
+          and evidence tools are preserved under Advanced tools. Portable
+          update checks use the preview release channel and SHA-256 downloads.
+          Updates create rollback files and require a rendered WPF window to
+          acknowledge startup, otherwise the updater attempts restoration.
+
+          Existing manual, single-GPO MMC discovery and evidence checks remain
+          available but are NOT a verified universal automation interface for
+          every Windows or vendor snap-in. Unsupported extension fields are
+          guarded/read-only; missing GPMC index entries do not prove Not Configured.
+
+          This prerelease is for nonproduction verification; test native Windows
+          GPO editing, high-DPI layouts, updater installation and rollback on
+          your environment before deploying. Artifacts may be unsigned.
+
+          Download win-x64 for Intel/AMD Windows or win-arm64 for ARM64 Windows.
+          Extract the ZIP and run GPOSettingsExplorer.exe.
+          '@
+          $notes = $notes.Replace('$projectVersion', $projectVersion)
+          gh release create $tag 'artifacts/GPOSettingsExplorer-win-x64-portable.zip' 'artifacts/GPOSettingsExplorer-win-arm64-portable.zip' --target $env:GITHUB_SHA --title "GPO Settings Explorer $tag" --prerelease --notes $notes
+          if ($LASTEXITCODE -ne 0) {
+            throw "Creating or uploading GitHub 2.1 preview release failed."
+          }
+
       - name: Resolve release version
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         shell: cmd
@@ -119,6 +229,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          if not "%RELEASE_TAG:-=%"=="%RELEASE_TAG%" (
+            echo Development version detected. Stable release on main is intentionally skipped.
+            exit /b 0
+          )
           gh release view "%RELEASE_TAG%" >nul 2>nul
           if errorlevel 1 (
             gh release create "%RELEASE_TAG%" artifacts\GPOSettingsExplorer-win-x64-portable.zip artifacts\GPOSettingsExplorer-win-arm64-portable.zip --target "%GITHUB_SHA%" --generate-notes --title "%RELEASE_TAG%"

@@ -209,28 +209,10 @@ public partial class MainWindow
         object? sender,
         CancelEventArgs e)
     {
+        // Closing can still be canceled by the application. Save layout
+        // here, but only stage a pending update in OnClosed after the actual
+        // close is committed (MainWindow.xaml.cs).
         SaveWorkspaceState();
-
-        if (!string.IsNullOrWhiteSpace(
-                _pendingUpdatePackage))
-        {
-            try
-            {
-                UpdateService.StageInstallerAndRestart(
-                    _pendingUpdatePackage);
-
-                _pendingUpdatePackage =
-                    null;
-            }
-            catch (Exception ex)
-            {
-                ErrorDialog.Show(
-                    this,
-                    "Install Update",
-                    "The update could not be staged while closing.",
-                    ex);
-            }
-        }
     }
 
     private void SaveWorkspaceState()

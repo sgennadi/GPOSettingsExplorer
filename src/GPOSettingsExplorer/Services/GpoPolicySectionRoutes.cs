@@ -46,6 +46,18 @@ public static class GpoPolicySectionRoutes
             extension.Equals("Administrative Templates", StringComparison.OrdinalIgnoreCase))
             return new[] { scope, "Policies", "Administrative Templates" };
 
+        // Microsoft documents Software Restriction Policies under the
+        // corresponding User/Computer Windows Settings > Security Settings.
+        // This is a section route, not proof of a uniquely editable rule.
+        if (SoftwareRestrictionMmcRouteService.IsSoftwareRestriction(setting))
+            return SoftwareRestrictionMmcRouteService.EditorSection(setting);
+
+        // Group Policy Preferences is not Registry.pol / Administrative Templates.
+        // A known folder is a hint only until its native row is observed.
+        var preferences = GpoPreferencesMmcSections.Resolve(setting);
+        if (preferences.Count > 0)
+            return preferences;
+
         if (extension.Equals("SoftwareInstallationSettings", StringComparison.OrdinalIgnoreCase))
             return new[] { scope, "Policies", "Software Settings", "Software installation" };
 
@@ -60,6 +72,9 @@ public static class GpoPolicySectionRoutes
         {
             if (KerberosPolicyMetadataService.IsKnownKerberosSetting(setting))
                 return KerberosPolicyMetadataService.EditorSection;
+
+            if (GpoKnownAccountPolicyService.TryDescribe(setting, out var account))
+                return account.TreePath;
 
             var category = SecurityXmlEntryClassifier.InferLegacyCategory(setting) ??
                 setting.Category;

@@ -2,6 +2,7 @@ using GPOSettingsExplorer.Models;
 using GPOSettingsExplorer.Services;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Reflection;
 using System.Windows;
 using System.Windows.Data;
 using System.Windows.Input;
@@ -30,10 +31,22 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
-        // Take the version from the running assembly, never from a hard-coded caption.
-        var version = typeof(MainWindow).Assembly.GetName().Version;
+        // Show the actual running assembly's version and explicit prerelease
+        // marker. Never label a development build as a stable release.
+        var assembly = typeof(MainWindow).Assembly;
+        var version = assembly.GetName().Version;
+        var informational = assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+            ?.InformationalVersion ?? string.Empty;
+        var previewMatch = System.Text.RegularExpressions.Regex.Match(
+            informational, @"-preview\.([0-9]+)",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase |
+            System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+        var isPreview = informational.Contains("-preview", StringComparison.OrdinalIgnoreCase);
         Title = "GPO Settings Explorer" +
-                (version is null ? "" : $" v{version.ToString(3)}");
+                (version is null ? "" : $" v{version.ToString(3)}") +
+                (isPreview ? " Preview" +
+                    (previewMatch.Success ? " " + previewMatch.Groups[1].Value : "") :
+                    string.Empty);
 
         GpoGrid.ItemsSource = _gpos;
         SettingsGrid.ItemsSource = _settings;
@@ -59,6 +72,13 @@ public partial class MainWindow : Window
         ApplyStoredUpdateState();
 
         await RefreshAllAsync();
+
+        // Optional and per-user: refresh only new/modified GPMC XML records
+        // in the existing cache. Never launch MMC inventory for all GPOs
+        // during startup: it can open unsafe snap-ins on a production DC.
+        if (_autoGpmcIndexOnStartup && _domainContext is not null &&
+            _gpmService.IsAvailable && _gpos.Count > 0)
+            _ = EnsureSettingsIndexAsync(forceRebuild: false);
 
         StartDiagnosticQueueMonitor();
 
@@ -210,7 +230,29 @@ public partial class MainWindow : Window
 
     private void GpoGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
     {
-        OpenSelectedGpo();
+        // Browsing fields is the primary GPO action; the separate
+        // "Open editor" button still launches the native MMC editor.
+        OpenSelectedGpoFieldMap_Click(sender, e);
+    }
+
+    private void OpenSelectedGpoFieldMap_Click(object sender, RoutedEventArgs e)
+    {
+        if (_domainContext is null || GpoGrid.SelectedItem is not GpoInfo selected)
+            return;
+
+        MarkGpoRecent(selected.Id);
+        // Do not rescan ADMX for every GPO: the domain ADMX schema is shared.
+        // The selected GPO provides current values only when a field opens.
+        UnifiedGpoFilterCombo.SelectedItem = selected;
+        UnifiedAllGposCheckBox.IsChecked = false;
+        // Reset stale source/state filters so the requested map is visible.
+        UnifiedSourceCombo.SelectedIndex = 0;
+        UnifiedStateCombo.SelectedIndex = 0;
+        UnifiedSearchBox.Text = string.Empty;
+        MainTabs.SelectedItem = AllSettingsTab;
+        UnifiedSearchBox.Focus();
+        StatusText.Text = "Policy Map: " + selected.DisplayName +
+            " (ADMX schema shared; actual values are GPO-specific).";
     }
 
     private void SettingsGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
@@ -661,6 +703,9 @@ public partial class MainWindow : Window
     private void SettingsSearchBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
         => _settingsView.Refresh();
 
+    private void SettingsShowTechnicalCheckBox_Changed(
+        object sender, RoutedEventArgs e) => _settingsView?.Refresh();
+
     private void WmiSearchBox_TextChanged(object sender, System.Windows.Controls.TextChangedEventArgs e)
         => _wmiView.Refresh();
 
@@ -695,6 +740,13 @@ public partial class MainWindow : Window
         {
             return false;
         }
+
+        // The flat legacy index previously displayed MSI Applicability
+        // descriptors like independent editable policies. Retain those
+        // details only on explicit user request.
+        if (SecurityXmlEntryClassifier.IsTechnicalDetail(setting) &&
+            SettingsShowTechnicalCheckBox?.IsChecked != true)
+            return false;
 
         var search = SettingsSearchBox?.Text?.Trim();
         return string.IsNullOrWhiteSpace(search) ||
@@ -732,7 +784,11 @@ public partial class MainWindow : Window
     private void SetBusy(bool busy, string? message = null)
     {
         BusyProgress.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
-        Mouse.OverrideCursor = busy ? Cursors.Wait : null;
+        // Mouse.OverrideCursor is global across ALL WPF windows. A script
+        // preview displayed during an in-progress backup was still clickable
+        // but misleadingly showed the wait cursor. Busy belongs to MAIN only:
+        // owned confirmation dialogs must retain the regular pointer.
+        Cursor = busy ? Cursors.Wait : null;
 
         if (!string.IsNullOrWhiteSpace(message))
         {
@@ -757,6 +813,32 @@ public partial class MainWindow : Window
         _indexCancellation?.Cancel();
         _mmcInventoryCancellation?.Cancel();
         _realSourceCancellation?.Cancel();
+
+        // Install on exit is scheduled, not executed, at the button click.
+        // Start the verified helper only when the window actually closes.
+        // It waits for this process to exit before replacing binaries.
+        var pendingPackage = _pendingUpdatePackage;
+        var pendingDigest = _pendingUpdateDigest;
+        _pendingUpdatePackage = null;
+        _pendingUpdateDigest = null;
+        if (!string.IsNullOrWhiteSpace(pendingPackage))
+        {
+            try
+            {
+                UpdateService.StageInstallerAndRestart(
+                    pendingPackage, pendingDigest ?? string.Empty);
+            }
+            catch (Exception ex)
+            {
+                CrashLogService.Write("Stage Install on exit", ex);
+                MessageBox.Show(
+                    "The scheduled update was not started. Your current installation remains unchanged.\n\n" +
+                    ex.Message,
+                    "GPO Settings Explorer Update", MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+        }
+
         base.OnClosed(e);
     }
 }

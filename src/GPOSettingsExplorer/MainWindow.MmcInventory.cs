@@ -15,34 +15,106 @@ public partial class MainWindow
         Array.Empty<MmcInventoryEntry>();
     private ICollectionView? _mmcInventoryView;
     private MmcInventoryScanResult? _mmcInventoryResult;
+    private Guid? _mmcInventoryScannedGpoId;
+    private string _mmcInventoryScannedDomain = string.Empty;
+    private string _mmcInventoryScannedDc = string.Empty;
     private CancellationTokenSource? _mmcInventoryCancellation;
     private readonly GpoEditorNavigatorService _mmcInventoryNavigator = new();
+    private bool _autoGpmcIndexOnStartup;
 
     private void InitializeMmcInventoryUi()
     {
+        _autoGpmcIndexOnStartup = GpoStartupIndexPreferences.Load();
+        AutoGpmcIndexCheckBox.IsChecked = _autoGpmcIndexOnStartup;
         _mmcInventoryView = CollectionViewSource.GetDefaultView(_mmcInventoryRows);
         _mmcInventoryView.Filter = IsMmcInventoryMatch;
         MmcInventoryGrid.ItemsSource = _mmcInventoryView;
     }
 
-    private async void ScanMmcInventory_Click(object sender, RoutedEventArgs e)
+    private async void AutoGpmcIndexCheckBox_Changed(object sender, RoutedEventArgs e)
     {
-        if (_mmcInventoryCancellation is not null || _domainContext is null)
+        if (!IsLoaded || AutoGpmcIndexCheckBox is null)
             return;
 
-        var gpo = MmcInventoryGpoCombo.SelectedItem as GpoInfo ??
+        var requested = AutoGpmcIndexCheckBox.IsChecked == true;
+        if (requested == _autoGpmcIndexOnStartup)
+            return;
+
+        try
+        {
+            GpoStartupIndexPreferences.Save(requested);
+            _autoGpmcIndexOnStartup = requested;
+            StatusText.Text = requested
+                ? "Cached GPMC XML indexing enabled for startup. This will NOT auto-open MMC or prove RSoP."
+                : "Automatic GPMC settings indexing disabled. Manual indexing remains available.";
+
+            if (requested && _domainContext is not null &&
+                _gpmService.IsAvailable && _gpos.Count > 0)
+                await EnsureSettingsIndexAsync(forceRebuild: false);
+        }
+        catch (Exception ex)
+        {
+            AutoGpmcIndexCheckBox.IsChecked = _autoGpmcIndexOnStartup;
+            MessageBox.Show(this, ex.Message,
+                "Could not save background GPMC indexing preference",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
+    private async void ScanMmcInventory_Click(object sender, RoutedEventArgs e) =>
+        await ScanMmcInventoryAsync();
+
+    private bool HasCurrentMmcInventoryFor(GpoInfo gpo)
+    {
+        if (_domainContext is null)
+            return false;
+        var domain = _domainContext.DomainName;
+        var dc = DomainConnectionState.GetServerFor(domain);
+        // Aborted snapshots remain visible in Coverage but are NEVER
+        // permitted as exact-row evidence for follow-up navigation.
+        return _mmcInventoryResult is { HasReusableRowEvidence: true } &&
+            _mmcInventoryScannedGpoId == gpo.Id &&
+            _mmcInventoryScannedDomain.Equals(domain, StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrWhiteSpace(dc) &&
+            _mmcInventoryScannedDc.Equals(dc, StringComparison.OrdinalIgnoreCase) &&
+            _mmcInventoryRows.All(row => row.GpoId == gpo.Id);
+    }
+
+    /// <summary>
+    /// One explicit, cancelable, read-only native scan of one selected GPO.
+    /// It is NEVER invoked on all GPOs at startup.
+    /// </summary>
+    private async Task<bool> ScanMmcInventoryAsync(
+        GpoInfo? targetGpo = null, Window? dialogOwner = null,
+        IProgress<string>? externalProgress = null)
+    {
+        if (_mmcInventoryCancellation is not null || _domainContext is null)
+            return false;
+
+        var gpo = targetGpo ??
+                  MmcInventoryGpoCombo.SelectedItem as GpoInfo ??
                   GpoGrid.SelectedItem as GpoInfo ??
                   _gpos.FirstOrDefault();
 
         if (gpo is null)
         {
-            MessageBox.Show(this, "Load and select a reference GPO.",
+            MessageBox.Show(dialogOwner ?? this, "Load and select a reference GPO.",
                 "MMC inventory", MessageBoxButton.OK, MessageBoxImage.Information);
-            return;
+            return false;
         }
 
         MmcInventoryGpoCombo.SelectedItem = gpo;
-        var consent = MessageBox.Show(this,
+        var scanDomain = _domainContext.DomainName;
+        var scanDc = DomainConnectionState.GetServerFor(scanDomain);
+        if (string.IsNullOrWhiteSpace(scanDc) ||
+            !gpo.DomainName.Equals(scanDomain, StringComparison.OrdinalIgnoreCase))
+        {
+            MessageBox.Show(dialogOwner ?? this,
+                "A connected and pinned DC matching the chosen GPO is required.",
+                "MMC inventory", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return false;
+        }
+        var consent = MessageBox.Show(dialogOwner ?? this,
             $"Scan MMC's real tree and right-hand native lists for:\n\n{gpo.DisplayName}\n\n" +
             "This read-only scan may take several minutes. It launches a separate GPO editor " +
             "and leaves it open for manual verification. MMC may contain custom controls " +
@@ -51,7 +123,7 @@ public partial class MainWindow
             "MMC Full Settings Inventory", MessageBoxButton.YesNo,
             MessageBoxImage.Information);
         if (consent != MessageBoxResult.Yes)
-            return;
+            return false;
 
         _mmcInventoryCancellation = new CancellationTokenSource();
         var cancellation = _mmcInventoryCancellation;
@@ -81,12 +153,24 @@ public partial class MainWindow
             {
                 StatusText.Text = message;
                 MmcInventoryCoverageText.Text = message;
+                externalProgress?.Report(message);
             });
             var result = await MmcFullSettingsInventoryService.ScanAsync(
                 gpo, _domainContext.DomainDistinguishedName,
                 configured, admx, progress, cancellation.Token);
 
+            var current = DomainConnectionState.Context;
+            if (current is null ||
+                !current.DomainName.Equals(scanDomain, StringComparison.OrdinalIgnoreCase) ||
+                !current.ConnectedServer.Equals(scanDc, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException(
+                    "The domain/DC session changed during the MMC scan. " +
+                    "This observation cannot be combined with the old source snapshot.");
+
             _mmcInventoryResult = result;
+            _mmcInventoryScannedGpoId = gpo.Id;
+            _mmcInventoryScannedDomain = scanDomain;
+            _mmcInventoryScannedDc = scanDc;
             // Replace the entire immutable scan snapshot rather than raising
             // tens of thousands of individual ObservableCollection events.
             _mmcInventoryRows = result.Rows;
@@ -101,22 +185,39 @@ public partial class MainWindow
                     ? " | GPMC configured index not available for this GPO."
                     : $" | GPMC configured rows for comparison: {configured.Length:N0}.") +
                 (admx is null ? " | ADMX catalog not loaded." : "");
-            MmcInventoryCoverageText.Foreground =
-                result.IsComplete ? UiStyle.SuccessBrush : UiStyle.WarningBrush;
+            MmcInventoryCoverageText.Foreground = result.Interrupted
+                ? UiStyle.ErrorBrush
+                : result.IsComplete ? UiStyle.SuccessBrush : UiStyle.WarningBrush;
+            if (result.Interrupted)
+            {
+                MmcInventoryCoverageText.Text =
+                    "STOPPED / PARTIAL: Native MMC could not be safely scanned. " +
+                    "Previously captured rows remain visible for troubleshooting but " +
+                    "CANNOT be used to verify or open exact settings. " +
+                    "Do not select 'always ignore errors' in MMC. " +
+                    result.Coverage;
+                StatusText.Text = "MMC scan STOPPED / PARTIAL - not eligible for exact navigation.";
+                externalProgress?.Report(MmcInventoryCoverageText.Text);
+                return false;
+            }
+
             StatusText.Text = "MMC inventory: " + result.Coverage;
+            return true;
         }
         catch (OperationCanceledException)
         {
             MmcInventoryCoverageText.Text =
                 "MMC inventory canceled during startup. Previous inventory, if any, is unchanged.";
             StatusText.Text = "MMC inventory canceled";
+            return false;
         }
         catch (Exception ex)
         {
             MmcInventoryCoverageText.Text = "MMC inventory failed: " + ex.Message;
             MmcInventoryCoverageText.Foreground = UiStyle.ErrorBrush;
-            ErrorDialog.Show(this, "MMC Inventory",
+            ErrorDialog.Show(dialogOwner ?? this, "MMC Inventory",
                 "Could not complete the read-only MMC inventory.", ex);
+            return false;
         }
         finally
         {
@@ -125,6 +226,161 @@ public partial class MainWindow
             MmcInventoryScanButton.IsEnabled = true;
             MmcInventoryCancelButton.IsEnabled = false;
             SetBusy(false);
+        }
+    }
+
+    private sealed record DiscoverySnapshot(
+        IReadOnlyList<GpoDiscoveryEvidenceService.Evidence> Rows,
+        string Domain,
+        string DomainController,
+        string Coverage);
+
+    /// <summary>
+    /// Only correlate previously captured, same-GPO, same-domain, pinned-DC
+    /// snapshots. This never launches MMC or reads fresh SYSVOL implicitly.
+    /// </summary>
+    private DiscoverySnapshot CreateDiscoverySnapshot(GpoInfo gpo)
+    {
+        var configured = _settings.Where(row => row.GpoId == gpo.Id).ToArray();
+        var domain = _domainContext?.DomainName ?? "";
+        var dc = DomainConnectionState.GetServerFor(domain);
+        var mmcAvailable = _mmcInventoryResult is { HasReusableRowEvidence: true } &&
+            _mmcInventoryScannedGpoId == gpo.Id &&
+            _mmcInventoryScannedDomain.Equals(domain, StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrWhiteSpace(dc) &&
+            _mmcInventoryScannedDc.Equals(dc, StringComparison.OrdinalIgnoreCase) &&
+            _mmcInventoryRows.All(row => row.GpoId == gpo.Id);
+        var sourceAvailable = _realSourceSnapshot is not null &&
+            _realSourceSnapshot.GpoId == gpo.Id &&
+            _realSourceSnapshot.Matches(domain, dc);
+
+        var evidence = GpoDiscoveryEvidenceService.CorrelateMmc(
+            GpoDiscoveryEvidenceService.Build(configured),
+            mmcAvailable ? _mmcInventoryRows : Array.Empty<MmcInventoryEntry>(),
+            _admxPolicies);
+        if (sourceAvailable)
+            evidence = GpoDiscoveryEvidenceService.CorrelateRegistrySource(
+                evidence, GpoDiscoverySourceFreshnessService
+                    .SelectCompleteRegistryRecords(_realSourceSnapshot!));
+        evidence = GpoDiscoveryEvidenceService.VerifyLiteralRegistryValues(evidence);
+
+        var coverage = $"{configured.Length:N0} GPMC index rows; " +
+            (mmcAvailable
+                ? $"{_mmcInventoryRows.Count:N0} MMC rows ({(_mmcInventoryResult!.IsComplete ? "complete" : "PARTIAL")})"
+                : "MMC not captured for this GPO") + "; " +
+            (sourceAvailable
+                ? $"{GpoDiscoverySourceFreshnessService.SelectCompleteRegistryRecords(_realSourceSnapshot!).Count:N0} complete Registry.pol records / " +
+                  $"{_realSourceSnapshot.Rows.Count:N0} total source rows " +
+                  (_realSourceSnapshot.IsPartial ? "(PARTIAL)" : "(available files scanned)")
+                : "Registry.pol source not captured for this GPO/pinned DC") + "; " +
+            (_admxPolicies is null ? "ADMX missing" : "ADMX catalog loaded");
+        return new DiscoverySnapshot(evidence, domain, dc, coverage);
+    }
+
+    private async void OpenDiscoveryVerification_Click(object sender, RoutedEventArgs e)
+    {
+        var gpo = MmcInventoryGpoCombo.SelectedItem as GpoInfo ??
+                  GpoGrid.SelectedItem as GpoInfo;
+        if (_domainContext is null || gpo is null)
+        {
+            MessageBox.Show(this, "Connect to the domain and select a specific GPO.",
+                "Discovery & Verification", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        if (!_settings.Any(setting => setting.GpoId == gpo.Id))
+        {
+            MessageBox.Show(this,
+                "Load the GPMC settings index for this GPO first. " +
+                "No indexed rows does not establish that the GPO is empty.",
+                "Discovery & Verification", MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        // ADMX loading is optional: without it, all unit reviews are blocked
+        // but ordinary source/MMC evidence remains visible.
+        if (_admxPolicies is null)
+        {
+            try
+            {
+                await EnsureAdmxCatalogAsync();
+            }
+            catch (Exception ex)
+            {
+                StatusText.Text = "ADMX unavailable; unit verification blocked: " + ex.Message;
+            }
+        }
+
+        try
+        {
+            var snapshot = CreateDiscoverySnapshot(gpo);
+            var window = new GpoDiscoveryVerificationWindow(
+                gpo, snapshot.Domain, snapshot.DomainController,
+                snapshot.Rows, _admxPolicies,
+                _admxCatalogService.LastSourcePath,
+                _admxCatalogService.LastLanguage, snapshot.Coverage)
+            {
+                Owner = this
+            };
+            window.ShowDialog();
+        }
+        catch (Exception ex)
+        {
+            ErrorDialog.Show(this, "Discovery & Verification",
+                "Unable to open the read-only evidence review.", ex);
+        }
+    }
+
+    private void ExportDiscoveryEvidence_Click(object sender, RoutedEventArgs e)
+    {
+        var gpo = MmcInventoryGpoCombo.SelectedItem as GpoInfo ??
+                  GpoGrid.SelectedItem as GpoInfo;
+        if (gpo is null)
+        {
+            MessageBox.Show(this, "Select a GPO first.", "Discovery evidence",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var configured = _settings.Where(s => s.GpoId == gpo.Id).ToArray();
+        if (configured.Length == 0)
+        {
+            MessageBox.Show(this,
+                "No configured settings are currently indexed for this GPO. Load the settings index first. This is not proof the GPO is empty.",
+                "Discovery evidence", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        if (MessageBox.Show(this,
+            "The evidence export can contain raw Group Policy values, registry paths and computer/security configuration. " +
+            "Treat the resulting TSV as confidential. Do not upload it to public repositories or share it outside authorized administrators.\\n\\n" +
+            "Continue with local export?", "Sensitive policy data",
+            MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+            return;
+
+        var dialog = new SaveFileDialog
+        {
+            Title = "Export GPO discovery evidence (read-only)",
+            FileName = "gpo-discovery-" + gpo.Id.ToString("N") + ".tsv",
+            Filter = "Tab-separated evidence (*.tsv)|*.tsv",
+            DefaultExt = ".tsv",
+            AddExtension = true
+        };
+        if (dialog.ShowDialog(this) != true)
+            return;
+
+        try
+        {
+            var snapshot = CreateDiscoverySnapshot(gpo);
+            System.IO.File.WriteAllText(dialog.FileName,
+                GpoDiscoveryEvidenceService.ExportTsv(snapshot.Rows),
+                new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+            StatusText.Text = $"Exported {snapshot.Rows.Count:N0} discovery evidence records (limited literal comparisons; not effective RSoP).";
+        }
+        catch (Exception ex)
+        {
+            ErrorDialog.Show(this, "Discovery evidence",
+                "Could not export the discovery evidence.", ex);
         }
     }
 

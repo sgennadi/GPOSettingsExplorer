@@ -119,46 +119,104 @@ public partial class MainWindow
     }
 
     // Reused by Unified Settings and by the advanced ADMX source grid.
-    private async Task ConfigureAdmxDefinitionAsync(AdmxPolicyDefinition selectedDefinition)
+    private async Task ConfigureAdmxDefinitionAsync(
+        AdmxPolicyDefinition selectedDefinition,
+        Guid? preferredGpoId = null,
+        string? preferredScope = null,
+        AdmxElementDefinition? preferredElement = null)
     {
         if (_domainContext is null)
             return;
 
-        var picker = new PolicyTargetPickerWindow(_gpos, selectedDefinition)
+        if (_admxPolicies is not null &&
+            !_admxPolicies.Any(item => ReferenceEquals(item, selectedDefinition)))
         {
-            Owner = this
-        };
-
-        if (picker.ShowDialog() != true || picker.SelectedGpo is null)
-        {
+            MessageBox.Show(this,
+                "The ADMX catalog has changed since this policy map was built. " +
+                "Refresh the map and select the field again before editing.",
+                "Stale ADMX map", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
 
-        var gpo = picker.SelectedGpo;
-        var scope = picker.SelectedScope;
+        // A row already bound to a GPO must open that GPO directly.
+        // The target picker is only appropriate for unbound ADMX templates.
+        var gpo = preferredGpoId is Guid id
+            ? _gpos.FirstOrDefault(item => item.Id == id)
+            : null;
+        var scope = preferredScope ?? selectedDefinition.Scope;
+        if (preferredGpoId.HasValue && gpo is null)
+        {
+            MessageBox.Show(this,
+                "The GPO associated with this setting is no longer available. " +
+                "Refresh the GPO list before editing. No alternate GPO was selected.",
+                "GPO not found", MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+        if (gpo is null)
+        {
+            var picker = new PolicyTargetPickerWindow(_gpos, selectedDefinition)
+            {
+                Owner = this
+            };
+            if (picker.ShowDialog() != true || picker.SelectedGpo is null)
+                return;
+            gpo = picker.SelectedGpo;
+            scope = picker.SelectedScope;
+        }
+
         var definition = WithEffectiveScope(selectedDefinition, scope);
 
-        var unsupported = definition.Elements
-            .Where(element => element.Type == AdmxElementType.Unknown)
-            .ToArray();
-
-        if (unsupported.Length > 0)
+        if (preferredElement is not null &&
+            !definition.Elements.Any(element =>
+                ReferenceEquals(element, preferredElement)))
         {
-            MessageBox.Show(
-                this,
-                "This ADMX policy contains an unsupported element type. Direct editing is disabled for this policy to avoid an unsafe write.",
-                "Unsupported policy",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
+            MessageBox.Show(this,
+                "The selected field is no longer part of this ADMX policy. " +
+                "Refresh the policy map before editing.",
+                "Policy map changed", MessageBoxButton.OK, MessageBoxImage.Warning);
             return;
         }
 
-        var indexed = _settings.FirstOrDefault(item =>
+        if (!UnifiedSettingsCatalogService.IsDirectAdmxSupported(definition))
+        {
+            MessageBox.Show(this,
+                "This ADMX policy has an unsupported element type, missing/duplicate " +
+                "element IDs, or multiple fields writing the same registry value. " +
+                "Direct editing is blocked to avoid a wrong-field write.",
+                "Unsupported or ambiguous policy",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        // A field may be unique inside one ADMX and still collide with a
+        // different policy from another vendor's template. Never open a
+        // generic writer until the complete catalog proves uniqueness.
+        if (_admxPolicies is null ||
+            !UnifiedSettingsCatalogService.IsCatalogUniqueForWrite(
+                selectedDefinition, _admxPolicies, scope))
+        {
+            MessageBox.Show(this,
+                "The selected ADMX policy is missing a verifiable registry target " +
+                "or shares a target with another ADMX definition. " +
+                "Direct editing is blocked. Inspect the source in All sources " +
+                "or open the native GPO editor for manual review.",
+                "Ambiguous ADMX catalog",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+            return;
+        }
+
+        // Do not reuse a GPMC row solely because its localized label matches.
+        // An index entry is trusted as this template's value only if the
+        // universal resolver confirms its unique schema identity.
+        var matches = _settings.Where(item =>
             item.GpoId == gpo.Id &&
             item.Scope.Equals(scope, StringComparison.OrdinalIgnoreCase) &&
-            item.SettingName.Equals(definition.DisplayName, StringComparison.CurrentCultureIgnoreCase));
+            ReferenceEquals(
+                UnifiedSettingsCatalogService.ResolveDefinition(
+                    item, _admxPolicies ?? Array.Empty<AdmxPolicyDefinition>()),
+                selectedDefinition)).ToArray();
 
-        var setting = indexed ?? new PolicySettingInfo
+        var setting = matches.Length == 1 ? matches[0] : new PolicySettingInfo
         {
             GpoId = gpo.Id,
             GpoName = gpo.DisplayName,
@@ -166,7 +224,8 @@ public partial class MainWindow
             Extension = "Administrative Templates",
             Category = definition.Category,
             SettingName = definition.DisplayName,
-            State = "NotConfigured",
+            // Absence from the GPMC index is not evidence of Not Configured.
+            State = "Not reported",
             Value = string.Empty,
             RegistryKey = definition.Key,
             RegistryValue = definition.ValueName
@@ -185,7 +244,8 @@ public partial class MainWindow
 
             SetBusy(false);
 
-            var editor = new PolicyEditorWindow(gpo, setting, definition, session)
+            var editor = new PolicyEditorWindow(
+                gpo, setting, definition, session, preferredElement)
             {
                 Owner = this
             };

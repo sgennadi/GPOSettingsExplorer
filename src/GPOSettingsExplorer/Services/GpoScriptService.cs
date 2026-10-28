@@ -149,7 +149,11 @@ public sealed class GpoScriptService
         var includeContent = mode != GpoScriptSearchMode.FileNamesAndPaths;
 
         var byPath = scripts
-            .GroupBy(script => script.FullPath, StringComparer.OrdinalIgnoreCase)
+            // Distinct source identity: a physical script belongs to a GPO.
+            // An alias or repeated filename must never merge metadata from
+            // another GPO just because FullPath compares equal.
+            .GroupBy(script => $"{script.GpoId:N}|{script.FullPath}",
+                StringComparer.OrdinalIgnoreCase)
             .Select(group => group.ToArray())
             .ToArray();
 
@@ -385,7 +389,7 @@ public sealed class GpoScriptService
                 $" BOM {document.OriginalEmitBom} -> {document.EmitBom};" +
                 $" EOL {ScriptEncodingService.DisplayLineEnding(document.OriginalNewLine)} -> " +
                 ScriptEncodingService.DisplayLineEnding(document.NewLine),
-                "Save"));
+                "Approve and save"));
 
         var temp =
             fullPath +
