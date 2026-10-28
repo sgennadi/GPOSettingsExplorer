@@ -40,7 +40,7 @@ jobs:
           ./tools/DiagnosticsReview/Review-Diagnostics.ps1 -Repository "${{ github.repository }}" -RecentDays 7
 
       - name: Upload report without issue bodies or private log data
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: diagnostic-issue-summary
           path: |
